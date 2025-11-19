@@ -1,0 +1,1 @@
+DROP POLICY IF EXISTS "loans_select_own" ON loans;

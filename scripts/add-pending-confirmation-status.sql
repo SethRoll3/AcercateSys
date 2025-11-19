@@ -1,0 +1,1 @@
+ALTER TYPE payment_confirmation_status ADD VALUE 'pending_confirmation';

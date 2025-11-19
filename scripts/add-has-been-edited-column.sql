@@ -1,0 +1,1 @@
+ALTER TABLE payments ADD COLUMN has_been_edited BOOLEAN DEFAULT FALSE;

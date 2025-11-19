@@ -1,0 +1,48 @@
+-- Adding auth_id column instead of changing id type to avoid policy conflicts
+
+-- Drop password_hash column since we're using Supabase Auth
+ALTER TABLE users DROP COLUMN IF EXISTS password_hash;
+
+-- Add auth_id column to link with Supabase Auth
+ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_id UUID UNIQUE;
+
+-- Add index for faster lookups
+CREATE INDEX IF NOT EXISTS idx_users_auth_id ON users(auth_id);
+
+-- Drop existing RLS policies that use id
+DROP POLICY IF EXISTS "users_select_own" ON users;
+DROP POLICY IF EXISTS "users_update_own" ON users;
+
+-- Recreate policies using auth_id
+CREATE POLICY "users_select_own" ON users
+  FOR SELECT USING (auth.uid() = auth_id);
+
+CREATE POLICY "users_update_own" ON users
+  FOR UPDATE USING (auth.uid() = auth_id);
+
+-- Create or replace trigger to sync auth.users with public.users
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.users (auth_id, email, full_name, role)
+  VALUES (
+    NEW.id,
+    NEW.email,
+    COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.email),
+    COALESCE(NEW.raw_user_meta_data->>'role', 'user')
+  )
+  ON CONFLICT (email) DO UPDATE
+  SET 
+    auth_id = EXCLUDED.auth_id,
+    full_name = COALESCE(EXCLUDED.full_name, public.users.full_name),
+    role = COALESCE(EXCLUDED.role, public.users.role),
+    updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Drop and recreate trigger
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT OR UPDATE ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
