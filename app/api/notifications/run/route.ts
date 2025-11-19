@@ -223,6 +223,13 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, count: results.length, results })
   } catch (error) {
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    try { console.error('NOTIFICATIONS_RUN_ERROR', error) } catch {}
+    const e: any = error as any
+    const payload = typeof e === 'string'
+      ? { ok: false, message: e }
+      : e && typeof e === 'object'
+        ? { ok: false, name: e.name, message: String(e.message || ''), code: e.code, stack: e.stack }
+        : { ok: false, message: String(error) }
+    return NextResponse.json(payload, { status: 500 })
   }
 }
