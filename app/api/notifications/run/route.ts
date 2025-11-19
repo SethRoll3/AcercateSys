@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
 
 
     const today = new Date()
-    const settings = await getSystemSettings()
+    const sysSettings = await getSystemSettings()
 
     const { data: schedules } = await admin
       .from('payment_schedule')
@@ -94,9 +94,9 @@ export async function POST(req: NextRequest) {
         .select('*')
         .eq('client_id', clientId)
         .limit(1)
-      const settings = Array.isArray(settingsRows) ? settingsRows[0] : null
+      const clientSettings = Array.isArray(settingsRows) ? settingsRows[0] : null
 
-      if (!isWithinQuietHours(today, settings.timezone, settings?.quiet_hours_start ?? settings.default_quiet_hours_start, settings?.quiet_hours_end ?? settings.default_quiet_hours_end)) {
+      if (!isWithinQuietHours(today, clientSettings?.timezone || 'UTC', clientSettings?.quiet_hours_start ?? sysSettings.default_quiet_hours_start, clientSettings?.quiet_hours_end ?? sysSettings.default_quiet_hours_end)) {
         results.push({ scheduleId: s.id, stage, status: 'ignored_quiet_hours' })
         continue
       }
@@ -116,9 +116,9 @@ export async function POST(req: NextRequest) {
 
       // Dedup
       const channels: ('sms'|'whatsapp')[] = []
-      const pref = settings?.preferred_channel || 'both'
-      const smsOk = settings?.sms_opt_in !== false
-      const waOk = settings?.whatsapp_opt_in !== false
+      const pref = clientSettings?.preferred_channel || 'both'
+      const smsOk = clientSettings?.sms_opt_in !== false
+      const waOk = clientSettings?.whatsapp_opt_in !== false
       if ((pref === 'both' || pref === 'sms') && smsOk) channels.push('sms')
       if ((pref === 'both' || pref === 'whatsapp') && waOk) channels.push('whatsapp')
       if (!channels.length || !phone) {
@@ -152,8 +152,8 @@ export async function POST(req: NextRequest) {
         cliente_nombre: `${client?.first_name || ''} ${client?.last_name || ''}`.trim(),
         monto_pendiente: new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(pending),
         fecha_limite: new Date(dueDate).toLocaleDateString('es-GT'),
-        instrucciones_pago: settings.payment_instructions,
-        soporte_contacto: settings.support_contact,
+        instrucciones_pago: sysSettings.payment_instructions,
+        soporte_contacto: sysSettings.support_contact,
         dias_mora: String(diasMora),
         total_pendiente: new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(pending),
       }
@@ -162,7 +162,7 @@ export async function POST(req: NextRequest) {
       const waText = renderTemplate(waTpl, vars)
       const textByChannel: Record<'sms'|'whatsapp', string> = { sms: smsText, whatsapp: waText }
 
-      const countryCode = (client?.phone_country_code as string) || settings.default_country_code
+      const countryCode = (client?.phone_country_code as string) || sysSettings.default_country_code
       let sendRes = await sendMessage(channels, phone, channels.length === 1 ? textByChannel[channels[0]] : smsText, countryCode)
       const envTemplateNameKey = `WHATSAPP_TEMPLATE_${tkey}`
       const autoTemplateName = (process.env as any)[envTemplateNameKey]
