@@ -1,5 +1,5 @@
 export interface SmsProvider {
-  sendSms(to: string, text: string): Promise<{ ok: boolean; provider: string; errorCode?: string; raw?: any }>
+  sendSms(to: string, text: string): Promise<{ ok: boolean; provider: string; errorCode?: string; raw?: any; messageId?: string }>
 }
 
 export class TwilioSmsProvider implements SmsProvider {
@@ -17,6 +17,7 @@ export class TwilioSmsProvider implements SmsProvider {
     if (!this.accountSid || !this.authToken || !this.from) {
       return { ok: false, provider: 'twilio', errorCode: 'missing_env' }
     }
+    try { console.log('SMS_SEND_REQUEST', { to, from: this.from, length: text?.length || 0 }) } catch {}
     const url = `https://api.twilio.com/2010-04-01/Accounts/${this.accountSid}/Messages.json`
     const body = new URLSearchParams({ From: this.from, To: to, Body: text })
     const res = await fetch(url, {
@@ -29,12 +30,20 @@ export class TwilioSmsProvider implements SmsProvider {
     })
     const raw = await res.json().catch(() => ({}))
     const messageId = raw?.sid || undefined
+    try {
+      if (!res.ok) {
+        console.log('SMS_SEND_ERROR', { status: res.status, code: String(raw?.code || res.status), to, provider: 'twilio' })
+      } else {
+        console.log('SMS_SEND_OK', { to, provider: 'twilio', messageId })
+      }
+    } catch {}
     return { ok: res.ok, provider: 'twilio', errorCode: res.ok ? undefined : String(raw?.code || res.status), raw: { ...raw }, ...(messageId ? { messageId } : {}) }
   }
 }
 
 export class DryRunSmsProvider implements SmsProvider {
   async sendSms(to: string, text: string) {
-    return { ok: true, provider: 'dry-run', raw: { to, text } }
+    try { console.log('SMS_DRY_RUN', { to, length: text?.length || 0 }) } catch {}
+    return { ok: true, provider: 'dry-run', raw: { to, text }, messageId: 'DRY_RUN_SMS' }
   }
 }

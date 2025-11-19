@@ -43,9 +43,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="hidden md:flex">
           <AppSidebar />
         </div>
-        <div className="flex flex-1 flex-col overflow-y-auto">
+        <div className="flex flex-1 flex-col overflow-y-auto overflow-x-hidden">
           <DashboardHeader userRole={userRole ?? ""} userEmail={userEmail ?? ""} />
-          <main className="flex-1 p-4 md:p-8">
+          <main className="flex-1 p-4 md:p-8 w-full max-w-full overflow-x-hidden">
             <Suspense fallback={<LoadingSpinner />}>
               {children}
             </Suspense>

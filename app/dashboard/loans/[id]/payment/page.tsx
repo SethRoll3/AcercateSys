@@ -22,6 +22,7 @@ export default function PaymentPage() {
   const [userEmail, setUserEmail] = useState("")
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const [loanStatus, setLoanStatus] = useState<string | null>(null)
 
   const fetchWithTimeout = async (input: RequestInfo, init: RequestInit & { timeoutMs?: number } = {}) => {
     const { timeoutMs = 12000, ...rest } = init
@@ -81,6 +82,7 @@ export default function PaymentPage() {
           const data = await response.json()
           const item = data.schedule.find((s: PaymentSchedule) => s.id === scheduleId)
           setScheduleItem(item || null)
+          setLoanStatus(data.loan?.status || null)
 
           const payments: Payment[] = (data.payments || [])
           const current = payments.find(
@@ -159,6 +161,17 @@ export default function PaymentPage() {
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
           <p className="text-muted-foreground mb-4">Información de pago no encontrada</p>
+          <Button onClick={() => router.push(`/dashboard/loans/${params.id}`)}>Volver al Préstamo</Button>
+        </div>
+      </div>
+    )
+  }
+
+  if (loanStatus && loanStatus !== 'active') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <p className="text-muted-foreground mb-4">Este préstamo está en estado {loanStatus}. No se pueden registrar pagos hasta que esté activo.</p>
           <Button onClick={() => router.push(`/dashboard/loans/${params.id}`)}>Volver al Préstamo</Button>
         </div>
       </div>

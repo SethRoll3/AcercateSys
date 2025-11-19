@@ -66,6 +66,7 @@ export async function PATCH(
         `
         *,
         loan:loans (
+          status,
           client:clients (
             email,
             advisor:users!advisor_id(email)
@@ -90,6 +91,10 @@ export async function PATCH(
           { status: 403 }
         );
       }
+    }
+
+    if (payment.loan?.status !== "active") {
+      return NextResponse.json({ error: "Loan is not active" }, { status: 409 })
     }
     // Admin can confirm any payment
 

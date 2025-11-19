@@ -4,11 +4,12 @@ import { Button } from "@/components/ui/button"
 import { LogOut, User, Menu, Sun, Moon, Loader2 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
-import { Sheet, SheetContent } from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet"
 import { useState, useEffect } from "react"
 import { AppSidebar } from "@/components/app-sidebar"
 import { usePathname } from "next/navigation"
 import { useTheme } from "next-themes"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 
 interface DashboardHeaderProps {
   userRole: string
@@ -51,14 +52,7 @@ export function DashboardHeader({ userRole, userEmail }: DashboardHeaderProps) {
             <p className="text-sm text-muted-foreground">Sistema de Gestión de Préstamos</p>
           </div>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 text-sm">
-            <User className="h-4 w-4 text-muted-foreground" />
-            <div>
-              <p className="font-medium text-foreground">{userEmail}</p>
-              <p className="text-xs text-muted-foreground capitalize">{userRole}</p>
-            </div>
-          </div>
+        <div className="flex items-center gap-3">
           <button
             type="button"
             aria-label="Cambiar tema"
@@ -68,23 +62,32 @@ export function DashboardHeader({ userRole, userEmail }: DashboardHeaderProps) {
           >
             {mounted ? (theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />) : <span className="h-4 w-4" />}
           </button>
-          <Button variant="outline" size="sm" onClick={handleLogout} disabled={isLoggingOut} className="gap-2 bg-transparent">
-            {isLoggingOut ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Cerrando Sesión...
-              </>
-            ) : (
-              <>
-                <LogOut className="h-4 w-4" />
-                Cerrar Sesión
-              </>
-            )}
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="inline-flex items-center justify-center rounded-md border px-2 py-1" aria-label="Cuenta">
+                <User className="h-4 w-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <div className="px-2 py-1.5">
+                <p className="text-sm font-medium text-foreground truncate">{userEmail}</p>
+                <p className="text-xs text-muted-foreground capitalize">{userRole || 'usuario'}</p>
+              </div>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleLogout} disabled={isLoggingOut} className="gap-2">
+                {isLoggingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
+                {isLoggingOut ? 'Cerrando sesión...' : 'Cerrar sesión'}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
       <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent side="left" className="p-0 w-64">
+        <SheetContent side="left" className="p-0 w-64" aria-label="Menú de navegación">
+          <SheetHeader className="sr-only">
+            <SheetTitle>Menú de navegación</SheetTitle>
+            <SheetDescription>Accede a las secciones del sistema</SheetDescription>
+          </SheetHeader>
           <AppSidebar variant="mobile" />
         </SheetContent>
       </Sheet>

@@ -145,6 +145,11 @@ export function PaymentScheduleTable({ schedule, onPaymentClick, onReviewClick, 
 
   return (
     <div className="rounded-lg border border-border/50 bg-card/50 backdrop-blur-sm overflow-hidden">
+      {loan && loan.status !== 'active' && (
+        <div className="px-4 pt-4 text-sm text-destructive">
+          Este préstamo no está activo. No se permiten pagos.
+        </div>
+      )}
       <div className="px-4 pt-4 text-sm text-muted-foreground">Total del préstamo (sin mora): {formatCurrency(totalBase)}</div>
       <Table>
         <TableHeader>
@@ -189,14 +194,25 @@ export function PaymentScheduleTable({ schedule, onPaymentClick, onReviewClick, 
                   <TableCell className="space-x-2">
                     {item.status === "pending" && (
                       <>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => onPaymentClick(item.id)}
-                          className="bg-transparent"
-                        >
-                          Registrar Pago
-                        </Button>
+                        {loan?.status === 'active' ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => onPaymentClick(item.id)}
+                            className="bg-transparent"
+                          >
+                            Registrar Pago
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled
+                            className="bg-transparent"
+                          >
+                            Bloqueado
+                          </Button>
+                        )}
                         {(role === 'admin' || role === 'asesor') && (
                           <Button
                             variant="ghost"
