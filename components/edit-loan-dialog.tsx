@@ -34,7 +34,6 @@ export function EditLoanDialog({ loan, onLoanUpdated }: EditLoanDialogProps) {
   const [open, setOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [formData, setFormData] = useState({
-    status: loan.status,
     interestRate: loan.interestRate.toString(),
     amount: loan.amount.toString(),
     term_months: loan.termMonths.toString(),
@@ -45,7 +44,6 @@ export function EditLoanDialog({ loan, onLoanUpdated }: EditLoanDialogProps) {
     setIsLoading(true)
 
     const submissionData = {
-      ...formData,
       interestRate: parseFloat(formData.interestRate),
       amount: parseFloat(formData.amount),
       term_months: parseInt(formData.term_months, 10),
@@ -93,70 +91,18 @@ export function EditLoanDialog({ loan, onLoanUpdated }: EditLoanDialogProps) {
         <form onSubmit={handleSubmit} className="space-y-4 mt-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="amount" className="text-foreground">
-                Monto
-              </Label>
-              <Input
-                id="amount"
-                type="number"
-                step="0.01"
-                value={formData.amount}
-                onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                required
-                className="bg-background/50"
-              />
+              <Label htmlFor="amount" className="text-foreground">Monto</Label>
+              <Input id="amount" type="number" step="0.01" value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: e.target.value })} required className="bg-background/50" />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="term_months" className="text-foreground">
-                Plazo (meses)
-              </Label>
-              <Input
-                id="term_months"
-                type="number"
-                step="1"
-                value={formData.term_months}
-                onChange={(e) => setFormData({ ...formData, term_months: e.target.value })}
-                required
-                className="bg-background/50"
-              />
+              <Label htmlFor="term_months" className="text-foreground">Plazo (meses)</Label>
+              <Input id="term_months" type="number" step="1" value={formData.term_months} onChange={(e) => setFormData({ ...formData, term_months: e.target.value })} required className="bg-background/50" />
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="status" className="text-foreground">
-                Estado
-              </Label>
-              <Select
-                value={formData.status}
-                onValueChange={(value) => setFormData({ ...formData, status: value as any })}
-              >
-                <SelectTrigger className="bg-background/50">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">Activo</SelectItem>
-                  <SelectItem value="paid">Pagado</SelectItem>
-                  <SelectItem value="defaulted">En Mora</SelectItem>
-                  <SelectItem value="pending">Pendiente</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="interestRate" className="text-foreground">
-                Tasa de Interés (%)
-              </Label>
-              <Input
-                id="interestRate"
-                type="number"
-                step="0.1"
-                value={formData.interestRate}
-                onChange={(e) => setFormData({ ...formData, interestRate: e.target.value })}
-                required
-                className="bg-background/50"
-              />
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="interestRate" className="text-foreground">Tasa de Interés (%)</Label>
+            <Input id="interestRate" type="number" step="0.1" value={formData.interestRate} onChange={(e) => setFormData({ ...formData, interestRate: e.target.value })} required className="bg-background/50" />
           </div>
 
           <div className="flex justify-end gap-2 pt-6">

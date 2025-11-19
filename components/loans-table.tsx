@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Eye } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { EditLoanDialog } from "./edit-loan-dialog"
+import { ActivateLoanDialog } from "./activate-loan-dialog"
 
 interface LoansTableProps {
   loans: (Loan & { client?: { first_name: string; last_name: string } | null })[]
@@ -20,19 +21,16 @@ export function LoansTable({ loans, userRole, onLoanUpdated, groupMap }: LoansTa
   const isAdmin = userRole === "admin"
 
   const getStatusBadge = (status: string) => {
-    const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+    const variants: Record<string, "default" | "secondary" | "outline"> = {
       active: "default",
       paid: "secondary",
-      defaulted: "destructive",
       pending: "outline",
     }
-
     const labels: Record<string, string> = {
       active: "Activo",
       paid: "Pagado",
       pending: "Pendiente",
     }
-
     return <Badge variant={variants[status] || "default"}>{labels[status] || status}</Badge>
   }
 
@@ -89,6 +87,11 @@ export function LoansTable({ loans, userRole, onLoanUpdated, groupMap }: LoansTa
                     Ver
                   </Button>
                   {isAdmin && onLoanUpdated && <EditLoanDialog loan={loan} onLoanUpdated={onLoanUpdated} />}
+                  {(isAdmin || userRole === "asesor") && loan.status === "pending" && onLoanUpdated && (
+                    <ActivateLoanDialog loan={loan} onActivated={onLoanUpdated} trigger={
+                      <Button variant="outline" size="sm" className="gap-2">Activar</Button>
+                    } />
+                  )}
                 </div>
               </TableCell>
             </TableRow>

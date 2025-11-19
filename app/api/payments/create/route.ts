@@ -15,8 +15,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const data = await request.json()
-    const { loanId, scheduleId, amount, paymentDate, paymentMethod, notes } = data
+  const data = await request.json()
+  const { loanId, scheduleId, amount, paymentDate, paymentMethod, notes } = data
+
+  const { data: loan, error: loanError } = await supabase
+    .from("loans")
+    .select("status")
+    .eq("id", loanId)
+    .single()
+  if (loanError || !loan) {
+    return NextResponse.json({ error: "Loan not found" }, { status: 404 })
+  }
+  if (loan.status !== "active") {
+    return NextResponse.json({ error: "Loan is not active" }, { status: 409 })
+  }
 
     // Generate receipt number
     const { count } = await supabase.from("payments").select("*", { count: "exact", head: true })
@@ -24,7 +36,7 @@ export async function POST(request: Request) {
     const receiptNumber = `REC-${String((count || 0) + 1).padStart(6, "0")}`
 
     // Insert payment
-    const { data: newPayment, error: paymentError } = await supabase
+  const { data: newPayment, error: paymentError } = await supabase
       .from("payments")
       .insert({
         loan_id: loanId,

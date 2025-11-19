@@ -200,9 +200,9 @@ export default function DashboardPage() {
 
   return (
     <>
-      <div className="mb-8 flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold text-foreground mb-2">
+      <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-3xl font-bold text-foreground mb-2 truncate">
             {userData.role === "admin" ? "Panel de Administración" : "Mis Préstamos"}
           </h2>
           <p className="text-muted-foreground">
@@ -211,22 +211,20 @@ export default function DashboardPage() {
               : "Gestiona y revisa tus préstamos activos"}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {userData.role === "admin" && (
-            <>
-              <Button variant="outline" className="gap-2 bg-transparent" asChild>
-                <a href="/api/reports/loans-excel" target="_blank" rel="noopener noreferrer">
-                  <Download className="h-4 w-4" />
-                  Exportar Excel
-                </a>
-              </Button>
-              <CreateLoanDialog clients={transformedClients} onLoanCreated={fetchLoans} />
-            </>
-          )}
-        </div>
+        {userData.role === "admin" && (
+          <div className="flex flex-wrap md:flex-nowrap items-center gap-2 w-full md:w-auto">
+            <Button variant="outline" size="sm" className="gap-2 bg-transparent" asChild>
+              <a href="/api/reports/loans-excel" target="_blank" rel="noopener noreferrer">
+                <Download className="h-4 w-4" />
+                Exportar Excel
+              </a>
+            </Button>
+            <CreateLoanDialog clients={transformedClients} onLoanCreated={fetchLoans} />
+          </div>
+        )}
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StatsCard
           title="Total en Préstamos"
           value={formatCurrency(totalLoanAmount)}
@@ -255,15 +253,15 @@ export default function DashboardPage() {
       )}
 
       <div className="mb-6">
-        <Tabs defaultValue="clients">
-          <TabsList className="grid w-fit grid-cols-2">
+        <Tabs defaultValue="clients" className="w-full">
+          <TabsList className="grid w-full max-w-full grid-cols-2 bg-muted/50">
             <TabsTrigger value="clients">Clientes</TabsTrigger>
             <TabsTrigger value="groups">Grupos</TabsTrigger>
           </TabsList>
-        <TabsContent value="clients">
-          <h3 className="text-xl font-semibold text-foreground mb-4">
-            {userData.role === "admin" ? "Todos los Préstamos" : "Mis Préstamos"}
-          </h3>
+          <TabsContent value="clients">
+            <h3 className="text-xl font-semibold text-foreground mb-4">
+              {userData.role === "admin" ? "Todos los Préstamos" : "Mis Préstamos"}
+            </h3>
           {loansError && (
             <div className="mb-3 text-sm text-muted-foreground flex items-center gap-2">
               <span>{loansError}</span>

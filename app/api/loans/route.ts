@@ -292,7 +292,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { interestRate, ...rest } = await request.json()
+    const { interestRate, status, ...rest } = await request.json()
 
 
 

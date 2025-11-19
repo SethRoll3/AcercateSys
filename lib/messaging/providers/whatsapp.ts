@@ -1,5 +1,5 @@
 export interface WhatsAppProvider {
-  sendText(to: string, text: string): Promise<{ ok: boolean; provider: string; errorCode?: string; raw?: any }>
+  sendText(to: string, text: string): Promise<{ ok: boolean; provider: string; errorCode?: string; raw?: any; messageId?: string }>
   sendTemplate(to: string, name: string, language: string, components: any[]): Promise<{ ok: boolean; provider: string; errorCode?: string; raw?: any; messageId?: string }>
 }
 
@@ -16,6 +16,7 @@ export class MetaWhatsAppProvider implements WhatsAppProvider {
     if (!this.token || !this.phoneId) {
       return { ok: false, provider: 'meta_whatsapp', errorCode: 'missing_env' }
     }
+    try { console.log('WA_TEXT_REQUEST', { to, length: text?.length || 0 }) } catch {}
     const url = `https://graph.facebook.com/v20.0/${this.phoneId}/messages`
     const payload = {
       messaging_product: 'whatsapp',
@@ -33,6 +34,13 @@ export class MetaWhatsAppProvider implements WhatsAppProvider {
     })
     const raw = await res.json().catch(() => ({}))
     const messageId = raw?.messages?.[0]?.id || raw?.contacts?.[0]?.wa_id || undefined
+    try {
+      if (!res.ok) {
+        console.log('WA_TEXT_ERROR', { status: res.status, code: String(raw?.error?.code || res.status), to, provider: 'meta_whatsapp' })
+      } else {
+        console.log('WA_TEXT_OK', { to, provider: 'meta_whatsapp', messageId })
+      }
+    } catch {}
     return { ok: res.ok, provider: 'meta_whatsapp', errorCode: res.ok ? undefined : String(raw?.error?.code || res.status), raw: { ...raw }, ...(messageId ? { messageId } : {}) }
   }
 
@@ -82,10 +90,12 @@ export class MetaWhatsAppProvider implements WhatsAppProvider {
 
 export class DryRunWhatsAppProvider implements WhatsAppProvider {
   async sendText(to: string, text: string) {
-    return { ok: true, provider: 'dry-run', raw: { to, text } }
+    try { console.log('WA_DRY_RUN_TEXT', { to, length: text?.length || 0 }) } catch {}
+    return { ok: true, provider: 'dry-run', raw: { to, text }, messageId: 'DRY_RUN_WA_TEXT' }
   }
 
   async sendTemplate(to: string, name: string, language: string, components: any[] = []) {
+    try { console.log('WA_DRY_RUN_TEMPLATE', { to, name, language, componentsCount: (components || []).length }) } catch {}
     return { ok: true, provider: 'dry-run', raw: { to, name, language, components }, messageId: 'DRY_RUN_WA_TEMPLATE' }
   }
 }
