@@ -1,15 +1,30 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Mantenemos esto si tienes prisa por entregar y hay errores de linter
   eslint: {
     ignoreDuringBuilds: true,
   },
   typescript: {
     ignoreBuildErrors: true,
   },
+  
+  // AQUÍ EL CAMBIO IMPORTANTE: Activamos la optimización
   images: {
-    unoptimized: true,
+    // Quitamos unoptimized: true
+    remotePatterns: [
+      {
+        protocol: 'https',
+        // Lo encuentras en tu dashboard de Supabase URL
+        hostname: 'lihgzgxeyxokedjqmmxp.supabase.co',
+        port: '',
+        pathname: '/storage/v1/object/public/**',
+      },
+    ],
   },
+  
   compress: true,
+  
+  // Dejamos tu config de webpack tal cual
   webpack: (config, { dev }) => {
     if (dev) {
       config.watchOptions = {
@@ -26,16 +41,12 @@ const nextConfig = {
     }
     return config
   },
+
+  // Tus headers están bien
   async headers() {
     return [
       {
         source: '/(.*)\\.(png|jpg|jpeg|gif|svg|webp|ico)$',
-        headers: [
-          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
-        ],
-      },
-      {
-        source: '/public/(.*)',
         headers: [
           { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
         ],
