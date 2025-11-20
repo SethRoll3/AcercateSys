@@ -49,6 +49,8 @@ export interface Client {
   updatedAt: string
   group_id?: string | null
   in_group?: boolean
+  address?: string | null
+  emergency_phone?: string | null
 }
 
 export type PaymentScheduleStatus =

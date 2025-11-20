@@ -138,7 +138,7 @@ export default function GroupLoanDetailPage() {
         {items.map((it) => (
           <TabsContent key={it.loan.id} value={it.loan.id} className="mt-6">
             <div className="space-y-6">
-              <LoanInfoCard loan={it.loan} totalPaid={it.totalPaid} remainingBalance={it.remainingBalance} />
+              <LoanInfoCard loan={it.loan} totalPaid={it.totalPaid} remainingBalance={it.remainingBalance} schedule={it.schedule} />
 
               <Tabs defaultValue="schedule" className="w-full">
                 <TabsList className="grid w-full max-w-md grid-cols-2 bg-muted/50">

@@ -163,7 +163,7 @@ export function PaymentScheduleTable({ schedule, onPaymentClick, onReviewClick, 
             <TableHead className="text-muted-foreground">Gastos Adm.</TableHead>
             <TableHead className="text-muted-foreground">Saldo por Pagar</TableHead>
             <TableHead className="text-muted-foreground">Estado</TableHead>
-            {onPaymentClick && <TableHead className="text-muted-foreground">Acción</TableHead>}
+            {(onPaymentClick || onReviewClick) && <TableHead className="text-muted-foreground">Acción</TableHead>}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -190,9 +190,9 @@ export function PaymentScheduleTable({ schedule, onPaymentClick, onReviewClick, 
                 <TableCell className="text-muted-foreground">{formatCurrency(adminFees)}</TableCell>
                 <TableCell className="text-muted-foreground">{formatCurrency(saldoPorPagar)}</TableCell>
                 <TableCell>{getStatusBadge(item.status)}</TableCell>
-                {onPaymentClick && (
+                {(onPaymentClick || onReviewClick) && (
                   <TableCell className="space-x-2">
-                    {item.status === "pending" && (
+                    {onPaymentClick && item.status === "pending" && (
                       <>
                         {loan?.status === 'active' ? (
                           <Button
@@ -224,20 +224,19 @@ export function PaymentScheduleTable({ schedule, onPaymentClick, onReviewClick, 
                         )}
                       </>
                     )}
-                    {item.status === "pending_confirmation" && (role === 'admin' || role === 'asesor') && (
+                    {onReviewClick && item.status === "pending_confirmation" && (role === 'admin' || role === 'asesor') && (
                       latestPaymentForSchedule && latestPaymentForSchedule.confirmationStatus === 'pending_confirmation' ? (
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => onReviewClick ? onReviewClick(item.id) : onPaymentClick && onPaymentClick(item.id)}
+                          onClick={() => onReviewClick(item.id)}
                           className="bg-transparent"
                         >
                           Revisar Pago
                         </Button>
                       ) : null
                     )}
-                    {/* Clientes: permitir editar mientras esté pendiente de confirmación y no haya sido editado; y permitir reintentar si fue rechazado */}
-                    {role === 'cliente' && item.status === 'pending_confirmation' && (
+                    {onPaymentClick && role === 'cliente' && item.status === 'pending_confirmation' && (
                       latestPaymentForSchedule && latestPaymentForSchedule.confirmationStatus === 'pending_confirmation' && !latestPaymentForSchedule.hasBeenEdited ? (
                         <Button
                           variant="outline"
@@ -249,7 +248,7 @@ export function PaymentScheduleTable({ schedule, onPaymentClick, onReviewClick, 
                         </Button>
                       ) : null
                     )}
-                    {role === 'cliente' && item.status === 'rejected' && (
+                    {onPaymentClick && role === 'cliente' && item.status === 'rejected' && (
                       <Button
                         variant="outline"
                         size="sm"

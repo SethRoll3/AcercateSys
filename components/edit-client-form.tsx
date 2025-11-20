@@ -16,19 +16,9 @@ import { toast } from 'sonner'
 import { useRole, usePermission } from '@/contexts/role-context'
 import { createClient } from '@/lib/supabase/client'
 import { PhoneInput } from '@/components/phone-input'
+import type { Client } from '@/lib/types'
 
-interface Client {
-  id: string
-  first_name: string
-  last_name: string
-  email: string
-  address: string
-  phone: string
-  phone_country_code?: string
-  emergency_phone: string
-  advisor_id?: string
-  advisor_email?: string
-}
+
 
 interface Advisor {
   id: string
@@ -52,10 +42,10 @@ export function EditClientForm({ client, onClose, onClientUpdated, onSuccess }: 
     first_name: client.first_name,
     last_name: client.last_name,
     email: client.email || '',
-    address: client.address,
-    phone: client.phone,
+    address: client.address || '',
+    phone: client.phone || '',
     phone_country_code: client.phone_country_code || '+502',
-    emergency_phone: client.emergency_phone,
+    emergency_phone: client.emergency_phone || '',
     advisor_id: client.advisor_id || 'none',
   })
   

@@ -24,7 +24,7 @@ const menuItems: MenuItem[] = [
   { name: "Reportes", href: "/dashboard/reports", icon: FileText, permission: "canViewFinancialReports" },
   { name: "Usuarios", href: "/dashboard/users", icon: UserCheck, permission: "canManageUsers" },
   { name: "Grupos", href: "/dashboard/grupos", icon: Users, permission: "canManageUsers" },
-  { name: "Configuración", href: "/dashboard/settings", icon: Settings, permission: "canAccessSystemSettings" },
+  { name: "Configuración", href: "/dashboard/settings", icon: Settings, permission: null },
 ]
 
 export function AppSidebar({ variant = "desktop" }: { variant?: "desktop" | "mobile" }) {
@@ -37,13 +37,19 @@ export function AppSidebar({ variant = "desktop" }: { variant?: "desktop" | "mob
   // Filter menu items based on user permissions
   const hiddenForAdmin = new Set(["/dashboard/loans","/dashboard/payments","/dashboard/reports","/dashboard/grupos"])
   const visibleMenuItems = menuItems.filter(item => {
-    if (role === 'admin' && hiddenForAdmin.has(item.href)) return false
+    if (role === 'admin' && hiddenForAdmin.has(item.href)) {
+      return false;
+    }
     // Primero, validar que el rol actual puede acceder a la ruta definida
-    if (!canAccessRoute(item.href)) return false
+    const canAccess = canAccessRoute(item.href);
+    if (!canAccess) return false;
     // Elementos sin permisos específicos se muestran si la ruta es accesible
-    if (item.permission === null) return true
+    if (item.permission === null) {
+      return true;
+    }
     // Para el resto, se requiere permiso explícito
-    return hasPermission(item.permission)
+    const hasPerm = hasPermission(item.permission);
+    return hasPerm;
   })
 
   const handleLogout = async () => {
@@ -56,7 +62,7 @@ export function AppSidebar({ variant = "desktop" }: { variant?: "desktop" | "mob
   const containerClass = variant === "desktop" ? "flex h-screen w-64 flex-col overflow-y-auto border-r bg-card px-4 py-8" : "flex w-64 flex-col overflow-y-auto bg-card px-4 py-6"
 
   return (
-    <Container className={containerClass as any}>
+    <Container className={containerClass}>
       <Link href="/" className="flex items-center gap-3 px-4 mb-6">
         <img src="/logoCooperativaSinTextoSinFondo.png" alt="acercate" className="h-8 w-8" />
         <span className="text-2xl font-bold text-foreground">acercate</span>

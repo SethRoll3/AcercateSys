@@ -23,6 +23,8 @@ export default function PaymentPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const [loanStatus, setLoanStatus] = useState<string | null>(null)
+  const [loanNumber, setLoanNumber] = useState<string>("")
+  const [clientName, setClientName] = useState<string>("")
 
   const fetchWithTimeout = async (input: RequestInfo, init: RequestInit & { timeoutMs?: number } = {}) => {
     const { timeoutMs = 12000, ...rest } = init
@@ -83,6 +85,10 @@ export default function PaymentPage() {
           const item = data.schedule.find((s: PaymentSchedule) => s.id === scheduleId)
           setScheduleItem(item || null)
           setLoanStatus(data.loan?.status || null)
+          setLoanNumber(data.loan?.loanNumber || data.loan?.loan_number || "")
+          const c = data.loan?.client
+          const name = ((c?.first_name || c?.firstName || "") + " " + (c?.last_name || c?.lastName || "")).trim()
+          setClientName(name)
 
           const payments: Payment[] = (data.payments || [])
           const current = payments.find(
@@ -188,6 +194,12 @@ export default function PaymentPage() {
         </Button>
 
         <div className="max-w-2xl mx-auto">
+          <div className="rounded-md border bg-muted/30 p-4 mb-4">
+            <div className="text-sm text-muted-foreground">Registrando pago</div>
+            <div className="text-foreground font-semibold">
+              {clientName ? `${clientName} — ` : ""}Préstamo {loanNumber || String(params.id)} • Cuota #{scheduleItem?.payment_number}
+            </div>
+          </div>
           <PaymentForm
             loanId={params.id as string}
             scheduleItem={scheduleItem}

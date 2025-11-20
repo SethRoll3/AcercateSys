@@ -14,17 +14,7 @@ import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { UserPlus, Loader2 } from 'lucide-react'
 
-interface Client {
-  id: string
-  first_name: string
-  last_name: string
-  email: string
-  address: string
-  phone: string
-  emergency_phone: string
-  advisor_id?: string
-  advisor_email?: string
-}
+import type { Client } from '@/lib/types'
 
 interface CreateClientUserDialogProps {
   isOpen: boolean

@@ -2,40 +2,58 @@
 
 import { AppSidebar } from "@/components/app-sidebar";
 import { DashboardHeader } from "@/components/dashboard-header";
-import { createClient } from "@/lib/supabase/client";
+
 import { useRouter } from "next/navigation";
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useState, Suspense, useCallback } from "react";
 import { LoadingSpinner } from "@/components/loading-spinner";
-import { RoleProvider } from "@/contexts/role-context";
+import { RoleProvider, UserRole } from "@/contexts/role-context";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const [userRole, setUserRole] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const router = useRouter()
 
+  const fetchWithTimeout = useCallback(async (url: string, options: RequestInit = {}, timeoutMs: number = 8000) => {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, { ...options, signal: controller.signal });
+      clearTimeout(id);
+      return response;
+    } catch (error) {
+      clearTimeout(id);
+      throw error;
+    }
+  }, []);
+
   useEffect(() => {
-    const fetchUser = async () => {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
+    const fetchUserData = async () => {
+      try {
+        const userApiResponse = await fetchWithTimeout('/api/auth/user', { credentials: 'include' as any }, 8000);
 
-      if (!user) {
-        router.push("/auth/login")
-        return
+        if (!userApiResponse.ok) {
+          router.push("/auth/login");
+          return;
+        }
+
+        const apiUserData = await userApiResponse.json();
+
+        if (!apiUserData || !apiUserData.id) {
+          console.error('[DashboardLayout] fetchUserData: No hay datos de usuario o ID de usuario en la respuesta de la API.');
+          router.push("/auth/login");
+          return;
+        }
+
+        setUserRole(apiUserData.role);
+        setUserEmail(apiUserData.email);
+      } catch (error) {
+        console.error('[DashboardLayout] fetchUserData: Error al obtener datos del usuario:', error);
+        router.push("/auth/login");
       }
-
-      const { data: userData } = await supabase.from("users").select("*").eq("auth_id", user.id).single();
-
-      if (!userData) {
-        router.push("/auth/login")
-        return
-      }
-
-      setUserRole(userData.role);
-      setUserEmail(userData.email);
     };
 
-    fetchUser();
-  }, []);
+    fetchUserData();
+  }, [fetchWithTimeout, router]);
 
   return (
     <RoleProvider>
