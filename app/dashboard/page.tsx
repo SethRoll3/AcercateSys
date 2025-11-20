@@ -307,9 +307,9 @@ const formatCurrency = (amount: number) => {
       <div className="mb-6">
         {userData.role === 'cliente' ? (
           <Tabs value={selectedLoanId || ''} onValueChange={setSelectedLoanId} className="w-full">
-            <TabsList className="grid w-full max-w-full grid-cols-2 bg-muted/50">
+            <TabsList className="flex w-full max-w-full gap-2 overflow-x-auto bg-muted/50 whitespace-nowrap">
               {(loans || []).filter((l: any) => l.status === 'active').map((loan: any) => (
-                <TabsTrigger key={loan.id} value={loan.id}>
+                <TabsTrigger key={loan.id} value={loan.id} className="shrink-0 px-3 text-xs sm:text-sm truncate max-w-[70vw] sm:max-w-none">
                   Préstamo {loan.loanNumber || loan.loan_number}
                 </TabsTrigger>
               ))}

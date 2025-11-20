@@ -233,21 +233,23 @@ export default function ClientsPage() {
         </TabsList>
         <TabsContent value="clients" forceMount>
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
+            <CardHeader className="space-y-2">
               <CardTitle>Clientes</CardTitle>
-              <div className="flex items-center space-x-2">
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                 <Input
                   placeholder="Buscar cliente o grupo..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="max-w-sm"
+                  className="w-full md:max-w-sm"
                 />
-                {canCreateClients && (
-                  <Button onClick={() => setIsCreateClientModalOpen(true)}>+ Nuevo Cliente</Button>
-                )}
-                {canCreateGroups && (
-                  <Button onClick={() => setIsCreateGroupModalOpen(true)}>Crear Grupo</Button>
-                )}
+                <div className="flex flex-wrap gap-2">
+                  {canCreateClients && (
+                    <Button onClick={() => setIsCreateClientModalOpen(true)}>+ Nuevo Cliente</Button>
+                  )}
+                  {canCreateGroups && (
+                    <Button onClick={() => setIsCreateGroupModalOpen(true)}>Crear Grupo</Button>
+                  )}
+                </div>
               </div>
             </CardHeader>
             <CardContent>
@@ -270,18 +272,20 @@ export default function ClientsPage() {
         </TabsContent>
         <TabsContent value="groups" forceMount>
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
+            <CardHeader className="space-y-2">
               <CardTitle>Grupos</CardTitle>
-              <div className="flex items-center space-x-2">
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                 <Input
                   placeholder="Buscar grupo..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="max-w-sm"
+                  className="w-full md:max-w-sm"
                 />
-                {canCreateGroups && (
-                  <Button onClick={() => setIsCreateGroupModalOpen(true)}>Crear Grupo</Button>
-                )}
+                <div className="flex flex-wrap gap-2">
+                  {canCreateGroups && (
+                    <Button onClick={() => setIsCreateGroupModalOpen(true)}>Crear Grupo</Button>
+                  )}
+                </div>
               </div>
             </CardHeader>
             <CardContent>
