@@ -14,14 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { useRole, usePermission } from '@/contexts/role-context'
@@ -30,35 +23,33 @@ import { LoadingSpinner } from '@/components/loading-spinner';
 import { ManageGroupModal } from '@/components/manage-group-modal';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { GroupsTable } from '@/components/groups-table';
+import type { Client as DomainClient } from '@/lib/types'
+import { useSearchParams } from 'next/navigation'
 
-interface Client {
-  id: string
-  first_name: string
-  last_name: string
-  email: string
+type Client = DomainClient & {
   address: string
-  phone: string
   emergency_phone: string
-  advisor_id?: string
   advisor_email?: string
-  group_id?: string; // Add group_id to client interface
   group_name?: string
 }
 
-interface Group {
-  id: string;
-  name: string;
-  clients: Client[];
+type SelectedGroup = {
+  id: string
+  name: string
+  clients: DomainClient[]
 }
 
 export default function ClientsPage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const initialTab = (searchParams.get('tab') || 'clients') as 'clients' | 'groups'
   const [clients, setClients] = useState<Client[]>([])
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [isCreateUserModalOpen, setIsCreateUserModalOpen] = useState(false)
   const [isCreateGroupModalOpen, setIsCreateGroupModalOpen] = useState(false);
   const [isEditGroupModalOpen, setIsEditGroupModalOpen] = useState(false); // New state for edit group modal
-  const [selectedGroup, setSelectedGroup] = useState<Group | null>(null); // New state for selected group
+  const [selectedGroup, setSelectedGroup] = useState<SelectedGroup | null>(null); // Selected group mapped to expected shape
   const [selectedClientForUser, setSelectedClientForUser] = useState<Client | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string>('')
   const [isLoading, setIsLoading] = useState(true)
@@ -169,7 +160,7 @@ export default function ClientsPage() {
       const response = await fetch(`/api/grupos/${groupId}`);
       if (response.ok) {
         const groupData = await response.json();
-        setSelectedGroup(groupData);
+        setSelectedGroup({ id: groupData.id, name: groupData.nombre ?? groupData.name ?? '', clients: (groupData.clients || []) as DomainClient[] });
         setIsEditGroupModalOpen(true);
       } else {
         toast.error('Error al cargar los datos del grupo para edición.');
@@ -235,7 +226,7 @@ export default function ClientsPage() {
 
   return (
     <>
-      <Tabs defaultValue="clients" className="w-full">
+      <Tabs defaultValue={initialTab} className="w-full">
         <TabsList className="grid w-fit grid-cols-2">
           <TabsTrigger value="clients">Clientes</TabsTrigger>
           <TabsTrigger value="groups">Grupos</TabsTrigger>
@@ -260,88 +251,20 @@ export default function ClientsPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nombre</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Dirección</TableHead>
-                    <TableHead>Teléfono</TableHead>
-                    <TableHead>Teléfono de Emergencia</TableHead>
-                    <TableHead>Asesor</TableHead>
-                    <TableHead>Grupo</TableHead>
-                    <TableHead className="text-right">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredClients.map((client) => (
-                    <TableRow key={client.id}>
-                      <TableCell>{`${client.first_name} ${client.last_name}`}</TableCell>
-                      <TableCell>{client.email || 'Sin email'}</TableCell>
-                      <TableCell>{client.address}</TableCell>
-                      <TableCell>{client.phone}</TableCell>
-                      <TableCell>{client.emergency_phone}</TableCell>
-                      <TableCell>{client.advisor_email || 'Sin asesor'}</TableCell>
-                      <TableCell>
-                        {client.group_name ? (
-                          <div className="flex items-center space-x-2">
-                            <Badge>{client.group_name}</Badge>
-                            {canEditGroups && client.group_id && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleEditGroupClick(client.group_id as string)}
-                              >
-                                Editar Grupo
-                              </Button>
-                            )}
-                            {canDeleteGroups && client.group_id && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleDeleteGroupClick(client.group_id as string)}
-                              >
-                                Eliminar Grupo
-                              </Button>
-                            )}
-                          </div>
-                        ) : (
-                          'Sin grupo'
-                        )}
-                      </TableCell>
-                      <TableCell className="flex justify-end space-x-2">
-                        {(role === 'admin' || (role === 'asesor' && client.advisor_id === currentUserId)) && !clientHasUser(client) && (
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => handleCreateUserClick(client)}
-                          >
-                            Crear Usuario
-                          </Button>
-                        )}
-                        {canEditClients && (role === 'admin' || (role === 'asesor' && client.advisor_id === currentUserId)) && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleEditClick(client)}
-                          >
-                            Editar
-                          </Button>
-                        )}
-                        {canDeleteClients && (role === 'admin' || (role === 'asesor' && client.advisor_id === currentUserId)) && (
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => handleDeleteClick(client.id)}
-                          >
-                            Eliminar
-                          </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <div className="space-y-2">
+                {filteredClients.map((client) => (
+                  <div key={client.id} className="flex items-center justify-between rounded-md border bg-card/50 px-4 py-3 transition-all duration-200 hover:bg-muted/40">
+                    <div className="font-medium">{`${client.first_name} ${client.last_name}`}</div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => router.push(`/dashboard/clients/${client.id}`)}
+                    >
+                      Ver detalles
+                    </Button>
+                  </div>
+                ))}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

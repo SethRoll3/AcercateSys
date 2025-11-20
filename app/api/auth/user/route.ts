@@ -14,7 +14,19 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    return NextResponse.json({ id: user.id, email: user.email })
+    // Obtener el rol del usuario desde la tabla 'users'
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('role')
+      .eq('auth_id', user.id)
+      .single()
+
+    if (userError || !userData) {
+      console.error('Error fetching user role from DB:', userError)
+      return NextResponse.json({ error: 'User role not found' }, { status: 404 })
+    }
+
+    return NextResponse.json({ id: user.id, email: user.email, role: userData.role })
   } catch (err) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

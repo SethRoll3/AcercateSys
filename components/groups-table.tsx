@@ -1,20 +1,14 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { useRole, usePermission } from '@/contexts/role-context'
 import { LoadingSpinner } from '@/components/loading-spinner'
 import { Group } from '@/lib/types'
+import { useRouter } from 'next/navigation'
 
 interface GroupsTableProps {
   searchTerm: string
@@ -30,6 +24,7 @@ export function GroupsTable({ searchTerm, onEditGroup, onDeleteGroup }: GroupsTa
   const { role } = useRole()
   const canEditGroups = usePermission('canEditGroups')
   const canDeleteGroups = usePermission('canDeleteGroups')
+  const router = useRouter()
 
   const fetchGroups = async () => {
     setIsLoading(true)
@@ -89,42 +84,21 @@ export function GroupsTable({ searchTerm, onEditGroup, onDeleteGroup }: GroupsTa
   }
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Nombre del Grupo</TableHead>
-          <TableHead>Número de Clientes</TableHead>
-          <TableHead className="text-right">Acciones</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {filteredGroups.map((group) => (
-          <TableRow key={group.id}>
-            <TableCell>{group.nombre}</TableCell>
-            <TableCell>{group.clients.length}</TableCell>
-            <TableCell className="flex justify-end space-x-2">
-              {canEditGroups && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onEditGroup(group.id)}
-                >
-                  Editar
-                </Button>
-              )}
-              {canDeleteGroups && (
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => onDeleteGroup(group.id)}
-                >
-                  Eliminar
-                </Button>
-              )}
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+    <div className="space-y-2">
+      {filteredGroups.map((group) => (
+        <Card key={group.id} className="transition-all duration-200 hover:bg-muted/40">
+          <CardContent className="flex items-center justify-between py-3">
+            <div className="font-medium">{group.nombre}</div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.push(`/dashboard/groups/${group.id}`)}
+            >
+              Ver detalles
+            </Button>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
   )
 }

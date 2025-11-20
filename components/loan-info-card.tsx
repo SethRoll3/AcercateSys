@@ -3,7 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import type { Loan } from "@/lib/types"
+import type { Loan, PaymentSchedule } from "@/lib/types"
 import { Calendar, DollarSign, Percent, Clock, Download } from "lucide-react"
 import { useState } from "react"
 import { ExportPlanModal } from "@/components/export-plan-modal"
@@ -12,9 +12,10 @@ interface LoanInfoCardProps {
   loan: Loan
   totalPaid: number
   remainingBalance: number
+  schedule: PaymentSchedule[]
 }
 
-export function LoanInfoCard({ loan, totalPaid, remainingBalance }: LoanInfoCardProps) {
+export function LoanInfoCard({ loan, totalPaid, remainingBalance, schedule }: LoanInfoCardProps) {
   const [isExportOpen, setIsExportOpen] = useState(false)
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("es-GT", {
@@ -48,6 +49,29 @@ export function LoanInfoCard({ loan, totalPaid, remainingBalance }: LoanInfoCard
     }
 
     return <Badge variant={variants[status] || "default"}>{labels[status] || status}</Badge>
+  }
+
+  const totalQuotas = schedule.length
+  const paidQuotas = schedule.filter((s) => s.status === "paid").length
+  const remainingQuotas = totalQuotas - paidQuotas
+
+  const getPaymentStatusBadge = () => {
+    const progressRatio = paidQuotas / totalQuotas
+    let variant: "default" | "secondary" | "destructive" | "outline" = "outline"
+    let label = "Iniciando"
+    let className = "bg-red-100 text-red-800" // Soft red
+
+    if (progressRatio > 0.75) {
+      variant = "default"
+      label = "Casi Finalizado"
+      className = "bg-green-100 text-green-800" // Green
+    } else if (progressRatio > 0.25) {
+      variant = "secondary"
+      label = "A Medio Camino"
+      className = "bg-yellow-100 text-yellow-800" // Yellow
+    }
+
+    return <Badge variant={variant} className={className}>{label}</Badge>
   }
 
   const progressPercentage = (totalPaid / loan.amount) * 100
@@ -110,21 +134,26 @@ export function LoanInfoCard({ loan, totalPaid, remainingBalance }: LoanInfoCard
           </div>
         </div>
 
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">Progreso del Pago</span>
-            <span className="text-foreground font-medium">{progressPercentage.toFixed(1)}%</span>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-border/50">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground text-sm">Cuotas Pagadas</span>
+              <span className="text-foreground font-medium">{paidQuotas} de {totalQuotas}</span>
+            </div>
+            <p className="text-muted-foreground text-xs">Pagado:</p>
+            <p className="text-xl font-bold text-foreground">{formatCurrency(totalPaid)}</p>
           </div>
-          <div className="w-full bg-muted rounded-full h-2">
-            <div
-              className="bg-primary h-2 rounded-full transition-all"
-              style={{ width: `${Math.min(progressPercentage, 100)}%` }}
-            />
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground text-sm">Cuotas Restantes</span>
+              <span className="text-foreground font-medium">{remainingQuotas} de {totalQuotas}</span>
+            </div>
+            <p className="text-muted-foreground text-xs">Restante por pagar:</p>
+            <p className="text-xl font-bold text-foreground">{formatCurrency(remainingBalance)}</p>
           </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">Pagado: {formatCurrency(totalPaid)}</span>
-            <span className="text-muted-foreground">Restante: {formatCurrency(remainingBalance)}</span>
-          </div>
+        </div>
+        <div className="flex justify-center pt-4">
+          {getPaymentStatusBadge()}
         </div>
 
         <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border/50">

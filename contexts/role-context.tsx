@@ -149,7 +149,7 @@ const PROTECTED_ROUTES: Record<string, UserRole[]> = {
   '/dashboard/payments': ['admin', 'asesor'],
   '/dashboard/reports': ['admin', 'asesor'],
   '/dashboard/users': ['admin'],
-  '/dashboard/settings': ['admin'],
+  '/dashboard/settings': ['admin', 'cliente'],
   '/client-portal': ['cliente'],
 }
 
@@ -176,50 +176,36 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
   }
 
   // Función para obtener información del rol del usuario
-  const fetchUserRole = async (userId: string): Promise<UserWithRole | null> => {
+  const fetchUserRole = async (user: User): Promise<UserWithRole | null> => {
     try {
-      // Obtener información del usuario desde la tabla users
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select(`
-          *,
-          advisor_id,
-          role
-        `)
-        .eq('auth_id', userId)
-        .single()
+      const userRole = user.user_metadata?.role as UserRole;
 
-      if (userError) {
-        console.error('Error fetching user role:', userError)
-        return null
+      if (!userRole) {
+        console.error('[fetchUserRole] User role not found in user_metadata.');
+        return null;
       }
 
-      // Si es asesor, obtener sus clientes asignados
-      let clientIds: string[] = []
-      if (userData.role === 'asesor') {
+      let clientIds: string[] = [];
+      if (userRole === 'asesor') {
         const { data: clients, error: clientsError } = await supabase
           .from('clients')
           .select('id')
-          .eq('advisor_id', userData.id)
+          .eq('advisor_id', user.id); // Assuming advisor_id is the user's ID
 
         if (!clientsError && clients) {
-          clientIds = clients.map((client: { id: any }) => client.id)
+          clientIds = clients.map((client: { id: any }) => client.id);
         }
       }
 
-      // Obtener información básica del usuario autenticado
-      const { data: authUser } = await supabase.auth.getUser()
-      
-      if (!authUser.user) return null
-
-      return {
-        ...authUser.user,
-        role: userData.role as UserRole,
-        clientIds: userData.role === 'asesor' ? clientIds : undefined,
-      }
+      const userWithRoleResult = {
+        ...user,
+        role: userRole,
+        clientIds: userRole === 'asesor' ? clientIds : undefined,
+      };
+      return userWithRoleResult;
     } catch (error) {
-      console.error('Error in fetchUserRole:', error)
-      return null
+      console.error('[fetchUserRole] Error in fetchUserRole:', error);
+      return null;
     }
   }
 
@@ -232,28 +218,40 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
         const res = await fetch('/api/auth/user', { credentials: 'include' as any })
         if (res.ok) {
           const data = await res.json()
-          const userWithRole = await fetchUserRole(data.id)
+          // Construir un objeto User de Supabase a partir de los datos de la API
+          const apiUser: User = {
+            id: data.id,
+            email: data.email,
+            user_metadata: { role: data.role },
+            app_metadata: {}, // Agregado para satisfacer la interfaz User
+            aud: 'authenticated', // Valor por defecto, ajustar si es necesario
+            role: 'authenticated', // Valor por defecto, ajustar si es necesario
+            created_at: new Date().toISOString(), // Valor por defecto
+            updated_at: new Date().toISOString(), // Valor por defecto
+          };
+          const userWithRole = await fetchUserRole(apiUser)
           setUser(userWithRole)
         } else {
           const authUser = await getUserWithRetry()
           if (authUser) {
-            const userWithRole = await fetchUserRole(authUser.id)
+            const userWithRole = await fetchUserRole(authUser)
             setUser(userWithRole)
           } else {
             setUser(null)
           }
         }
-      } catch {
+      } catch (e) {
+        console.error('[refreshUserRole] Error in fetch or getUserWithRetry block:', e)
         const authUser = await getUserWithRetry()
         if (authUser) {
-          const userWithRole = await fetchUserRole(authUser.id)
+          const userWithRole = await fetchUserRole(authUser)
           setUser(userWithRole)
         } else {
           setUser(null)
         }
       }
     } catch (error) {
-      console.error('Error refreshing user role:', error)
+      console.error('[refreshUserRole] Outer error refreshing user role:', error)
       setUser(null)
     } finally {
       setIsLoading(false)
@@ -269,7 +267,7 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event: AuthChangeEvent, session: Session | null) => {
         if (event === 'SIGNED_IN' && session?.user) {
-          const userWithRole = await fetchUserRole(session.user.id)
+          const userWithRole = await fetchUserRole(session.user)
           setUser(userWithRole)
         } else if (event === 'SIGNED_OUT') {
           setUser(null)
@@ -280,6 +278,9 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
 
     return () => subscription.unsubscribe()
   }, [])
+
+  useEffect(() => {
+  }, [user, isLoading])
 
   // Funciones de utilidad
   const hasPermission = (permission: keyof RolePermissions): boolean => {

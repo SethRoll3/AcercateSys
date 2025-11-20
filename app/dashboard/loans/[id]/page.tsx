@@ -63,7 +63,7 @@ export default function LoanDetailPage() {
 
   useEffect(() => {
     const supabase = createClient()
-    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_OUT') {
         router.push('/auth/login')
       }
@@ -73,16 +73,13 @@ export default function LoanDetailPage() {
     setIsLoading(true)
     setErrorMsg(null)
     const hardTimeout = setTimeout(() => {
-      if (!abortRef.current?.signal?.aborted) {
-        setErrorMsg('No se pudieron cargar los detalles del préstamo. Intenta nuevamente.')
-        setIsLoading(false)
-        inFlightRef.current = false
-      }
+      setErrorMsg('No se pudieron cargar los detalles del préstamo. Intenta nuevamente.')
+      setIsLoading(false)
+      inFlightRef.current = false
     }, 15000)
     const run = async () => {
       try {
         const user = await getUserWithRetry()
-        if (abortRef.current?.signal?.aborted) return
 
         if (!user) {
           router.push('/auth/login')
@@ -91,7 +88,6 @@ export default function LoanDetailPage() {
         setUserEmail(user.email || "")
 
         const detailsRes = await fetchWithTimeout(`/api/loans/${params.id}/details`, { credentials: 'include' as any })
-        if (abortRef.current?.signal?.aborted) return
 
         if (detailsRes.status === 401) {
           router.push('/auth/login')
@@ -107,16 +103,11 @@ export default function LoanDetailPage() {
           setIsLoading(false)
           setErrorMsg(null)
         } else {
-          const reason: any = (detailsRes as any).reason
-          if (reason && (reason.name === 'AbortError' || reason.message === 'The operation was aborted.')) {
-            return
-          }
           console.error("[loan-detail] Error fetching loan details:", detailsRes.statusText)
           setErrorMsg('Ocurrió un error cargando el préstamo. Intenta nuevamente.')
           setIsLoading(false)
         }
       } catch (error) {
-        if (abortRef.current?.signal?.aborted) return
         console.error("[loan-detail] fetch error:", error)
         setErrorMsg('Ocurrió un error cargando el préstamo. Intenta nuevamente.')
         setIsLoading(false)
@@ -129,12 +120,20 @@ export default function LoanDetailPage() {
     return () => {
       abortRef.current?.abort()
       inFlightRef.current = false
-      //sub?.unsubscribe()
+      subscription?.unsubscribe()
     }
   }, [params.id])
 
   const handlePaymentClick = (scheduleId: string) => {
     router.push(`/dashboard/loans/${params.id}/payment?scheduleId=${scheduleId}`)
+  }
+
+  const handleRegisterNextPayment = () => {
+    const next = (schedule || []).find((s: any) => s.status !== 'paid')
+    if (loan?.status !== 'active') return
+    if (next?.id) {
+      router.push(`/dashboard/loans/${params.id}/payment?scheduleId=${next.id}`)
+    }
   }
 
   const handleReviewClick = (scheduleId: string) => {
@@ -203,7 +202,7 @@ export default function LoanDetailPage() {
       </div>
 
       <div className="space-y-6">
-        <LoanInfoCard loan={loan} totalPaid={totalPaid} remainingBalance={remainingBalance} />
+        <LoanInfoCard loan={loan} totalPaid={totalPaid} remainingBalance={remainingBalance} schedule={schedule} />
 
         <Tabs defaultValue="schedule" className="w-full">
           <TabsList className="grid w-full max-w-md grid-cols-2 bg-muted/50">
@@ -215,37 +214,50 @@ export default function LoanDetailPage() {
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <h3 className="text-xl font-semibold text-foreground">Plan de Pagos</h3>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={async () => {
-                    try {
-                      const response = await fetch(`/api/loans/${params.id}/regenerate-schedule`, {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json'
-                        },
-                        credentials: 'include'
-                      });
-                      if (response.ok) {
-                        // Recargar los datos
-                        window.location.reload();
-                      } else {
-                        console.error("Error regenerando plan de pagos");
-                      }
-                    } catch (error) {
-                      console.error("Error:", error);
-                    }
-                  }}
-                >
-                  Regenerar Plan de Pagos
-                </Button>
+                <div className="flex items-center gap-2">
+                  {role === 'cliente' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRegisterNextPayment}
+                      disabled={loan?.status !== 'active' || !(schedule || []).some((s) => s.status !== 'paid')}
+                      className="bg-transparent"
+                    >
+                      Registrar Pago
+                    </Button>
+                  )}
+                  {role === 'admin' && (
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={async () => {
+                        try {
+                          const response = await fetch(`/api/loans/${params.id}/regenerate-schedule`, {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json'
+                            },
+                            credentials: 'include'
+                          });
+                          if (response.ok) {
+                            window.location.reload();
+                          } else {
+                            console.error("Error regenerando plan de pagos");
+                          }
+                        } catch (error) {
+                          console.error("Error:", error);
+                        }
+                      }}
+                    >
+                      Regenerar Plan de Pagos
+                    </Button>
+                  )}
+                </div>
               </div>
               <PaymentScheduleTable 
                 schedule={schedule} 
                 loan={loan}
                 payments={payments}
-                onPaymentClick={handlePaymentClick}
                 onReviewClick={handleReviewClick}
                 onScheduleUpdate={handleScheduleUpdate}
               />
