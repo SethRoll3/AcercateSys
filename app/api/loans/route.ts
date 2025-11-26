@@ -1,15 +1,13 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { stableJsonStringify, buildCacheHeaders, latestUpdatedAt, isNotModified, computeETag, formatHttpDate } from '@/lib/http-cache'
 
 // Function to generate a unique loan number
-function generateLoanNumber() {
-  const date = new Date()
-  const year = date.getFullYear().toString().slice(-2)
-  const month = (date.getMonth() + 1).toString().padStart(2, '0')
-  const day = date.getDate().toString().padStart(2, '0')
-  const random = Math.random().toString().slice(2, 8)
-  return `LP-${year}${month}${day}-${random}`
+async function generateSequentialLoanNumber() {
+  const admin = await createAdminClient()
+  const { count } = await admin.from('loans').select('id', { count: 'exact', head: true })
+  const next = (count ?? 0) + 1
+  return String(next)
 }
 
 export async function POST(request: Request) {
@@ -35,24 +33,30 @@ export async function POST(request: Request) {
     }
   }
 
-  const loanNumber = generateLoanNumber()
+  const loanNumber = await generateSequentialLoanNumber()
 
   const totalAmountNum = parseFloat(loanData.amount)
   const termNum = parseInt(loanData.termMonths, 10)
   const rateMonthly = loanData.interestRate ? parseFloat(loanData.interestRate) : 0
   const aporteAdmin = 20
-  const monthlyTotal = (termNum > 0 ? (totalAmountNum / termNum) : 0) + (totalAmountNum * (rateMonthly / 100)) + aporteAdmin
+  const frequency: 'mensual' | 'quincenal' = (loanData.frequency === 'quincenal') ? 'quincenal' : 'mensual'
+  const capitalMes = termNum > 0 ? (totalAmountNum / termNum) : 0
+  const interesMes = totalAmountNum * (rateMonthly / 100)
+  const installmentTotal = frequency === 'quincenal'
+    ? capitalMes + (interesMes / 2) + aporteAdmin
+    : capitalMes + interesMes + aporteAdmin
 
   const { data: newLoan, error } = await supabase.from('loans').insert([
     {
       client_id: loanData.clientId,
       loan_number: loanNumber,
+      payment_frequency: frequency,
       amount: totalAmountNum,
       interest_rate: rateMonthly,
       term_months: termNum,
       start_date: loanData.startDate,
       end_date: loanData.endDate,
-      monthly_payment: Math.round(monthlyTotal * 100) / 100,
+      monthly_payment: Math.round(installmentTotal * 100) / 100,
       status: loanData.status,
     },
   ]).select().single()
@@ -70,28 +74,62 @@ export async function POST(request: Request) {
   const n = parseInt(loanData.termMonths, 10)
   const totalAmount = parseFloat(loanData.amount)
   const monthlyRate = (parseFloat(loanData.interestRate) || 0) / 100 // interés mensual
-  const adminFeesPerInstallment = 20 // Q 20 por defecto
+  const adminFeesPerInstallment = 20 // Q 20 por cuota
 
   const round2 = (num: number) => Math.round(num * 100) / 100
   const capitalPerMonth = round2(totalAmount / n)
   const interestPerMonth = round2(totalAmount * monthlyRate)
 
-  for (let i = 0; i < n; i++) {
-    const dueDate = new Date(loanData.startDate)
-    dueDate.setMonth(dueDate.getMonth() + i + 1)
+  const parseYMD = (ymd: string) => {
+    const m = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/.exec(String(ymd))
+    if (!m) return new Date(ymd)
+    const y = Number(m[1]); const mo = Number(m[2]) - 1; const d = Number(m[3])
+    return new Date(Date.UTC(y, mo, d, 12, 0, 0))
+  }
+  const formatGTYMD = (date: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guatemala' }).format(date)
+  const addMonths = (ymd: string, months: number) => {
+    const dt = parseYMD(ymd)
+    const copy = new Date(dt.getTime())
+    copy.setUTCMonth(copy.getUTCMonth() + months)
+    return formatGTYMD(copy)
+  }
+  const addDays = (ymd: string, days: number) => {
+    const dt = parseYMD(ymd)
+    const copy = new Date(dt.getTime())
+    copy.setUTCDate(copy.getUTCDate() + days)
+    return formatGTYMD(copy)
+  }
 
-    const monthlyTotal = round2(capitalPerMonth + interestPerMonth + adminFeesPerInstallment)
-
-    scheduleEntries.push({
-      loan_id: newLoan.id,
-      payment_number: i + 1,
-      due_date: dueDate.toISOString().split("T")[0],
-      amount: monthlyTotal,
-      principal: capitalPerMonth,
-      interest: interestPerMonth,
-      admin_fees: adminFeesPerInstallment,
-      status: "pending",
-    })
+  if (frequency === 'mensual') {
+    for (let i = 0; i < n; i++) {
+      const dueYmd = addMonths(loanData.startDate, i + 1)
+      const monthlyTotal = round2(capitalPerMonth + interestPerMonth + adminFeesPerInstallment)
+      scheduleEntries.push({
+        loan_id: newLoan.id,
+        payment_number: i + 1,
+        due_date: dueYmd,
+        amount: monthlyTotal,
+        principal: capitalPerMonth,
+        interest: interestPerMonth,
+        admin_fees: adminFeesPerInstallment,
+        status: "pending",
+      })
+    }
+  } else {
+    for (let i = 0; i < n; i++) {
+      const dueYmd = addDays(loanData.startDate, (i + 1) * 15)
+      const total = round2(capitalPerMonth + (interestPerMonth / 2) + adminFeesPerInstallment)
+      scheduleEntries.push({
+        loan_id: newLoan.id,
+        payment_number: i + 1,
+        due_date: dueYmd,
+        amount: total,
+        principal: capitalPerMonth,
+        interest: round2(interestPerMonth / 2),
+        admin_fees: adminFeesPerInstallment,
+        status: "pending",
+      })
+    }
   }
 
   const { error: scheduleError } = await supabase.from("payment_schedule").insert(scheduleEntries)
@@ -214,14 +252,18 @@ export async function GET(request: NextRequest) {
         const interesMes = amt * rate
         return Math.round((capitalMes + interesMes + aporte) * 100) / 100
       })()
+      const displayInstallment = (loan.monthly_payment != null)
+        ? Number(loan.monthly_payment)
+        : (fallbackMonthly !== undefined ? Number(fallbackMonthly) : calcMonthly)
       const transformed = {
         id: loan.id,
         clientId: loan.client_id,
         loanNumber: loan.loan_number,
+        paymentFrequency: (loan as any).payment_frequency,
         amount: Number(loan.amount),
         interestRate: Number(loan.interest_rate),
         termMonths: loan.term_months,
-        monthlyPayment: fallbackMonthly !== undefined ? Number(fallbackMonthly) : calcMonthly,
+        monthlyPayment: displayInstallment,
         status: loan.status,
         startDate: loan.start_date,
         endDate: loan.end_date,
@@ -236,6 +278,11 @@ export async function GET(request: NextRequest) {
             }
           : null,
         schedule: (loan as any).schedule,
+      }
+      const progressPaid = Array.isArray((loan as any).schedule) ? (loan as any).schedule.filter((s: any) => s.status === 'paid').length : undefined
+      const progressTotal = Array.isArray((loan as any).schedule) ? (loan as any).schedule.length : undefined
+      if (progressPaid != null && progressTotal != null) {
+        return { ...transformed, progressPaid, progressTotal, hasOverdue: (loan as any).schedule.some((s: any) => s.status !== 'paid' && new Date(s.due_date) < new Date()) }
       }
       return transformed
     }
@@ -258,9 +305,42 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(responseData, { headers: { 'Cache-Control': 'no-store' } })
     }
 
-    // For multiple loans, transform each
+    // For multiple loans, enrich with schedule aggregates
     if (Array.isArray(data)) {
-      const responseData = data.map(transformLoan)
+      const loanIds = (data || []).map((l: any) => l.id).filter(Boolean)
+      let aggregates: Record<string, { total: number; paid: number; hasOverdue: boolean }> = {}
+      if (loanIds.length) {
+        const { data: scheduleRows } = await supabase
+          .from('payment_schedule')
+          .select('loan_id, status, due_date')
+          .in('loan_id', loanIds)
+        const byLoan: Record<string, any[]> = {}
+        for (const s of (scheduleRows || [])) {
+          const k = String((s as any).loan_id)
+          ;(byLoan[k] ||= []).push(s)
+        }
+        const today = new Date()
+        const gtTodayYMD = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guatemala' }).format(today)
+        const parseYMD = (ymd: string) => {
+          const m = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/.exec(String(ymd))
+          if (!m) return new Date(ymd)
+          const y = Number(m[1]); const mo = Number(m[2]) - 1; const d = Number(m[3])
+          return new Date(Date.UTC(y, mo, d, 12, 0, 0))
+        }
+        const todayDate = parseYMD(gtTodayYMD)
+        for (const id of loanIds) {
+          const rows = byLoan[String(id)] || []
+          const total = rows.length
+          const paid = rows.filter(r => r.status === 'paid').length
+          const hasOverdue = rows.some(r => r.status !== 'paid' && parseYMD(String(r.due_date)) < todayDate)
+          aggregates[String(id)] = { total, paid, hasOverdue }
+        }
+      }
+      const responseData = (data || []).map((loan: any) => {
+        const t = transformLoan(loan)
+        const agg = aggregates[String(loan.id)] || { total: 0, paid: 0, hasOverdue: false }
+        return { ...t, progressPaid: agg.paid, progressTotal: agg.total, hasOverdue: agg.hasOverdue }
+      })
       return NextResponse.json(responseData, { headers: { 'Cache-Control': 'no-store' } })
     }
 
@@ -292,16 +372,38 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { interestRate, status, ...rest } = await request.json()
+    const body = await request.json()
+    const { interestRate, status, frequency } = body
+    const updates: any = { ...body }
+    delete updates.frequency
 
+    // Recalcular monto por cuota
+    const totalAmountNum = updates.amount != null ? parseFloat(updates.amount) : undefined
+    const termNum = updates.term_months != null ? parseInt(updates.term_months, 10) : undefined
+    const rateMonthly = (interestRate != null ? parseFloat(interestRate) : undefined)
+    const aporteAdmin = 20
 
+    // Obtener valores actuales si faltan
+    const { data: currentLoan } = await supabase
+      .from('loans')
+      .select('amount, term_months, interest_rate, start_date')
+      .eq('id', id)
+      .single()
 
-    // Update loan
+    const amt = totalAmountNum ?? Number(currentLoan?.amount || 0)
+    const months = termNum ?? Number(currentLoan?.term_months || 0)
+    const rate = rateMonthly != null ? rateMonthly : Number(currentLoan?.interest_rate || 0)
+    const capitalMes = months > 0 ? (amt / months) : 0
+    const interesMes = amt * (rate / 100)
+    const freq: 'mensual' | 'quincenal' = (frequency === 'quincenal') ? 'quincenal' : 'mensual'
+    const installmentTotal = freq === 'quincenal' ? (capitalMes + (interesMes / 2) + aporteAdmin) : (capitalMes + interesMes + aporteAdmin)
+
     const { data: updatedLoan, error: updateError } = await supabase
       .from("loans")
       .update({
-        ...rest,
-        interest_rate: interestRate ? Number.parseFloat(interestRate) : undefined,
+        ...updates,
+        interest_rate: interestRate != null ? Number.parseFloat(interestRate) : undefined,
+        monthly_payment: Math.round(installmentTotal * 100) / 100,
         updated_at: new Date().toISOString(),
       })
       .eq("id", id)
@@ -326,6 +428,79 @@ export async function PATCH(request: NextRequest) {
       endDate: updatedLoan.end_date,
       createdAt: updatedLoan.created_at,
       updatedAt: updatedLoan.updated_at,
+    }
+
+    // Regenerar cronograma si se proporcionó frecuencia o cambiaron monto/tasa/plazo
+    if (frequency || updates.amount != null || updates.term_months != null || interestRate != null) {
+      try {
+        const supabaseAdmin = await createAdminClient()
+        // Eliminar cronograma anterior
+        await supabaseAdmin.from('payment_schedule').delete().eq('loan_id', id)
+
+        const n = Number(transformedLoan.termMonths)
+        const totalAmount = Number(transformedLoan.amount)
+        const monthlyRate = Number(transformedLoan.interestRate) / 100
+        const adminFeesPerInstallment = 20
+        const round2 = (num: number) => Math.round(num * 100) / 100
+        const capitalPerMonth = round2(totalAmount / n)
+        const interestPerMonth = round2(totalAmount * monthlyRate)
+
+        const parseYMD = (ymd: string) => {
+          const m = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/.exec(String(ymd))
+          if (!m) return new Date(ymd)
+          const y = Number(m[1]); const mo = Number(m[2]) - 1; const d = Number(m[3])
+          return new Date(Date.UTC(y, mo, d, 12, 0, 0))
+        }
+        const formatGTYMD = (date: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guatemala' }).format(date)
+        const addMonths = (ymd: string, months: number) => {
+          const dt = parseYMD(ymd)
+          const copy = new Date(dt.getTime())
+          copy.setUTCMonth(copy.getUTCMonth() + months)
+          return formatGTYMD(copy)
+        }
+        const addDays = (ymd: string, days: number) => {
+          const dt = parseYMD(ymd)
+          const copy = new Date(dt.getTime())
+          copy.setUTCDate(copy.getUTCDate() + days)
+          return formatGTYMD(copy)
+        }
+
+        const startYmd = transformedLoan.startDate
+        const entries: any[] = []
+        if (freq === 'mensual') {
+          for (let i = 0; i < n; i++) {
+            const dueYmd = addMonths(startYmd, i + 1)
+            entries.push({
+              loan_id: id,
+              payment_number: i + 1,
+              due_date: dueYmd,
+              amount: round2(capitalPerMonth + interestPerMonth),
+              principal: capitalPerMonth,
+              interest: interestPerMonth,
+              admin_fees: adminFeesPerInstallment,
+              status: 'pending',
+            })
+          }
+        } else {
+          for (let i = 0; i < n; i++) {
+            const dueYmd = addDays(startYmd, (i + 1) * 15)
+            entries.push({
+              loan_id: id,
+              payment_number: i + 1,
+              due_date: dueYmd,
+              amount: round2(capitalPerMonth + (interestPerMonth / 2)),
+              principal: capitalPerMonth,
+              interest: round2(interestPerMonth / 2),
+              admin_fees: adminFeesPerInstallment,
+              status: 'pending',
+            })
+          }
+        }
+        const { error: insErr } = await supabaseAdmin.from('payment_schedule').insert(entries)
+        if (insErr) console.error('Error recreando cronograma en PATCH:', insErr)
+      } catch (e) {
+        console.error('Fallo al regenerar cronograma en PATCH:', e)
+      }
     }
 
     return NextResponse.json(transformedLoan)

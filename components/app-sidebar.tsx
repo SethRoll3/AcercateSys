@@ -21,7 +21,7 @@ const menuItems: MenuItem[] = [
   { name: "Clientes", href: "/dashboard/clients", icon: Users, permission: null }, // Visible para roles con acceso a la ruta (admin/asesor)
   { name: "Préstamos", href: "/dashboard/loans", icon: CreditCard, permission: "canViewAllLoans" },
   { name: "Pagos", href: "/dashboard/payments", icon: FileText, permission: "canViewAllPayments" },
-  { name: "Reportes", href: "/dashboard/reports", icon: FileText, permission: "canViewFinancialReports" },
+  { name: "Reportería", href: "/dashboard/reporteria", icon: FileText, permission: "canViewFinancialReports" },
   { name: "Usuarios", href: "/dashboard/users", icon: UserCheck, permission: "canManageUsers" },
   { name: "Grupos", href: "/dashboard/grupos", icon: Users, permission: "canManageUsers" },
   { name: "Configuración", href: "/dashboard/settings", icon: Settings, permission: null },
@@ -35,7 +35,7 @@ export function AppSidebar({ variant = "desktop" }: { variant?: "desktop" | "mob
   const [isLoggingOut, setIsLoggingOut] = useState(false)
 
   // Filter menu items based on user permissions
-  const hiddenForAdmin = new Set(["/dashboard/loans","/dashboard/payments","/dashboard/reports","/dashboard/grupos"])
+  const hiddenForAdmin = new Set(["/dashboard/loans","/dashboard/payments","/dashboard/reports","/dashboard/grupos"]) 
   const visibleMenuItems = menuItems.filter(item => {
     if (role === 'admin' && hiddenForAdmin.has(item.href)) {
       return false;

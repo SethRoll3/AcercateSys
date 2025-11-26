@@ -57,18 +57,24 @@ export default function GroupLoanDetailPage() {
         const loansList: { loan_id: string }[] = groupRow.loans || []
         const details = await Promise.all(
           loansList.map(async (l) => {
-            const res = await fetch(`/api/loans/${l.loan_id}/details`, { credentials: 'include' })
-            const data = await res.json()
-            return {
-              loan: data.loan,
-              schedule: data.schedule,
-              payments: data.payments,
-              totalPaid: data.totalPaid,
-              remainingBalance: data.remainingBalance,
-            } as LoanDetailItem
+            try {
+              const res = await fetch(`/api/loans/${l.loan_id}/details`, { credentials: 'include' })
+              if (!res.ok) return null
+              const data = await res.json()
+              if (!data?.loan?.id) return null
+              return {
+                loan: data.loan,
+                schedule: data.schedule || [],
+                payments: data.payments || [],
+                totalPaid: Number(data.totalPaid || 0),
+                remainingBalance: Number(data.remainingBalance || 0),
+              } as LoanDetailItem
+            } catch {
+              return null
+            }
           })
         )
-        setItems(details)
+        setItems((details || []).filter(Boolean) as LoanDetailItem[])
       } catch {
       } finally {
         setIsLoading(false)
@@ -128,14 +134,14 @@ export default function GroupLoanDetailPage() {
 
       <Tabs defaultValue={items[0]?.loan?.id} className="w-full">
         <TabsList className="flex flex-wrap gap-2 bg-muted/50 max-w-full">
-          {items.map((it) => (
+          {items.filter(it => it?.loan?.id).map((it) => (
             <TabsTrigger key={it.loan.id} value={it.loan.id} className="whitespace-nowrap">
               {(it.loan.client?.first_name || it.loan.client?.firstName || '') + ' ' + (it.loan.client?.last_name || it.loan.client?.lastName || '')}
             </TabsTrigger>
           ))}
         </TabsList>
 
-        {items.map((it) => (
+        {items.filter(it => it?.loan?.id).map((it) => (
           <TabsContent key={it.loan.id} value={it.loan.id} className="mt-6">
             <div className="space-y-6">
               <LoanInfoCard loan={it.loan} totalPaid={it.totalPaid} remainingBalance={it.remainingBalance} schedule={it.schedule} />
@@ -186,4 +192,3 @@ export default function GroupLoanDetailPage() {
     </div>
   )
 }
-

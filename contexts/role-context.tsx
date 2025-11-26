@@ -86,7 +86,7 @@ const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canViewPaymentReports: true, // Solo de sus clientes
     canManageUsers: false,
     canAssignAdvisors: false,
-    canViewFinancialReports: false, // Solo de sus clientes
+    canViewFinancialReports: true, // Solo de sus clientes
     canExportData: true, // Solo de sus clientes
     canAccessSystemSettings: false,
   },
@@ -148,8 +148,9 @@ const PROTECTED_ROUTES: Record<string, UserRole[]> = {
   '/dashboard/loans': ['admin', 'asesor'],
   '/dashboard/payments': ['admin', 'asesor'],
   '/dashboard/reports': ['admin', 'asesor'],
+  '/dashboard/reporteria': ['admin', 'asesor'],
   '/dashboard/users': ['admin'],
-  '/dashboard/settings': ['admin', 'cliente'],
+  '/dashboard/settings': ['admin', 'asesor', 'cliente'],
   '/client-portal': ['cliente'],
 }
 
@@ -165,13 +166,6 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
       if (data?.user) return data.user
       await delay(ms)
     }
-    try {
-      const res = await fetch('/api/auth/user', { credentials: 'include' as any })
-      if (res.ok) {
-        const data = await res.json()
-        return { id: data.id, email: data.email } as any
-      }
-    } catch {}
     return null
   }
 
@@ -213,35 +207,46 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
   const refreshUserRole = async () => {
     setIsLoading(true)
     try {
-      // Preferir servidor para evitar estados intermedios de hidratación
-      try {
-        const res = await fetch('/api/auth/user', { credentials: 'include' as any })
-        if (res.ok) {
-          const data = await res.json()
-          // Construir un objeto User de Supabase a partir de los datos de la API
-          const apiUser: User = {
-            id: data.id,
-            email: data.email,
-            user_metadata: { role: data.role },
-            app_metadata: {}, // Agregado para satisfacer la interfaz User
-            aud: 'authenticated', // Valor por defecto, ajustar si es necesario
-            role: 'authenticated', // Valor por defecto, ajustar si es necesario
-            created_at: new Date().toISOString(), // Valor por defecto
-            updated_at: new Date().toISOString(), // Valor por defecto
-          };
-          const userWithRole = await fetchUserRole(apiUser)
-          setUser(userWithRole)
-        } else {
-          const authUser = await getUserWithRetry()
-          if (authUser) {
-            const userWithRole = await fetchUserRole(authUser)
+      const cachedRaw = (() => {
+        try { return localStorage.getItem('dashboard:userData') } catch { return null }
+      })()
+      if (cachedRaw) {
+        try {
+          const obj = JSON.parse(cachedRaw)
+          if (obj && typeof obj.ts === 'number' && Date.now() - obj.ts <= 300000) {
+            const data = obj.data
+            const apiUser: User = {
+              id: data.id,
+              email: data.email,
+              user_metadata: { role: data.role },
+              app_metadata: {},
+              aud: 'authenticated',
+              role: 'authenticated',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }
+            const userWithRole = await fetchUserRole(apiUser)
             setUser(userWithRole)
-          } else {
-            setUser(null)
+            return
           }
+        } catch {}
+      }
+      const res = await fetch('/api/auth/user', { credentials: 'include' as any })
+      if (res.ok) {
+        const data = await res.json()
+        const apiUser: User = {
+          id: data.id,
+          email: data.email,
+          user_metadata: { role: data.role },
+          app_metadata: {},
+          aud: 'authenticated',
+          role: 'authenticated',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         }
-      } catch (e) {
-        console.error('[refreshUserRole] Error in fetch or getUserWithRetry block:', e)
+        const userWithRole = await fetchUserRole(apiUser)
+        setUser(userWithRole)
+      } else {
         const authUser = await getUserWithRetry()
         if (authUser) {
           const userWithRole = await fetchUserRole(authUser)

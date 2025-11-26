@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 interface LoanCalculatorModalProps {
   open: boolean
@@ -15,6 +16,7 @@ export function LoanCalculatorModal({ open, onOpenChange }: LoanCalculatorModalP
   const [amount, setAmount] = useState<string>("")
   const [rate, setRate] = useState<string>("")
   const [months, setMonths] = useState<string>("")
+  const [frequency, setFrequency] = useState<"mensual" | "quincenal">("mensual")
 
   const amountNum = useMemo(() => Math.max(0, parseFloat(amount) || 0), [amount])
   const rateNum = useMemo(() => Math.max(0, parseFloat(rate) || 0), [rate])
@@ -23,14 +25,19 @@ export function LoanCalculatorModal({ open, onOpenChange }: LoanCalculatorModalP
   const aporte = 20
   const capital = useMemo(() => (monthsNum > 0 ? amountNum / monthsNum : 0), [amountNum, monthsNum])
   const interes = useMemo(() => (amountNum * (rateNum / 100)), [amountNum, rateNum])
-  const totalCuota = useMemo(() => capital + interes + (amountNum > 0 && monthsNum > 0 ? aporte : 0), [capital, interes, amountNum, monthsNum])
+  const totalCuota = useMemo(() => {
+    const base = (amountNum > 0 && monthsNum > 0) ? aporte : 0
+    if (frequency === "quincenal") return capital + (interes / 2) + base
+    return capital + interes + base
+  }, [capital, interes, amountNum, monthsNum, frequency])
 
   const formatQ = (n: number) => new Intl.NumberFormat("es-GT", { style: "currency", currency: "GTQ" }).format(n)
 
   const canCalculate = amountNum > 0 && rateNum >= 0 && monthsNum > 0
 
   const copyResults = async () => {
-    const text = `Monto: ${formatQ(amountNum)}\nTasa mensual: ${rateNum}%\nPlazo: ${monthsNum} meses\n\nCapital: ${formatQ(capital)}\nInterés: ${formatQ(interes)}\nAporte: ${formatQ(aporte)}\n\nTotal cuota: ${formatQ(totalCuota)}`
+    const interesDisplay = frequency === 'quincenal' ? (interes / 2) : interes
+    const text = `Monto: ${formatQ(amountNum)}\nTasa mensual: ${rateNum}%\nPlazo: ${monthsNum}\nFrecuencia: ${frequency}\n\nCapital mensual: ${formatQ(capital)}\nInterés ${frequency}: ${formatQ(interesDisplay)}\nAporte por cuota: ${formatQ(aporte)}\n\nTotal cuota ${frequency}: ${formatQ(totalCuota)}`
     try {
       await navigator.clipboard.writeText(text)
     } catch {}
@@ -54,8 +61,17 @@ export function LoanCalculatorModal({ open, onOpenChange }: LoanCalculatorModalP
               <Input id="calc-rate" type="number" inputMode="decimal" step="0.1" placeholder="3.5" value={rate} onChange={(e) => setRate(e.target.value)} className="bg-background/50" />
             </div>
             <div className="space-y-2">
-              <Label className="text-foreground" htmlFor="calc-months">Plazo (meses)</Label>
+              <Label className="text-foreground" htmlFor="calc-months">Plazo</Label>
               <Input id="calc-months" type="number" inputMode="numeric" placeholder="8" value={months} onChange={(e) => setMonths(e.target.value)} className="bg-background/50" />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-foreground">Frecuencia de pago</Label>
+              <Tabs value={frequency} onValueChange={(v) => setFrequency(v as any)}>
+                <TabsList className="grid grid-cols-2 w-full">
+                  <TabsTrigger value="mensual">Mensual</TabsTrigger>
+                  <TabsTrigger value="quincenal">Quincenal</TabsTrigger>
+                </TabsList>
+              </Tabs>
             </div>
           </div>
 
@@ -65,9 +81,9 @@ export function LoanCalculatorModal({ open, onOpenChange }: LoanCalculatorModalP
             ) : (
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between"><span className="text-muted-foreground">Capital</span><span className="font-medium text-foreground">{formatQ(capital)}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Interés</span><span className="font-medium text-foreground">{formatQ(interes)}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Interés</span><span className="font-medium text-foreground">{formatQ(frequency === 'quincenal' ? (interes / 2) : interes)}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Aporte</span><span className="font-medium text-foreground">{formatQ(aporte)}</span></div>
-                <div className="pt-2 border-t border-border/50 flex justify-between text-base font-semibold text-primary"><span>Total cuota mensual</span><span>{formatQ(totalCuota)}</span></div>
+                <div className="pt-2 border-t border-border/50 flex justify-between text-base font-semibold text-primary"><span>Total cuota {frequency}</span><span>{formatQ(totalCuota)}</span></div>
               </div>
             )}
           </div>

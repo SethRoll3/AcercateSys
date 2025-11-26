@@ -21,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Edit } from "lucide-react"
 import type { Loan } from "@/lib/types"
 import { toast } from "sonner"
@@ -37,6 +38,7 @@ export function EditLoanDialog({ loan, onLoanUpdated }: EditLoanDialogProps) {
     interestRate: loan.interestRate.toString(),
     amount: loan.amount.toString(),
     term_months: loan.termMonths.toString(),
+    frequency: 'mensual' as 'mensual' | 'quincenal',
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -47,6 +49,7 @@ export function EditLoanDialog({ loan, onLoanUpdated }: EditLoanDialogProps) {
       interestRate: parseFloat(formData.interestRate),
       amount: parseFloat(formData.amount),
       term_months: parseInt(formData.term_months, 10),
+      frequency: formData.frequency,
     }
 
     try {
@@ -95,7 +98,7 @@ export function EditLoanDialog({ loan, onLoanUpdated }: EditLoanDialogProps) {
               <Input id="amount" type="number" step="0.01" value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: e.target.value })} required className="bg-background/50" />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="term_months" className="text-foreground">Plazo (meses)</Label>
+              <Label htmlFor="term_months" className="text-foreground">Plazo</Label>
               <Input id="term_months" type="number" step="1" value={formData.term_months} onChange={(e) => setFormData({ ...formData, term_months: e.target.value })} required className="bg-background/50" />
             </div>
           </div>
@@ -103,6 +106,16 @@ export function EditLoanDialog({ loan, onLoanUpdated }: EditLoanDialogProps) {
           <div className="space-y-2">
             <Label htmlFor="interestRate" className="text-foreground">Tasa de Interés (%)</Label>
             <Input id="interestRate" type="number" step="0.1" value={formData.interestRate} onChange={(e) => setFormData({ ...formData, interestRate: e.target.value })} required className="bg-background/50" />
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-foreground">Frecuencia de pago</Label>
+            <Tabs value={formData.frequency} onValueChange={(v) => setFormData({ ...formData, frequency: v as 'mensual' | 'quincenal' })}>
+              <TabsList className="grid grid-cols-2 w-full">
+                <TabsTrigger value="mensual">Mensual</TabsTrigger>
+                <TabsTrigger value="quincenal">Quincenal</TabsTrigger>
+              </TabsList>
+            </Tabs>
           </div>
 
           <div className="flex justify-end gap-2 pt-6">

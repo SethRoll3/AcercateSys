@@ -21,9 +21,10 @@ export function calculateMonthlyPayment(
 }
 
 export function calculateEndDate(startDate: string, termMonths: number): string {
-  const date = new Date(startDate)
-  date.setMonth(date.getMonth() + termMonths)
-  return date.toISOString().split('T')[0]
+  const base = parseYMDToUTC(startDate)
+  const d = new Date(base.getTime())
+  d.setUTCMonth(d.getUTCMonth() + termMonths)
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guatemala' }).format(d)
 }
 
 // --- Manejo de fechas para Guatemala (America/Guatemala) ---

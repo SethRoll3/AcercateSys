@@ -242,6 +242,19 @@ export async function GET(
     const monthlyFromSchedule = firstRow ? (
       Number(firstRow.amount ?? 0) || (Number(firstRow.principal || 0) + Number(firstRow.interest || 0) + Number(firstRow.admin_fees || 0))
     ) : undefined
+    let groupName: string | null = null
+    try {
+      const gid = (loan.client as any)?.group_id
+      if (gid) {
+        const { data: grp } = await serviceSupabase
+          .from('grupos')
+          .select('id, nombre')
+          .eq('id', gid)
+          .single()
+        groupName = grp?.nombre ?? null
+      }
+    } catch {}
+
     const transformedLoan = {
       id: loan.id,
       clientId: loan.client_id,
@@ -260,8 +273,16 @@ export async function GET(
         email: loan.client.email,
         first_name: loan.client.first_name,
         last_name: loan.client.last_name,
-        createdAt: loan.client.created_at,
-        updatedAt: loan.client.updated_at,
+        phone: loan.client.phone,
+        phone_country_code: loan.client.phone_country_code,
+        address: loan.client.address,
+        emergency_phone: loan.client.emergency_phone,
+        group_id: (loan.client as any).group_id ?? null,
+        group_name: groupName,
+        created_at: loan.client.created_at,
+        updated_at: loan.client.updated_at,
+        firstName: loan.client.first_name,
+        lastName: loan.client.last_name,
       }
     }
 

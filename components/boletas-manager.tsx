@@ -312,7 +312,7 @@ export function BoletasManager({ cuotaAmount, onBoletasChange, initialBoletas = 
         <div className="flex items-center justify-between">
           <CardTitle className="text-foreground">Boletas de Pago</CardTitle>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-2">
             <Dialog open={isSearchDialogOpen} onOpenChange={(open) => {
               setIsSearchDialogOpen(open)
               if (!open) resetSearchForm()
@@ -466,7 +466,7 @@ export function BoletasManager({ cuotaAmount, onBoletasChange, initialBoletas = 
                   Agregar Boleta
                 </Button>
               </DialogTrigger>
-            <DialogContent className="max-w-md">
+            <DialogContent className="max-w-[95vw] max-h-[90vh] w-full sm:max-w-md">
               <DialogHeader>
                 <DialogTitle>Nueva Boleta</DialogTitle>
               </DialogHeader>
@@ -639,18 +639,18 @@ export function BoletasManager({ cuotaAmount, onBoletasChange, initialBoletas = 
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Resumen de montos */}
-        <div className="grid grid-cols-3 gap-4 p-4 bg-muted/30 rounded-lg">
+        <div className="grid grid-cols-1 gap-4 p-4 bg-muted/30 rounded-lg sm:grid-cols-3">
           <div className="text-center">
             <p className="text-sm text-muted-foreground">Monto Cuota</p>
-            <p className="font-semibold text-foreground">{formatCurrency(cuotaAmount)}</p>
+            <p className="font-semibold text-foreground text-wrap">{formatCurrency(cuotaAmount)}</p>
           </div>
           <div className="text-center">
             <p className="text-sm text-muted-foreground">Total Boletas</p>
-            <p className="font-semibold text-foreground">{formatCurrency(totalBoletasAmount)}</p>
+            <p className="font-semibold text-foreground text-wrap">{formatCurrency(totalBoletasAmount)}</p>
           </div>
           <div className="text-center">
             <p className="text-sm text-muted-foreground">Diferencia</p>
-            <p className={`font-semibold ${isAmountMatch ? 'text-green-600' : 'text-orange-600'}`}>
+            <p className={`font-semibold text-wrap ${isAmountMatch ? 'text-green-600' : 'text-orange-600'}`}>
               {formatCurrency(totalBoletasAmount - cuotaAmount)}
             </p>
           </div>
@@ -763,7 +763,7 @@ export function BoletasManager({ cuotaAmount, onBoletasChange, initialBoletas = 
 
       {/* Modal para visualizar imágenes */}
       <Dialog open={isImageModalOpen} onOpenChange={setIsImageModalOpen}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="max-w-[95vw] max-h-[90vh] w-full sm:max-w-4xl">
           <DialogHeader>
             <DialogTitle>Imagen de la Boleta</DialogTitle>
           </DialogHeader>
