@@ -9,7 +9,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (authError || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     const { data: me, error: meError } = await supabase.from("users").select("id, role").eq("auth_id", user.id).single()
     if (meError || !me) return NextResponse.json({ error: "User not found" }, { status: 404 })
-    if (me.role !== "admin" && me.role !== "asesor") return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    if (me.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
     const { data: loan, error: loanError } = await supabase.from("loans").select("*").eq("id", id).single()
     if (loanError || !loan) return NextResponse.json({ error: "Loan not found" }, { status: 404 })
@@ -19,7 +19,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (scheduleError) return NextResponse.json({ error: "Failed to verify schedule" }, { status: 500 })
     if (!schedule || schedule.length === 0) return NextResponse.json({ error: "Loan has no payment schedule" }, { status: 409 })
 
-    const { data: updated, error: updateError } = await supabase.from("loans").update({ status: "active", updated_at: new Date().toISOString() }).eq("id", id).select("*").single()
+    const { data: updated, error: updateError } = await supabase
+      .from("loans")
+      .update({ status: "active", updated_at: new Date().toISOString(), activated_by_admin_id: me.id, activated_at: new Date().toISOString() })
+      .eq("id", id)
+      .select("*")
+      .single()
     if (updateError) return NextResponse.json({ error: "Failed to activate loan" }, { status: 500 })
     const transformed = {
       id: updated.id,

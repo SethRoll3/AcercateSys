@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/select'
 import { Plus } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { calculateMonthlyPayment, calculateEndDate } from '@/lib/utils'
+import { calculateMonthlyPayment, calculateEndDate, gtDateInputValue } from '@/lib/utils'
 import { toast } from 'sonner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useEffect } from 'react'
@@ -51,8 +51,9 @@ export function CreateLoanDialog({
     amount: '',
     interestRate: '',
     termMonths: '',
-    startDate: '',
+    startDate: gtDateInputValue(),
     status: 'pending',
+    frequency: 'mensual' as 'mensual' | 'quincenal',
   })
 
   const [groups, setGroups] = useState<any[]>([])
@@ -62,6 +63,7 @@ export function CreateLoanDialog({
     interestRate: string
     termMonths: string
     startDate: string
+    frequency?: 'mensual' | 'quincenal'
     monthlyPayment: number
     endDate: string
   }>>({})
@@ -71,13 +73,15 @@ export function CreateLoanDialog({
     const rateMonthly = parseFloat(formData.interestRate) || 0
     const termMonths = parseInt(formData.termMonths, 10)
     if (amount > 0 && termMonths > 0) {
-      const capital = amount / termMonths
-      const interes = amount * (rateMonthly / 100)
+      const capitalMes = amount / termMonths
+      const interesMes = amount * (rateMonthly / 100)
       const aporte = 20
-      return capital + interes + aporte
+      return formData.frequency === 'quincenal'
+        ? capitalMes + (interesMes / 2) + aporte
+        : capitalMes + interesMes + aporte
     }
     return 0
-  }, [formData.amount, formData.interestRate, formData.termMonths])
+  }, [formData.amount, formData.interestRate, formData.termMonths, formData.frequency])
 
   const endDate = useMemo(() => {
     const startDate = formData.startDate
@@ -93,13 +97,14 @@ export function CreateLoanDialog({
       formData.clientId &&
       formData.amount &&
       formData.termMonths &&
-      formData.startDate
+      formData.startDate && formData.frequency
     )
   }, [
     formData.clientId,
     formData.amount,
     formData.termMonths,
     formData.startDate,
+    formData.frequency,
   ])
 
   const selectedGroup = useMemo(() => {
@@ -150,8 +155,9 @@ export function CreateLoanDialog({
           amount: '',
           interestRate: '',
           termMonths: '',
-          startDate: '',
+          startDate: gtDateInputValue(),
           status: 'pending',
+          frequency: 'mensual',
         })
         onLoanCreated()
         toast.success('Préstamo creado con éxito')
@@ -169,11 +175,18 @@ export function CreateLoanDialog({
     }
   }
 
-  const assignClientLoan = (clientId: string, values: { amount: string; interestRate: string; termMonths: string; startDate: string }) => {
+  const assignClientLoan = (clientId: string, values: { amount: string; interestRate: string; termMonths: string; startDate: string; frequency?: 'mensual' | 'quincenal' }) => {
     const amountNum = parseFloat(values.amount)
     const rateNum = parseFloat(values.interestRate) || 0
     const termNum = parseInt(values.termMonths, 10)
-    const mp = amountNum > 0 && termNum > 0 ? (amountNum / termNum) + (amountNum * (rateNum / 100)) + 20 : 0
+    const capitalMes = amountNum / termNum
+    const interesMes = amountNum * (rateNum / 100)
+    const aporte = 20
+    const mp = amountNum > 0 && termNum > 0
+      ? ((values.frequency === 'quincenal')
+          ? (capitalMes + (interesMes/2) + aporte)
+          : (capitalMes + interesMes + aporte))
+      : 0
     const ed = values.startDate && termNum > 0 ? calculateEndDate(values.startDate, termNum) : ''
     setAssignments((prev) => ({
       ...prev,
@@ -182,6 +195,7 @@ export function CreateLoanDialog({
         interestRate: values.interestRate,
         termMonths: values.termMonths,
         startDate: values.startDate,
+        frequency: values.frequency || 'mensual',
         monthlyPayment: mp,
         endDate: ed,
       },
@@ -207,6 +221,7 @@ export function CreateLoanDialog({
           interestRate: a.interestRate,
           termMonths: a.termMonths,
           startDate: a.startDate,
+          frequency: (a as any).frequency || 'mensual',
           status: 'pending',
           monthlyPayment: a.monthlyPayment.toFixed(2),
           endDate: a.endDate,
@@ -339,7 +354,7 @@ export function CreateLoanDialog({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="termMonths" className="text-foreground">
-                        Plazo (meses)
+                        Plazo
                       </Label>
                       <Input
                         id="termMonths"
@@ -352,6 +367,15 @@ export function CreateLoanDialog({
                         required
                         className="bg-background/50"
                       />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-foreground">Frecuencia de pago</Label>
+                      <Tabs value={formData.frequency} onValueChange={(v) => setFormData({ ...formData, frequency: v as 'mensual' | 'quincenal' })} className="w-full">
+                        <TabsList className="grid grid-cols-2 w-full">
+                          <TabsTrigger value="mensual" className="text-sm">Mensual</TabsTrigger>
+                          <TabsTrigger value="quincenal" className="text-sm">Quincenal</TabsTrigger>
+                        </TabsList>
+                      </Tabs>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="startDate" className="text-foreground">
@@ -367,6 +391,9 @@ export function CreateLoanDialog({
                         required
                         className="bg-background/50"
                       />
+                      <div className="text-xs text-muted-foreground">
+                        La primera cuota será {formData.frequency === 'quincenal' ? 'una quincena' : 'un mes'} después de la fecha de inicio.
+                      </div>
                     </div>
                   </div>
                   <div className="flex justify-end pt-4">
@@ -394,7 +421,7 @@ export function CreateLoanDialog({
                         </div>
                         <div className="flex justify-between">
                           <span>Plazo</span>
-                          <span className="font-medium text-foreground">{formData.termMonths} meses</span>
+                          <span className="font-medium text-foreground">{formData.termMonths}</span>
                         </div>
                         <div className="flex justify-between">
                           <span>Inicio</span>
@@ -405,7 +432,7 @@ export function CreateLoanDialog({
                           <span className="font-medium text-foreground">{endDate}</span>
                         </div>
                         <div className="flex justify-between text-base font-semibold text-primary">
-                          <span>Cuota Mensual</span>
+                          <span>Cuota {formData.frequency === 'quincenal' ? 'Quincenal' : 'Mensual'}</span>
                           <span>{new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(monthlyPayment)}</span>
                         </div>
                       </div>
@@ -439,15 +466,23 @@ export function CreateLoanDialog({
                   <div className="text-sm text-muted-foreground">Asignados {selectedGroup.clients.filter((c: any) => assignments[c.id]).length} de {selectedGroup.clients.length}</div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {selectedGroup.clients.map((c: any) => {
-                      const a = assignments[c.id] || { amount: '', interestRate: '', termMonths: '', startDate: '', monthlyPayment: 0, endDate: '' }
+                      const a = assignments[c.id] || { amount: '', interestRate: '', termMonths: '', startDate: '', frequency: 'mensual', monthlyPayment: 0, endDate: '' }
                       return (
                         <div key={c.id} className="rounded-lg border bg-card p-4">
                           <div className="font-semibold text-foreground mb-2">{c.first_name} {c.last_name}</div>
                           <div className="space-y-2">
                             <Input type="number" placeholder="Monto" value={a.amount} onChange={(e) => setAssignments((prev) => ({ ...prev, [c.id]: { ...a, amount: e.target.value } }))} className="bg-background/50" />
                             <Input type="number" step="0.1" placeholder="Tasa (%)" value={a.interestRate} onChange={(e) => setAssignments((prev) => ({ ...prev, [c.id]: { ...a, interestRate: e.target.value } }))} className="bg-background/50" />
-                            <Input type="number" placeholder="Plazo (meses)" value={a.termMonths} onChange={(e) => setAssignments((prev) => ({ ...prev, [c.id]: { ...a, termMonths: e.target.value } }))} className="bg-background/50" />
-                            <Input type="date" value={a.startDate} onChange={(e) => setAssignments((prev) => ({ ...prev, [c.id]: { ...a, startDate: e.target.value } }))} className="bg-background/50" />
+                            <Input type="number" placeholder="Plazo" value={a.termMonths} onChange={(e) => setAssignments((prev) => ({ ...prev, [c.id]: { ...a, termMonths: e.target.value } }))} className="bg-background/50" />
+                            <div className="grid grid-cols-1 gap-2">
+                              <Input type="date" value={a.startDate} onChange={(e) => setAssignments((prev) => ({ ...prev, [c.id]: { ...a, startDate: e.target.value } }))} className="bg-background/50" />
+                              <Tabs value={(a as any).frequency || 'mensual'} onValueChange={(v) => setAssignments((prev) => ({ ...prev, [c.id]: { ...a, frequency: v as 'mensual' | 'quincenal' } }))} className="w-full">
+                                <TabsList className="grid grid-cols-2 w-full">
+                                  <TabsTrigger value="mensual" className="text-sm">Mensual</TabsTrigger>
+                                  <TabsTrigger value="quincenal" className="text-sm">Quincenal</TabsTrigger>
+                                </TabsList>
+                              </Tabs>
+                            </div>
                             <div className="flex justify-between text-xs text-muted-foreground">
                               <span>Cuota</span>
                               <span>{new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(a.monthlyPayment || 0)}</span>
@@ -458,7 +493,7 @@ export function CreateLoanDialog({
                             </div>
                           </div>
                           <div className="flex justify-end pt-2">
-                            <Button type="button" size="sm" onClick={() => assignClientLoan(c.id, { amount: a.amount, interestRate: a.interestRate, termMonths: a.termMonths, startDate: a.startDate })}>Asignar</Button>
+                            <Button type="button" size="sm" onClick={() => assignClientLoan(c.id, { amount: a.amount, interestRate: a.interestRate, termMonths: a.termMonths, startDate: a.startDate, frequency: (a as any).frequency || 'mensual' })}>Asignar</Button>
                           </div>
                         </div>
                       )

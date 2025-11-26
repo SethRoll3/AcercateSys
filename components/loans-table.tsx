@@ -51,10 +51,11 @@ export function LoansTable({ loans, userRole, onLoanUpdated, groupMap }: LoansTa
             <TableHead className="text-muted-foreground">Monto</TableHead>
             <TableHead className="text-muted-foreground">Tasa</TableHead>
             <TableHead className="text-muted-foreground">Plazo</TableHead>
-            <TableHead className="text-muted-foreground">Cuota Mensual</TableHead>
+            <TableHead className="text-muted-foreground">Cuota</TableHead>
+            <TableHead className="text-muted-foreground">Progreso</TableHead>
 
             <TableHead className="text-muted-foreground">Estado</TableHead>
-            <TableHead className="text-muted-foreground">Acciones</TableHead>
+          <TableHead className="text-muted-foreground">Acciones</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -65,6 +66,11 @@ export function LoansTable({ loans, userRole, onLoanUpdated, groupMap }: LoansTa
                   <span>{loan.loanNumber}</span>
                   {groupMap && groupMap[loan.id] && (
                     <Badge variant="outline">Préstamo Grupo: {groupMap[loan.id].groupName}</Badge>
+                  )}
+                  {loan.hasOverdue ? (
+                    <Badge variant="destructive">Retraso</Badge>
+                  ) : (
+                    <Badge variant="secondary">Al día</Badge>
                   )}
                 </div>
               </TableCell>
@@ -79,6 +85,7 @@ export function LoansTable({ loans, userRole, onLoanUpdated, groupMap }: LoansTa
               <TableCell className="text-foreground">{loan.interestRate}%</TableCell>
               <TableCell className="text-foreground">{loan.termMonths} meses</TableCell>
               <TableCell className="text-foreground">{formatCurrency(loan.monthlyPayment)}</TableCell>
+              <TableCell className="text-foreground whitespace-nowrap">{(loan as any).progressPaid ?? 0}/{(loan as any).progressTotal ?? 0}</TableCell>
               <TableCell>{getStatusBadge(loan.status)}</TableCell>
               <TableCell>
                 <div className="flex items-center gap-2">
@@ -87,7 +94,7 @@ export function LoansTable({ loans, userRole, onLoanUpdated, groupMap }: LoansTa
                     Ver
                   </Button>
                   {isAdmin && onLoanUpdated && <EditLoanDialog loan={loan} onLoanUpdated={onLoanUpdated} />}
-                  {(isAdmin || userRole === "asesor") && loan.status === "pending" && onLoanUpdated && (
+                  {isAdmin && loan.status === "pending" && onLoanUpdated && (
                     <ActivateLoanDialog loan={loan} onActivated={onLoanUpdated} trigger={
                       <Button variant="outline" size="sm" className="gap-2">Activar</Button>
                     } />

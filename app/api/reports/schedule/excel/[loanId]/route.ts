@@ -80,12 +80,20 @@ export async function GET(_req: Request, { params }: { params: Promise<{ loanId:
     const n = Number(loanRow.term_months || 0)
     const amount = Number(loanRow.amount || 0)
     const monthlyRate = Number(loanRow.interest_rate || 0) / 100
-    const capitalMes = Math.round((amount / n) * 100) / 100
+    const capitalMes = Math.round((n > 0 ? (amount / n) : 0) * 100) / 100
     const interesMes = Math.round((amount * monthlyRate) * 100) / 100
     const adminFees = Number(20)
-    const cuotaBase = Math.round((capitalMes + interesMes + adminFees) * 100) / 100
-    const totalBase = Math.round((cuotaBase * n) * 100) / 100
-    ws.addRow([`Capital mensual: Q ${capitalMes.toFixed(2)}`, `Interés mensual: Q ${interesMes.toFixed(2)}`, `Aporte: Q ${adminFees.toFixed(2)}`, `Cuota base mensual: Q ${cuotaBase.toFixed(2)}`])
+    const firstRow = Array.isArray(schedule) && schedule.length ? schedule[0] : null
+    const cuotaBase = firstRow ? Math.round(((Number(firstRow.principal||0)) + (Number(firstRow.interest||0)) + (Number(firstRow.admin_fees||0))) * 100) / 100 : Math.round((capitalMes + interesMes + adminFees) * 100) / 100
+    const totalBase = Math.round(((cuotaBase * (schedule?.length || 0))) * 100) / 100
+    const isQuincenal = (() => {
+      if (!Array.isArray(schedule) || schedule.length < 2) return false
+      const d1 = new Date(schedule[0].due_date as any)
+      const d2 = new Date(schedule[1].due_date as any)
+      const diffDays = Math.round((d2.getTime() - d1.getTime()) / 86400000)
+      return diffDays === 15
+    })()
+    ws.addRow([`Capital mensual: Q ${capitalMes.toFixed(2)}`, `Interés mensual: Q ${interesMes.toFixed(2)}`, `Aporte: Q ${adminFees.toFixed(2)}`, `Cuota base ${isQuincenal ? 'quincenal' : 'mensual'}: Q ${cuotaBase.toFixed(2)}`])
     ws.addRow([`Total del préstamo (sin mora): Q ${totalBase.toFixed(2)}`, `+ mora si aplica`])
 
     ws.addRow([])

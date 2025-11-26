@@ -18,7 +18,7 @@ export async function GET(request: Request) {
     // Get user role and email
     const { data: userData, error: userError } = await supabase
       .from('users')
-      .select('role, email')
+      .select('role, email, id')
       .eq('auth_id', user.id)
       .single()
 
@@ -60,13 +60,13 @@ export async function GET(request: Request) {
       const { data: assignedClients, error: clientsError } = await supabase
         .from('clients')
         .select('email')
-        .eq('advisor_email', userData.email)
+        .eq('advisor_id', userData.id)
 
       if (clientsError) {
         return NextResponse.json({ error: "Error fetching assigned clients" }, { status: 500 })
       }
 
-      const clientEmails = assignedClients.map(client => client.email)
+      const clientEmails = (assignedClients || []).map((client: any) => client.email).filter(Boolean)
       if (clientEmails.length > 0) {
         paymentsQuery = paymentsQuery.in('loan.client.email', clientEmails)
       } else {
@@ -185,6 +185,8 @@ export async function GET(request: Request) {
         : 0
       const mora = schedule ? Number(schedule.mora || 0) : 0
       const capital = schedule ? Number(schedule.principal || 0) : 0
+      const adminFees = schedule ? Number(schedule.admin_fees || 0) : 0
+      const interest = schedule ? Math.max(0, Number(schedule.amount || 0) - capital) : 0
       
       // Determine payment status
       let paymentStatus = "Completo"
@@ -200,8 +202,10 @@ export async function GET(request: Request) {
         loanAmount: Number(loan.amount),
         scheduledAmount: scheduledAmount,
         capital: capital,
+        interest: interest,
         paidAmount: paidAmount,
         mora: mora,
+        adminFees: adminFees,
         paymentStatus: paymentStatus,
         dueDate: schedule ? schedule.due_date : null,
         notes: payment.notes || ""

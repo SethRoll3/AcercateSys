@@ -13,6 +13,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const router = useRouter()
 
+  const CACHE_TTL_MS = Number.MAX_SAFE_INTEGER
+  const readCache = (key: string) => {
+    try {
+      const raw = localStorage.getItem(key)
+      if (!raw) return null
+      const obj = JSON.parse(raw)
+      if (!obj || typeof obj.ts !== 'number') return null
+      if (Date.now() - obj.ts > CACHE_TTL_MS) return null
+      return obj.data ?? null
+    } catch {}
+    return null
+  }
+
   const fetchWithTimeout = useCallback(async (url: string, options: RequestInit = {}, timeoutMs: number = 8000) => {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeoutMs);
@@ -29,23 +42,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     const fetchUserData = async () => {
       try {
-        const userApiResponse = await fetchWithTimeout('/api/auth/user', { credentials: 'include' as any }, 8000);
-
-        if (!userApiResponse.ok) {
-          router.push("/auth/login");
-          return;
+        const cached = readCache('dashboard:userData')
+        if (cached && cached.id) {
+          setUserRole(cached.role)
+          setUserEmail(cached.email)
+          return
         }
-
-        const apiUserData = await userApiResponse.json();
-
-        if (!apiUserData || !apiUserData.id) {
-          console.error('[DashboardLayout] fetchUserData: No hay datos de usuario o ID de usuario en la respuesta de la API.');
-          router.push("/auth/login");
-          return;
-        }
-
-        setUserRole(apiUserData.role);
-        setUserEmail(apiUserData.email);
+        router.push("/auth/login");
+        return;
       } catch (error) {
         console.error('[DashboardLayout] fetchUserData: Error al obtener datos del usuario:', error);
         router.push("/auth/login");

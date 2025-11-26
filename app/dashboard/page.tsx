@@ -3,15 +3,48 @@
 import { useEffect, useState, useCallback, useRef } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { StatsCard } from "@/components/stats-card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { LoansTable } from "@/components/loans-table"
 import { GroupLoansTable } from "@/components/group-loans-table"
 import { CreateLoanDialog } from "@/components/create-loan-dialog"
-import { PaymentsReport } from "@/components/payments-report"
+
 import { Button } from "@/components/ui/button"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DollarSign, Users, TrendingUp, FileText, Download } from "lucide-react"
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
+const CACHE_TTL_MS = Number.MAX_SAFE_INTEGER
+const readCache = (key: string) => {
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return null
+    const obj = JSON.parse(raw)
+    if (!obj || typeof obj.ts !== 'number') return null
+    if (Date.now() - obj.ts > CACHE_TTL_MS) return null
+    return obj.data ?? null
+  } catch {}
+  return null
+}
+const writeCache = (key: string, data: any) => {
+  try {
+    localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }))
+  } catch {}
+}
+const K = {
+  user: 'dashboard:user',
+  userData: 'dashboard:userData',
+  loans: 'dashboard:loans',
+  clients: 'dashboard:clients',
+  groupLoans: 'dashboard:groupLoans',
+  loanGroupMap: 'dashboard:loanGroupMap',
+  activeLoanDetails: 'dashboard:activeLoanDetails',
+  selectedLoanId: 'dashboard:selectedLoanId',
+  paymentsAgg: 'dashboard:paymentsAgg',
+  advisorSelectedView: 'dashboard:advisorSelectedView',
+  advisorLoansViewPrefix: 'dashboard:advisorLoansView:',
+  advisors: 'dashboard:advisors'
+}
 
 export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
@@ -26,6 +59,13 @@ export default function DashboardPage() {
   const [groupsError, setGroupsError] = useState<string | null>(null)
   const [activeLoanDetails, setActiveLoanDetails] = useState<Record<string, any>>({})
   const [selectedLoanId, setSelectedLoanId] = useState<string | null>(null)
+  const [advisorFilter, setAdvisorFilter] = useState<'all'|'aldia'|'mora'>('all')
+  const [paymentsAgg, setPaymentsAgg] = useState<Record<string, number>>({})
+  const [paymentsConfirmedCounts, setPaymentsConfirmedCounts] = useState<Record<string, number>>({})
+  const [advisorSelectedView, setAdvisorSelectedView] = useState<'all'|'active'|'aldia'|'mora'|'pending'|'paid'|'asesores_stats'|null>(null)
+  const [groupsTabVisited, setGroupsTabVisited] = useState(false)
+  const [advisors, setAdvisors] = useState<any[]>([])
+  const [advisorClientsView, setAdvisorClientsView] = useState<{ id: string, name: string, email: string } | null>(null)
 
   const fetchLoans = useCallback(async () => {
     try {
@@ -35,6 +75,7 @@ export default function DashboardPage() {
       }
       const loansData = await response.json();
       setLoans(loansData || []);
+      writeCache(K.loans, loansData || [])
     } catch (error) {
       console.error("Failed to fetch loans:", error);
       setLoans([]);
@@ -60,82 +101,114 @@ export default function DashboardPage() {
   const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
   const getUserWithRetry = async () => {
+    try {
+      const uc = readCache(K.user)
+      if (uc && uc.id) return uc
+      const udc = readCache(K.userData)
+      if (udc && udc.id) return { id: udc.id, email: udc.email }
+    } catch {}
     const supabase = createClient()
-    for (const ms of [1000, 2000, 4000]) {
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), ms)
+    for (const ms of [200, 400, 800]) {
       try {
-        const res = await supabase.auth.getUser({ signal: controller.signal } as any)
-        const u = res?.data?.user
-        if (u) return u
-      } catch (e) {
-        console.warn(`[dashboard] Supabase auth request timed out after ${ms}ms`, e)
-      } finally {
-        clearTimeout(timeout)
-      }
+        const { data } = await supabase.auth.getUser()
+        if (data?.user) return data.user
+      } catch {}
       await delay(ms)
     }
-    try {
-      const fallback = await fetchWithTimeout('/api/auth/user', { timeoutMs: 8000, credentials: 'include' as any })
-      if (fallback.ok) {
-        const data = await fallback.json()
-        return { id: data.id, email: data.email }
-      }
-    } catch {}
     return null
   }
 
   useEffect(() => {
+    try {
+      const uc = readCache(K.user)
+      const udc = readCache(K.userData)
+      const lc = readCache(K.loans)
+      const cc = readCache(K.clients)
+      const gc = readCache(K.groupLoans)
+      const lgm = readCache(K.loanGroupMap)
+      const pa = readCache(K.paymentsAgg)
+      const ad = readCache(K.activeLoanDetails)
+      const sid = readCache(K.selectedLoanId)
+      const asv = readCache(K.advisorSelectedView)
+      if (uc) setUser(uc)
+      if (udc) setUserData(udc)
+      if (Array.isArray(lc)) setLoans(lc)
+      if (Array.isArray(cc)) setClients(cc)
+      if (Array.isArray(gc)) setGroupLoans(gc)
+      if (lgm && typeof lgm === 'object') setLoanGroupMap(lgm)
+      if (ad && typeof ad === 'object') setActiveLoanDetails(ad)
+      if (typeof sid === 'string') setSelectedLoanId(sid)
+      if (pa && typeof pa === 'object') setPaymentsAgg(pa)
+      if (typeof asv === 'string') setAdvisorSelectedView(asv as any)
+      if (udc) setIsLoading(false)
+    } catch {}
     if (inFlightRef.current) return
     inFlightRef.current = true
     const fetchData = async () => {
+      // Si hay cache completo válido, usarlo y evitar llamadas
+      try {
+        const uc = readCache(K.userData)
+        const lc = readCache(K.loans)
+        const cc = readCache(K.clients)
+        const gc = readCache(K.groupLoans)
+        const lgm = readCache(K.loanGroupMap)
+        const ac = readCache(K.advisors)
+        if (uc) setUserData(uc)
+        if (Array.isArray(lc)) setLoans(lc)
+        if (Array.isArray(cc)) setClients(cc)
+        if (Array.isArray(gc)) setGroupLoans(gc)
+        if (lgm && typeof lgm === 'object') setLoanGroupMap(lgm)
+        if (Array.isArray(ac)) setAdvisors(ac)
+        if (uc && Array.isArray(lc) && Array.isArray(cc) && Array.isArray(gc) && Array.isArray(ac)) {
+          setIsLoading(false)
+          return
+        }
+      } catch {}
       setIsLoading(true);
       try {
         const supabase = createClient();
         const user = await getUserWithRetry()
         setUser(user);
-        if (!user) {
-          // Sesión inválida: redirigir a login
-          window.location.href = '/auth/login'
-          return
-        }
-        if (user) {
+        if (user) writeCache(K.user, user)
+        {
           const clientsQueryController = new AbortController()
           const clientsQueryTimeout = setTimeout(() => clientsQueryController.abort(), 8000)
 
-          const userApiResponse = await fetchWithTimeout('/api/auth/user', { timeoutMs: 8000, credentials: 'include' as any });
-          
-          if (!userApiResponse.ok) {
-            console.error('[dashboard] Failed to fetch user data from API:', userApiResponse.statusText);
-            setUserData(null);
-            setUserDataError('No se pudieron cargar tus datos');
-          } else {
-            const apiUserData = await userApiResponse.json();
-            setUserData(apiUserData);
-            setUserDataError(null);
+          const cachedUserData = readCache(K.userData)
+          if (cachedUserData && cachedUserData.id) {
+            setUserData(cachedUserData)
+            setUserDataError(null)
+          } else if (!user) {
+            window.location.href = '/auth/login'
+            return
           }
-          
-          const loansResponse = await fetchWithTimeout('/api/loans', { timeoutMs: 12000 });
+
+          const [loansResponse, clientsResponse, groupsLoansResponse, paymentsResponse, advisorsResponse] = await Promise.all([
+            fetchWithTimeout('/api/loans', { timeoutMs: 12000 }),
+            fetchWithTimeout('/api/clients', { timeoutMs: 12000 }),
+            fetchWithTimeout('/api/loans-groups', { timeoutMs: 12000 }),
+            fetchWithTimeout('/api/payments', { timeoutMs: 12000, cache: 'no-store' as any }),
+            fetchWithTimeout('/api/advisors', { timeoutMs: 12000 }),
+          ])
+
           if (loansResponse.ok) {
             const loansData = await loansResponse.json();
             setLoans(loansData || []);
             setLoansError(null);
+            writeCache(K.loans, loansData || [])
           } else {
             console.error('[dashboard] Failed to load loans:', loansResponse);
             setLoans([]);
             setLoansError('No se pudieron cargar los préstamos');
           }
 
-          const clientsResponse = await fetchWithTimeout('/api/clients', { timeoutMs: 12000 });
-
           if (clientsResponse.ok) {
             const clientsData = await clientsResponse.json();
             setClients(clientsData || []);
+            writeCache(K.clients, clientsData || [])
           } else {
             console.error('[dashboard] Failed to load clients:', clientsResponse);
           }
-          
-          const groupsLoansResponse = await fetchWithTimeout('/api/loans-groups', { timeoutMs: 12000 });
 
           if (groupsLoansResponse.ok) {
             const groupsData = await groupsLoansResponse.json();
@@ -151,9 +224,52 @@ export default function DashboardPage() {
             }
             setLoanGroupMap(map);
             setGroupsError(null);
+            writeCache(K.groupLoans, groupsData || [])
+            writeCache(K.loanGroupMap, map)
           } else {
             console.error('[dashboard] Failed to load group loans:', groupsLoansResponse);
             setGroupsError('No se pudieron cargar los préstamos por grupo');
+          }
+
+          if (paymentsResponse.ok) {
+            const paymentsData = await paymentsResponse.json();
+            const agg: Record<string, number> = {};
+            const confirmedByLoan: Record<string, Set<string>> = {}
+            for (const p of paymentsData || []) {
+              const status = String(p.confirmationStatus || p.confirmation_status || '').toLowerCase()
+              if (status !== 'confirmado' && status !== 'aprobado') continue
+              const k = String(p.loanId || p.loan_id)
+              const amt = Number(p.amount || 0)
+              if (!k) continue
+              agg[k] = (agg[k] || 0) + amt
+              const sid = String(p.scheduleId || p.schedule_id || '')
+              if (sid) {
+                (confirmedByLoan[k] ||= new Set()).add(sid)
+              }
+            }
+            setPaymentsAgg(agg)
+            writeCache(K.paymentsAgg, agg)
+            const counts: Record<string, number> = {}
+            for (const [k, set] of Object.entries(confirmedByLoan)) counts[k] = set.size
+            setPaymentsConfirmedCounts(counts)
+          } else if (paymentsResponse.status === 304) {
+            const cached = readCache(K.paymentsAgg)
+            if (cached && typeof cached === 'object') {
+              setPaymentsAgg(cached)
+            }
+          } else {
+            let err: any = null
+            try { err = await paymentsResponse.json() } catch {}
+            console.error('[dashboard] Failed to load payments:', paymentsResponse.status, err?.error || paymentsResponse.statusText, err?.details || err);
+          }
+
+          if (advisorsResponse.ok) {
+            const advisorsData = await advisorsResponse.json();
+            setAdvisors(advisorsData || [])
+            writeCache(K.advisors, advisorsData || [])
+          } else if (advisorsResponse.status === 304) {
+            const cached = readCache(K.advisors)
+            if (Array.isArray(cached)) setAdvisors(cached)
           }
           
           //clearTimeout(userQueryTimeout);
@@ -168,7 +284,10 @@ export default function DashboardPage() {
     }
     fetchData();
     return () => {
-      abortControllersRef.current.forEach(c => c.abort())
+      const arr = abortControllersRef.current.splice(0)
+      for (const c of arr) {
+        try { if (!c.signal?.aborted) c.abort('cleanup') } catch {}
+      }
       inFlightRef.current = false
     }
   }, [])
@@ -177,6 +296,11 @@ export default function DashboardPage() {
     if (userData?.role === 'cliente' && loans.length > 0) {
       const activeLoans = (loans || []).filter((l: any) => l.status === 'active');
       if (activeLoans.length > 0) {
+        if (selectedLoanId && !activeLoans.some(l => l.id === selectedLoanId)) {
+          const newSelected = activeLoans[0]?.id || null
+          setSelectedLoanId(newSelected);
+          if (newSelected) writeCache(K.selectedLoanId, newSelected)
+        }
         // Seleccionar el primer préstamo activo si no hay ninguno seleccionado
         if (!selectedLoanId && activeLoans[0]?.id) {
           setSelectedLoanId(activeLoans[0].id);
@@ -190,7 +314,11 @@ export default function DashboardPage() {
               const res = await fetch(`/api/loans?id=${loanToFetch.id}`, { credentials: 'include' as any })
               if (res.ok) {
                 const data = await res.json()
-                setActiveLoanDetails(prev => ({ ...prev, [loanToFetch.id]: data }))
+                setActiveLoanDetails(prev => {
+                  const next = { ...prev, [loanToFetch.id]: data }
+                  writeCache(K.activeLoanDetails, next)
+                  return next
+                })
               }
             } catch {}
           })()
@@ -227,10 +355,19 @@ export default function DashboardPage() {
     fullName: `${c.first_name} ${c.last_name}`,
   }))
 
-  const displayLoans = loans;
+  const displayLoans = (userData.role === 'asesor') ? (
+    (loans || []).filter((l: any) => {
+      const hasOverdue = Boolean((l as any).hasOverdue)
+      if (advisorFilter === 'aldia') return !hasOverdue
+      if (advisorFilter === 'mora') return hasOverdue
+      return true
+    })
+  ) : loans;
 
   const totalLoanAmount = displayLoans.reduce((sum: any, loan: any) => sum + loan.amount, 0)
   const activeLoans = displayLoans.filter((loan: any) => loan.status === "active").length
+  const pendingLoans = displayLoans.filter((loan: any) => loan.status === 'pending').length
+  const paidLoans = displayLoans.filter((loan: any) => loan.status === 'paid').length
   const totalClients = clients.length
 
 const formatCurrency = (amount: number) => {
@@ -249,6 +386,81 @@ const formatCurrency = (amount: number) => {
     if (percentage <= 66) return '#facc15'; // yellow
     return '#22c55e'; // green
   };
+
+  const advisorSelectedLoans = (() => {
+    if (!(userData.role === 'asesor' || userData.role === 'admin')) return displayLoans
+    const list = (loans || [])
+    if (!advisorSelectedView) return []
+    let filtered: any[] = []
+    if (advisorSelectedView === 'all') {
+      filtered = list
+    } else
+    if (advisorSelectedView === 'active') {
+      filtered = list.filter((l: any) => l.status === 'active')
+    } else if (advisorSelectedView === 'pending') {
+      filtered = list.filter((l: any) => l.status === 'pending')
+    } else if (advisorSelectedView === 'paid') {
+      filtered = list.filter((l: any) => l.status === 'paid')
+    } else if (advisorSelectedView === 'aldia') {
+      filtered = list.filter((l: any) => !(l as any).hasOverdue)
+    } else if (advisorSelectedView === 'mora') {
+      filtered = list.filter((l: any) => Boolean((l as any).hasOverdue))
+    }
+    try { writeCache(K.advisorLoansViewPrefix + advisorSelectedView, filtered) } catch {}
+    return filtered
+  })()
+
+  const scopeLoans = ((userData.role === 'asesor') || (userData.role === 'admin')) ? (advisorSelectedView ? advisorSelectedLoans : (loans || [])) : displayLoans
+  const advisorGlobalProgress = ((userData.role === 'asesor') || (userData.role === 'admin')) ? (() => {
+    const paid = (scopeLoans || []).reduce((s: number, l: any) => s + Number((l as any).progressPaid || 0), 0)
+    const total = (scopeLoans || []).reduce((s: number, l: any) => s + Number((l as any).progressTotal || 0), 0)
+    return { paid, total }
+  })() : { paid: 0, total: 0 }
+
+  const advisorTotals = ((userData.role === 'asesor') || (userData.role === 'admin')) ? (() => {
+    const installments = (l: any) => {
+      const months = Number(l?.termMonths || 0)
+      const freq = String(l?.paymentFrequency || '')
+      return freq === 'quincenal' ? months * 2 : months
+    }
+    const totalRepayable = (scopeLoans || []).reduce((s: number, l: any) => {
+      return s + Number(l?.monthlyPayment || 0) * installments(l)
+    }, 0)
+    const paidRecovered = (scopeLoans || []).reduce((s: number, l: any) => {
+      const k = String(l?.id)
+      return s + Number(paymentsAgg[k] || 0)
+    }, 0)
+    return { totalRepayable, paidRecovered }
+  })() : { totalRepayable: 0, paidRecovered: 0 }
+
+  const advisorGroupTotals = ((userData.role === 'asesor') || (userData.role === 'admin')) ? (() => {
+    const ids = new Set((scopeLoans || []).map((l: any) => String(l.id)))
+    const byId: Record<string, any> = {}
+    for (const l of (scopeLoans || [])) byId[String(l.id)] = l
+    let totalRepayable = 0
+    let paidRecovered = 0
+    for (const g of (groupLoans || [])) {
+      const groupLoanIds = ((g.loans || []).map((it: any) => String(it.loan_id))).filter((id: string) => ids.has(id))
+      if (!groupLoanIds.length) continue
+      for (const id of groupLoanIds) {
+        const l = byId[id]
+        if (!l) continue
+        const months = Number(l?.termMonths || 0)
+        const freq = String(l?.paymentFrequency || '')
+        const installments = freq === 'quincenal' ? months * 2 : months
+        totalRepayable += Number(l?.monthlyPayment || 0) * installments
+        paidRecovered += Number(paymentsAgg[id] || 0)
+      }
+    }
+    return { totalRepayable, paidRecovered }
+  })() : { totalRepayable: 0, paidRecovered: 0 }
+
+
+
+  const handleAdvisorCardClick = (view: 'all'|'active'|'aldia'|'mora'|'pending'|'paid'|'asesores_stats') => {
+    setAdvisorSelectedView(view)
+    writeCache(K.advisorSelectedView, view)
+  }
 
   return (
     <>
@@ -274,39 +486,156 @@ const formatCurrency = (amount: number) => {
             <CreateLoanDialog clients={transformedClients} onLoanCreated={fetchLoans} />
           </div>
         )}
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StatsCard
-          title="Total en Préstamos"
-          value={formatCurrency(totalLoanAmount)}
-          description="Monto total prestado"
-          icon={DollarSign}
-        />
-        <StatsCard title="Préstamos Activos" value={activeLoans} description="Préstamos en curso" icon={TrendingUp} />
-        {userData.role === "admin" && (
-          <>
-            <StatsCard title="Total Clientes" value={totalClients} description="Clientes registrados" icon={Users} />
-            <StatsCard
-              title="Total Préstamos"
-              value={displayLoans.length}
-              description="Todos los préstamos"
-              icon={FileText}
-            />
-          </>
+        {userData.role === 'asesor' && (
+          <div className="flex flex-wrap md:flex-nowrap items-center gap-2 w-full md:w-auto">
+            <CreateLoanDialog clients={transformedClients} onLoanCreated={fetchLoans} />
+          </div>
         )}
       </div>
 
-      {userData.role === "admin" && (
-        <div className="mb-8">
-          <h3 className="text-xl font-semibold text-foreground mb-4">Reportes</h3>
-          <PaymentsReport />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+        {userData.role === 'asesor' || userData.role === 'admin' ? (
+          <>
+            <StatsCard
+              title="Todos"
+              value={(loans || []).length}
+              description="Todos los estados"
+              icon={TrendingUp}
+              onClick={() => handleAdvisorCardClick('all')}
+              className="ring-1 ring-transparent hover:ring-primary/20"
+            />
+            <StatsCard
+              title="Préstamos Activos"
+              value={activeLoans}
+              description="Préstamos en curso"
+              icon={TrendingUp}
+              onClick={() => handleAdvisorCardClick('active')}
+              className="ring-1 ring-transparent hover:ring-primary/20"
+            />
+            <StatsCard
+              title="Al día"
+              value={(loans || []).filter((l: any) => !(l as any).hasOverdue).length}
+              description="Sin cuotas vencidas"
+              icon={TrendingUp}
+              onClick={() => handleAdvisorCardClick('aldia')}
+              className="ring-1 ring-transparent hover:ring-primary/20"
+            />
+            <StatsCard
+              title="Con mora"
+              value={(loans || []).filter((l: any) => (l as any).hasOverdue).length}
+              description="Con cuotas vencidas"
+              icon={TrendingUp}
+              onClick={() => handleAdvisorCardClick('mora')}
+              className="ring-1 ring-transparent hover:ring-primary/20"
+            />
+            <StatsCard
+              title="Pendientes"
+              value={pendingLoans}
+              description="Aún sin activar"
+              icon={TrendingUp}
+              onClick={() => handleAdvisorCardClick('pending')}
+              className="ring-1 ring-transparent hover:ring-primary/20"
+            />
+            <StatsCard
+              title="Pagados"
+              value={paidLoans}
+              description="Préstamos finalizados"
+              icon={TrendingUp}
+              onClick={() => handleAdvisorCardClick('paid')}
+              className="ring-1 ring-transparent hover:ring-primary/20"
+            />
+            {userData.role === 'admin' && (
+              <StatsCard
+                title="Estadísticas de asesores"
+                value={Array.from(new Set((clients || []).map((c: any) => String(c.advisor_id)).filter(Boolean))).length}
+                description="Progreso global de cuotas"
+                icon={TrendingUp}
+                onClick={() => handleAdvisorCardClick('asesores_stats')}
+                className="ring-1 ring-transparent hover:ring-primary/20"
+              />
+            )}
+          </>
+        ) : (
+          <StatsCard
+            title="Total en Préstamos"
+            value={formatCurrency(totalLoanAmount)}
+            description="Monto total prestado"
+            icon={DollarSign}
+          />
+        )}
+        {userData.role === 'cliente' && (
+          <StatsCard title="Préstamos Activos" value={activeLoans} description="Préstamos en curso" icon={TrendingUp} />
+        )}
+        
+      </div>
+
+      {userData.role === 'asesor' && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+          <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Total en Préstamos (Individuales)</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between gap-6">
+                <div>
+                  <div className="text-2xl font-bold text-foreground">{formatCurrency(advisorTotals.totalRepayable)}</div>
+                  <p className="text-xs text-muted-foreground mt-1">Total a pagar con intereses y aportes</p>
+                </div>
+                <div className="w-28 h-28 md:w-32 md:h-32 relative">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie dataKey="value" data={[{ name: 'Recuperado', value: Math.min(advisorTotals.paidRecovered, advisorTotals.totalRepayable) }, { name: 'Pendiente', value: Math.max(0, advisorTotals.totalRepayable - advisorTotals.paidRecovered) }]} innerRadius={44} outerRadius={58} paddingAngle={2}>
+                        <Cell fill={getProgressColor(advisorTotals.paidRecovered, advisorTotals.totalRepayable)} />
+                        <Cell fill="#e5e7eb" />
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <div className="text-sm font-semibold">{formatCurrency(advisorTotals.paidRecovered)}</div>
+                    <div className="text-[10px] text-muted-foreground">recuperado</div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Total en Préstamos de Grupo</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between gap-6">
+                <div>
+                  <div className="text-2xl font-bold text-foreground">{formatCurrency(advisorGroupTotals.totalRepayable)}</div>
+                  <p className="text-xs text-muted-foreground mt-1">Total a pagar con intereses y aportes</p>
+                </div>
+                <div className="w-28 h-28 md:w-32 md:h-32 relative">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie dataKey="value" data={[{ name: 'Recuperado', value: Math.min(advisorGroupTotals.paidRecovered, advisorGroupTotals.totalRepayable) }, { name: 'Pendiente', value: Math.max(0, advisorGroupTotals.totalRepayable - advisorGroupTotals.paidRecovered) }]} innerRadius={44} outerRadius={58} paddingAngle={2}>
+                        <Cell fill={getProgressColor(advisorGroupTotals.paidRecovered, advisorGroupTotals.totalRepayable)} />
+                        <Cell fill="#e5e7eb" />
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <div className="text-sm font-semibold">{formatCurrency(advisorGroupTotals.paidRecovered)}</div>
+                    <div className="text-[10px] text-muted-foreground">recuperado</div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
 
+
+
       <div className="mb-6">
         {userData.role === 'cliente' ? (
-          <Tabs value={selectedLoanId || ''} onValueChange={setSelectedLoanId} className="w-full">
+          <Tabs value={selectedLoanId || ''} onValueChange={(v) => { setSelectedLoanId(v); writeCache(K.selectedLoanId, v) }} className="w-full">
             <TabsList className="flex w-full max-w-full gap-2 overflow-x-auto bg-muted/50 whitespace-nowrap">
               {(loans || []).filter((l: any) => l.status === 'active').map((loan: any) => (
                 <TabsTrigger key={loan.id} value={loan.id} className="shrink-0 px-3 text-xs sm:text-sm truncate max-w-[70vw] sm:max-w-none">
@@ -386,7 +715,7 @@ const formatCurrency = (amount: number) => {
             ))}
           </Tabs>
         ) : (
-          <Tabs defaultValue="clients" className="w-full">
+          <Tabs defaultValue="clients" onValueChange={(v) => { if (v === 'groups') setGroupsTabVisited(true) }} className="w-full">
             <TabsList className="grid w-full max-w-full grid-cols-2 bg-muted/50">
               <TabsTrigger value="clients">Clientes</TabsTrigger>
               <TabsTrigger value="groups">Grupos</TabsTrigger>
@@ -395,23 +724,243 @@ const formatCurrency = (amount: number) => {
               <h3 className="text-xl font-semibold text-foreground mb-4">
                 {userData.role === "admin" ? "Todos los Préstamos" : "Mis Préstamos"}
               </h3>
-            {loansError && (
-              <div className="mb-3 text-sm text-muted-foreground flex items-center gap-2">
-                <span>{loansError}</span>
-                <Button variant="outline" size="sm" onClick={async () => {
-                  try {
-                    const res = await fetchWithTimeout('/api/loans', { timeoutMs: 12000 })
-                    if (res.ok) {
-                      const data = await res.json()
-                      setLoans(data || [])
-                      setLoansError(null)
-                    }
-                  } catch {}
-                }}>Reintentar</Button>
+              {(userData.role === 'asesor' || userData.role === 'admin') && !advisorSelectedView && (
+                <div className="mb-2 text-sm text-muted-foreground">Seleccione una card superior para ver la tabla de préstamos</div>
+              )}
+              {loansError && (
+                <div className="mb-3 text-sm text-muted-foreground flex items-center gap-2">
+                  <span>{loansError}</span>
+                  <Button variant="outline" size="sm" onClick={async () => {
+                    try {
+                      const res = await fetchWithTimeout('/api/loans', { timeoutMs: 12000 })
+                      if (res.ok) {
+                        const data = await res.json()
+                        setLoans(data || [])
+                        setLoansError(null)
+                      }
+                    } catch {}
+                  }}>Reintentar</Button>
               </div>
             )}
-            <LoansTable loans={displayLoans} userRole={userData.role} onLoanUpdated={fetchLoans} groupMap={loanGroupMap} />
-          </TabsContent>
+              {(userData.role === 'asesor' || userData.role === 'admin') && advisorSelectedView !== 'asesores_stats' && (
+                <div className="mb-2 text-sm text-muted-foreground">
+                  {(() => {
+                    const labelMap: Record<string, string> = { all: 'Todos', active: 'Activos', aldia: 'Al día', mora: 'Con mora', pending: 'Pendientes', paid: 'Pagados', asesores_stats: 'Estadísticas de asesores' }
+                    const sel = advisorSelectedView ? labelMap[String(advisorSelectedView)] : ''
+                    const label = sel ? ` (${sel})` : ''
+                    return `Progreso global${label}: ${advisorGlobalProgress.paid}/${advisorGlobalProgress.total} cuotas`
+                  })()}
+                </div>
+              )}
+              {(userData.role === 'asesor' || userData.role === 'admin') ? (
+                advisorSelectedView ? (
+                  advisorSelectedView === 'asesores_stats' ? (
+                    (() => {
+                      const clientAdvisor: Record<string, string> = {}
+                      for (const c of (clients || [])) { if (c?.id) clientAdvisor[String(c.id)] = String(c.advisor_id || '') }
+                      const activeAdvisorLoans = (loans || []).filter((l: any) => l.status === 'active' && clientAdvisor[String(l.clientId)])
+                      const paidCount = activeAdvisorLoans.reduce((s: number, l: any) => s + Number((l as any).progressPaid || 0), 0)
+                      const totalCount = activeAdvisorLoans.reduce((s: number, l: any) => s + Number((l as any).progressTotal || 0), 0)
+                      const data = [
+                        { name: 'Pagadas', value: paidCount },
+                        { name: 'Restantes', value: Math.max(0, totalCount - paidCount) }
+                      ]
+                      const installments = (l: any) => {
+                        const months = Number(l?.termMonths || 0)
+                        const freq = String(l?.paymentFrequency || '')
+                        return freq === 'quincenal' ? months * 2 : months
+                      }
+                      const totalRepayableMoney = activeAdvisorLoans.reduce((s: number, l: any) => s + Number(l?.monthlyPayment || 0) * installments(l), 0)
+                      const paidRecoveredMoney = activeAdvisorLoans.reduce((s: number, l: any) => {
+                        const k = String(l?.id)
+                        return s + Number(paymentsAgg[k] || 0)
+                      }, 0)
+                      const moneyData = [
+                        { name: 'Recuperado', value: Math.min(paidRecoveredMoney, totalRepayableMoney) },
+                        { name: 'Pendiente', value: Math.max(0, totalRepayableMoney - paidRecoveredMoney) }
+                      ]
+                      return (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
+                            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                              <CardTitle className="text-sm font-medium text-muted-foreground">Progreso global de asesores</CardTitle>
+                              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                            </CardHeader>
+                            <CardContent>
+                              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+                                <div>
+                                  <div className="text-2xl font-bold text-foreground">{totalCount > 0 ? Math.round((paidCount / totalCount) * 100) : 0}%</div>
+                                  <p className="text-xs text-muted-foreground mt-1">Cuotas pagadas sobre el total</p>
+                                </div>
+                                <div className="w-32 h-32 sm:w-36 sm:h-36 min-w-[8rem] relative mx-auto md:mx-0">
+                                  <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                      <Pie dataKey="value" data={data} innerRadius={44} outerRadius={58} paddingAngle={2}>
+                                        <Cell fill={getProgressColor(paidCount, totalCount)} />
+                                        <Cell fill="#e5e7eb" />
+                                      </Pie>
+                                    </PieChart>
+                                  </ResponsiveContainer>
+                                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                    <div className="text-sm font-semibold">{paidCount}/{totalCount}</div>
+                                    <div className="text-[10px] text-muted-foreground">cuotas</div>
+                                  </div>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                          <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
+                            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                              <CardTitle className="text-sm font-medium text-muted-foreground">Recuperación de dinero de asesores</CardTitle>
+                              <DollarSign className="h-4 w-4 text-muted-foreground" />
+                            </CardHeader>
+                            <CardContent>
+                              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+                                <div>
+                                  <div className="text-2xl font-bold text-foreground">{totalRepayableMoney > 0 ? Math.round((paidRecoveredMoney / totalRepayableMoney) * 100) : 0}%</div>
+                                  <p className="text-xs text-muted-foreground mt-1">Dinero recuperado sobre el total</p>
+                                  <div className="text-xs text-muted-foreground mt-2">Total: {formatCurrency(totalRepayableMoney)}</div>
+                                </div>
+                                <div className="w-32 h-32 sm:w-36 sm:h-36 min-w-[8rem] relative mx-auto md:mx-0">
+                                  <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                      <Pie dataKey="value" data={moneyData} innerRadius={44} outerRadius={58} paddingAngle={2}>
+                                        <Cell fill={getProgressColor(paidRecoveredMoney, totalRepayableMoney)} />
+                                        <Cell fill="#e5e7eb" />
+                                      </Pie>
+                                    </PieChart>
+                                  </ResponsiveContainer>
+                                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                    <div className="text-sm font-semibold">{formatCurrency(paidRecoveredMoney)}</div>
+                                    <div className="text-[10px] text-muted-foreground">recuperado</div>
+                                  </div>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                          <div className="sm:col-span-2">
+                            {(() => {
+                              const advisorItems = (() => {
+                                const byAdvisor: Record<string, { id: string, email: string, name: string, clients: any[] }> = {}
+                                for (const a of advisors || []) {
+                                  const id = String(a.id)
+                                  byAdvisor[id] = { id, email: String(a.email || ''), name: String(a.full_name || ''), clients: [] }
+                                }
+                                for (const c of (clients || [])) {
+                                  const aid = String(c.advisor_id || '')
+                                  if (!aid) continue
+                                  if (!byAdvisor[aid]) {
+                                    byAdvisor[aid] = { id: aid, email: String(c.advisor_email || ''), name: '', clients: [] }
+                                  }
+                                  byAdvisor[aid].clients.push(c)
+                                }
+                                return Object.values(byAdvisor).filter(it => (it.clients || []).length > 0)
+                              })()
+                              if (advisorClientsView) {
+                                const target = advisorItems.find(it => it.id === advisorClientsView.id) || { id: advisorClientsView.id, name: advisorClientsView.name, email: advisorClientsView.email, clients: [] }
+                                const titleName = advisorClientsView.name || target.name || advisorClientsView.email || 'Asesor'
+                                const titleEmail = advisorClientsView.email || target.email || '-'
+                                return (
+                                  <div className="mt-4 space-y-3">
+                                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                                      <div>
+                                        <div className="text-sm text-muted-foreground">Clientes del asesor</div>
+                                        <div className="text-lg font-semibold text-foreground">{titleName} · {titleEmail}</div>
+                                      </div>
+                                      <Button variant="outline" size="sm" onClick={() => setAdvisorClientsView(null)}>Volver a tabla</Button>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                      {(target.clients || []).map((c: any, i: number) => {
+                                        const clientId = String(c.id)
+                                        const clientName = `${String(c.first_name || '')} ${String(c.last_name || '')}`.trim() || String(c.email || 'Cliente')
+                                        const activeLoans = (loans || []).filter((l: any) => l.status === 'active' && String((l?.client || {}).id) === clientId)
+                                        const totalInstallments = activeLoans.reduce((s: number, l: any) => s + Number((l as any).progressTotal || 0), 0)
+                                        const confirmedInstallments = activeLoans.reduce((s: number, l: any) => s + Number(paymentsConfirmedCounts[String(l.id)] || 0), 0)
+                                        const clientLoans = (loans || []).filter((l: any) => String((l?.client || {}).id) === clientId)
+                                        return (
+                                          <Card key={i} className="border-border/50 bg-card/50">
+                                            <CardHeader className="pb-2">
+                                              <CardTitle className="text-sm font-medium text-foreground truncate">{clientName}</CardTitle>
+                                              <div className="text-xs text-muted-foreground truncate">{String(c.email || '-')}</div>
+                                            </CardHeader>
+                                            <CardContent>
+                                              <div className="flex items-center justify-between gap-2">
+                                                <div>
+                                                  <div className="text-sm font-semibold text-foreground">{confirmedInstallments}/{totalInstallments}</div>
+                                                  <div className="text-[11px] text-muted-foreground">cuotas confirmadas</div>
+                                                </div>
+                                                <Button variant="ghost" size="sm" className="shrink-0" onClick={() => { if (clientId) window.location.href = `/dashboard/clients/${clientId}` }}>Ver detalles cliente</Button>
+                                              </div>
+                                              <div className="mt-3 space-y-2">
+                                                {clientLoans.length === 0 ? (
+                                                  <div className="text-xs text-muted-foreground">Sin préstamos</div>
+                                                ) : clientLoans.map((l: any, j: number) => {
+                                                  const lp = Number(paymentsConfirmedCounts[String(l.id)] || 0)
+                                                  const lt = Number((l as any).progressTotal || 0)
+                                                  const ln = String((l as any).loanNumber || (l as any).loan_number || l.id)
+                                                  const st = String((l as any).status || '')
+                                                  const stClass = st === 'active' ? 'bg-emerald-500/20 text-emerald-400' : st === 'pending' ? 'bg-amber-500/20 text-amber-400' : st === 'paid' ? 'bg-blue-500/20 text-blue-400' : 'bg-muted text-muted-foreground'
+                                                  return (
+                                                    <div key={j} className="rounded-md border border-border/50 p-2 text-xs flex items-center justify-between gap-2">
+                                                      <div className="min-w-0">
+                                                        <div className="flex items-center gap-2">
+                                                          <span className="text-foreground truncate">Préstamo #{ln}</span>
+                                                          <span className={`px-2 py-0.5 rounded ${stClass}`}>{st || '—'}</span>
+                                                        </div>
+                                                        <div className="text-[11px] text-muted-foreground">{lp}/{lt} cuotas confirmadas</div>
+                                                      </div>
+                                                      <Button variant="ghost" size="sm" className="shrink-0" onClick={() => { const lid = String(l.id); if (lid) window.location.href = `/dashboard/loans/${lid}` }}>Ver detalles préstamo</Button>
+                                                    </div>
+                                                  )
+                                                })}
+                                              </div>
+                                            </CardContent>
+                                          </Card>
+                                        )
+                                      })}
+                                    </div>
+                                  </div>
+                                )
+                              }
+                              return (
+                                <div className="rounded-lg border border-border/50 bg-card/50 backdrop-blur-sm overflow-hidden mt-4">
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow className="hover:bg-transparent border-border/50">
+                                        <TableHead className="text-muted-foreground">Asesor</TableHead>
+                                        <TableHead className="text-muted-foreground">Correo</TableHead>
+                                        <TableHead className="text-muted-foreground">Clientes asignados</TableHead>
+                                        <TableHead className="text-muted-foreground">Detalle</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {advisorItems.map((a, idx) => (
+                                        <TableRow key={idx} className="border-border/50">
+                                          <TableCell className="text-foreground">{a.name || a.email || 'Asesor'}</TableCell>
+                                          <TableCell className="text-foreground">{a.email || '-'}</TableCell>
+                                          <TableCell className="text-foreground">{(a.clients || []).length}</TableCell>
+                                          <TableCell>
+                                            <Button variant="ghost" size="sm" onClick={() => setAdvisorClientsView({ id: a.id, name: a.name, email: a.email })}>Ver desglose</Button>
+                                          </TableCell>
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                </div>
+                              )
+                            })()}
+                          </div>
+                        </div>
+                      )
+                    })()
+                  ) : (
+                    <LoansTable loans={advisorSelectedLoans} userRole={userData.role} onLoanUpdated={fetchLoans} groupMap={loanGroupMap} />
+                  )
+                ) : null
+              ) : (
+                <LoansTable loans={displayLoans} userRole={userData.role} onLoanUpdated={fetchLoans} groupMap={loanGroupMap} />
+              )}
+            </TabsContent>
           <TabsContent value="groups">
             <h3 className="text-xl font-semibold text-foreground mb-4">Préstamos por Grupo</h3>
             {groupsError && (
@@ -439,22 +988,51 @@ const formatCurrency = (amount: number) => {
                 }}>Reintentar</Button>
               </div>
             )}
-              <GroupLoansTable
-                items={(groupLoans || []).map((g: any) => {
-                  const clientsItems = (g.loans || []).map((item: any) => {
-                    const loan = loans.find((l: any) => l.id === item.loan_id)
-                    const name = loan?.client ? `${loan.client.firstName ?? loan.client.first_name} ${loan.client.lastName ?? loan.client.last_name}` : ''
-                    const amount = loan?.amount ? Number(loan.amount) : 0
-                    return { name, amount }
-                  })
-                  return {
-                    groupName: g.group?.nombre ?? 'Grupo',
-                    totalAmount: Number(g.total_amount) || clientsItems.reduce((s: number, c: any) => s + (c.amount || 0), 0),
-                    clients: clientsItems,
-                    groupId: g.group_id,
-                  }
-                })}
-              />
+              {groupsTabVisited && (
+                <GroupLoansTable
+                  items={(groupLoans || [])
+                    .map((g: any) => {
+                      const selector = (loan: any) => {
+                        if (!advisorSelectedView || advisorSelectedView === 'all') return true
+                        if (advisorSelectedView === 'active') return loan?.status === 'active'
+                        if (advisorSelectedView === 'pending') return loan?.status === 'pending'
+                        if (advisorSelectedView === 'paid') return loan?.status === 'paid'
+                        if (advisorSelectedView === 'aldia') return !(loan as any)?.hasOverdue
+                        if (advisorSelectedView === 'mora') return Boolean((loan as any)?.hasOverdue)
+                        return true
+                      }
+                      const clientsItems = (g.loans || [])
+                        .map((item: any) => {
+                          const loan = loans.find((l: any) => String(l.id) === String(item.loan_id))
+                          if (!loan) return { name: '', amount: 0 }
+                          if (!selector(loan)) return { name: '', amount: 0 }
+                          const name = loan?.client ? `${loan.client.firstName ?? loan.client.first_name} ${loan.client.lastName ?? loan.client.last_name}` : ''
+                          const amount = loan?.amount ? Number(loan.amount) : 0
+                          const progressPaid = loan ? Number((loan as any).progressPaid || 0) : 0
+                          const progressTotal = loan ? Number((loan as any).progressTotal || 0) : 0
+                          const hasOverdue = loan ? Boolean((loan as any).hasOverdue) : false
+                          return { name, amount, progressPaid, progressTotal, hasOverdue }
+                        })
+                        .filter((c: any) => c.name)
+                      const groupHasSelected = (() => {
+                        if (!advisorSelectedView || advisorSelectedView === 'all') return true
+                        return (g.loans || []).some((item: any) => {
+                          const loan = loans.find((l: any) => String(l.id) === String(item.loan_id))
+                          return loan && selector(loan)
+                        })
+                      })()
+                      return {
+                        groupName: g.group?.nombre ?? 'Grupo',
+                        totalAmount: Number(g.total_amount) || clientsItems.reduce((s: number, c: any) => s + (c.amount || 0), 0),
+                        clients: clientsItems,
+                        groupId: g.group_id,
+                        totalMembers: (g.loans || []).length,
+                        _include: groupHasSelected,
+                      }
+                    })
+                    .filter((it: any) => it._include)}
+                />
+              )}
             </TabsContent>
           </Tabs>
         )}

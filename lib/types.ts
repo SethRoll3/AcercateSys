@@ -16,6 +16,7 @@ export interface Loan {
   userId: string
   loan_number: string
   loanNumber: string
+  paymentFrequency?: 'mensual' | 'quincenal'
   amount: number
   interestRate: number
   termMonths: number
@@ -34,6 +35,10 @@ export interface Loan {
     last_name: string
     email?: string | null
   } | null
+  // Campos calculados desde API para visualización
+  progressPaid?: number
+  progressTotal?: number
+  hasOverdue?: boolean
 }
 
 // Cliente asociado a un préstamo

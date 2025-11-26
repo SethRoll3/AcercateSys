@@ -51,35 +51,71 @@ export async function POST(
       return NextResponse.json({ error: "Failed to delete existing schedule" }, { status: 500 })
     }
 
-    // Crear nuevo plan de pagos: capital fijo + interés mensual fijo.
-    // IMPORTANTE: "amount" guarda SOLO (capital + interés). Los gastos administrativos
-    // se almacenan en "admin_fees" y se suman al mostrar o cobrar.
-    const scheduleEntries = []
-    const n = loan.term_months
-    const totalLoanAmount = parseFloat(loan.amount)
-    const monthlyRate = (loan.interest_rate || 0) / 100 // interés mensual
-    const adminFeesPerInstallment = 20
-    const round2 = (num: number) => Math.round(num * 100) / 100
+  // Crear nuevo plan de pagos: capital fijo + interés mensual fijo.
+  // IMPORTANTE: "amount" guarda SOLO (capital + interés). Los gastos administrativos
+  // se almacenan en "admin_fees" y se suman al mostrar o cobrar.
+  const scheduleEntries = []
+  const n = loan.term_months
+  const totalLoanAmount = parseFloat(loan.amount)
+  const monthlyRate = (loan.interest_rate || 0) / 100 // interés mensual
+  const adminFeesPerInstallment = 20
+  const round2 = (num: number) => Math.round(num * 100) / 100
 
-    const capitalPerMonth = round2(totalLoanAmount / n)
-    const interestPerMonth = round2(totalLoanAmount * monthlyRate)
+  const capitalPerMonth = round2(totalLoanAmount / n)
+  const interestPerMonth = round2(totalLoanAmount * monthlyRate)
 
+  const { searchParams } = new URL(request.url)
+  const frequency = (searchParams.get('frequency') === 'quincenal') ? 'quincenal' : 'mensual'
+
+  const parseYMD = (ymd: string) => {
+    const m = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/.exec(String(ymd))
+    if (!m) return new Date(ymd)
+    const y = Number(m[1]); const mo = Number(m[2]) - 1; const d = Number(m[3])
+    return new Date(Date.UTC(y, mo, d, 12, 0, 0))
+  }
+  const formatGTYMD = (date: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guatemala' }).format(date)
+  const addMonths = (ymd: string, months: number) => {
+    const dt = parseYMD(ymd)
+    const copy = new Date(dt.getTime())
+    copy.setUTCMonth(copy.getUTCMonth() + months)
+    return formatGTYMD(copy)
+  }
+  const addDays = (ymd: string, days: number) => {
+    const dt = parseYMD(ymd)
+    const copy = new Date(dt.getTime())
+    copy.setUTCDate(copy.getUTCDate() + days)
+    return formatGTYMD(copy)
+  }
+
+  if (frequency === 'mensual') {
     for (let i = 0; i < n; i++) {
-      const dueDate = new Date(loan.start_date)
-      dueDate.setMonth(dueDate.getMonth() + i + 1)
-
+      const dueYmd = addMonths(loan.start_date, i + 1)
       scheduleEntries.push({
         loan_id: loan.id,
         payment_number: i + 1,
-        due_date: dueDate.toISOString().split("T")[0],
-        // amount debe ser capital + interés (sin gastos administrativos)
+        due_date: dueYmd,
         amount: round2(capitalPerMonth + interestPerMonth),
         principal: capitalPerMonth,
         interest: interestPerMonth,
         admin_fees: adminFeesPerInstallment,
-        status: "pending"
+        status: 'pending',
       })
     }
+  } else {
+    for (let i = 0; i < n; i++) {
+      const dueYmd = addDays(loan.start_date, (i + 1) * 15)
+      scheduleEntries.push({
+        loan_id: loan.id,
+        payment_number: i + 1,
+        due_date: dueYmd,
+        amount: round2(capitalPerMonth + (interestPerMonth / 2)),
+        principal: capitalPerMonth,
+        interest: round2(interestPerMonth / 2),
+        admin_fees: adminFeesPerInstallment,
+        status: 'pending',
+      })
+    }
+  }
 
     // Insertar el nuevo plan de pagos usando el cliente de administrador
     const { error: scheduleError } = await supabaseAdmin

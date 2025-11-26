@@ -336,7 +336,7 @@ export function PaymentForm({ loanId, scheduleItem, onPaymentSuccess, onCancel, 
           )}
 
           {/* Botones de acción */}
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <Button type="button" variant="outline" onClick={onCancel} className="bg-transparent">
               Cancelar
             </Button>

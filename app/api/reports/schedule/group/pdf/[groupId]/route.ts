@@ -27,7 +27,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ groupId
 
     const { data: loans } = await admin
       .from('loans')
-      .select('id, loan_number, amount, client:clients(id, first_name, last_name)')
+      .select('id, loan_number, amount, term_months, interest_rate, client:clients(id, first_name, last_name)')
       .in('id', loanIds)
     const { data: schedules } = await admin
       .from('payment_schedule')
@@ -57,14 +57,22 @@ export async function GET(_req: Request, { params }: { params: Promise<{ groupId
     const date = (d: string) => new Date(d).toLocaleDateString('es-GT')
 
     function sectionHtml(loan: any, rows: any[]) {
-      const n = rows.length
+      const termMonths = Number(loan.term_months || 0)
       const amount = Number(loan.amount || 0)
-      const capitalMes = Math.round((amount / n) * 100) / 100
-      // Intentar obtener tasa mensual desde filas; si no, asumir proporcional
-      const interesMes = Math.round((amount * ((rows[0]?.interest && amount ? Number(rows[0].interest)/amount : 0))) * 100) / 100
+      const monthlyRate = Number(loan.interest_rate || 0) / 100
+      const capitalMes = Math.round(((termMonths > 0 ? amount / termMonths : 0)) * 100) / 100
+      const interesMes = Math.round((amount * monthlyRate) * 100) / 100
       const adminFees = Number(rows[0]?.admin_fees ?? 20)
-      const cuotaBase = Math.round((capitalMes + interesMes + adminFees) * 100) / 100
-      const totalBase = Math.round((cuotaBase * n) * 100) / 100
+      const firstRow = rows[0]
+      const cuotaBase = firstRow ? Math.round(((Number(firstRow.principal||0)) + (Number(firstRow.interest||0)) + adminFees) * 100) / 100 : Math.round((capitalMes + interesMes + adminFees) * 100) / 100
+      const isQuincenal = (() => {
+        if (!rows || rows.length < 2) return false
+        const d1 = new Date(rows[0].due_date as any)
+        const d2 = new Date(rows[1].due_date as any)
+        const diffDays = Math.round((d2.getTime() - d1.getTime()) / 86400000)
+        return diffDays === 15
+      })()
+      const totalBase = Math.round((cuotaBase * rows.length) * 100) / 100
 
       let saldoTotal = totalBase
       const trs = rows.map((s) => {
@@ -87,7 +95,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ groupId
         <div class="meta">Monto prestado: ${currency(amount)}</div>
         <div class="breakdown">
           <div><strong>Capital mensual:</strong> ${currency(capitalMes)} | <strong>Interés mensual:</strong> ${currency(interesMes)} | <strong>Aporte:</strong> ${currency(adminFees)}</div>
-          <div><strong>Cuota base mensual:</strong> ${currency(cuotaBase)} | <strong>Total del préstamo (sin mora):</strong> ${currency(totalBase)} | + mora si aplica</div>
+          <div><strong>Cuota base ${isQuincenal ? 'quincenal' : 'mensual'}:</strong> ${currency(cuotaBase)} | <strong>Total del préstamo (sin mora):</strong> ${currency(totalBase)} | + mora si aplica</div>
         </div>
         <table>
           <thead>

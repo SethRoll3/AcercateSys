@@ -1,12 +1,27 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { stableJsonStringify, buildCacheHeaders, latestUpdatedAt, isNotModified } from '@/lib/http-cache'
 
 export async function GET(request: Request) {
-  const supabase = await createClient()
-  const { data: advisors, error } = await supabase
+  const regular = await createClient()
+  const { data: { user }, error: authError } = await regular.auth.getUser()
+  if (authError || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const { data: me, error: meError } = await regular
     .from('users')
-    .select('id, email, role')
+    .select('role')
+    .eq('auth_id', user.id)
+    .single()
+  if (meError || !me || !['admin','asesor'].includes(me.role)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  const admin = await createAdminClient()
+  const { data: advisors, error } = await admin
+    .from('users')
+    .select('id, email, full_name, role')
     .eq('role', 'asesor')
 
   if (error) {

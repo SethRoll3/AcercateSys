@@ -136,7 +136,7 @@ export async function GET(request: Request) {
     // Get user role and email
     const { data: userData, error: userError } = await supabase
       .from('users')
-      .select('role, email')
+      .select('id, role, email')
       .eq('auth_id', user.id)
       .single()
 
@@ -162,29 +162,8 @@ export async function GET(request: Request) {
       `)
       .order("created_at", { ascending: false })
 
-    // Apply role-based filtering
-    if (userData.role === 'cliente') {
-      // Clients can only see payments for loans associated with their email
-      query = query.eq('loan.client.email', userData.email)
-    } else if (userData.role === 'asesor') {
-      // Advisors can see payments for loans of their assigned clients
-      const { data: assignedClients, error: clientsError } = await supabase
-        .from('clients')
-        .select('email')
-        .eq('advisor_email', userData.email)
-
-      if (clientsError) {
-        return NextResponse.json({ error: "Error fetching assigned clients" }, { status: 500 })
-      }
-
-      const clientEmails = assignedClients.map(client => client.email)
-      if (clientEmails.length > 0) {
-        query = query.in('loan.client.email', clientEmails)
-      } else {
-        // If advisor has no assigned clients, return empty array
-        return NextResponse.json([])
-      }
-    }
+    // Apply role-based filtering via RLS policies; only loanId filter is needed
+    // Client and advisor visibility is enforced at the database level
     // Admins can see all payments (no additional filtering)
 
     if (loanId) {
@@ -195,7 +174,12 @@ export async function GET(request: Request) {
 
     if (paymentsError) {
       console.error("Error fetching payments:", paymentsError)
-      return NextResponse.json({ error: "Failed to fetch payments" }, { status: 500 })
+      return NextResponse.json({ 
+        error: "Failed to fetch payments", 
+        details: (paymentsError as any)?.message || String(paymentsError),
+        hint: (paymentsError as any)?.hint,
+        code: (paymentsError as any)?.code
+      }, { status: 500 })
     }
 
     // Transform payments
@@ -239,6 +223,9 @@ export async function GET(request: Request) {
     return NextResponse.json(responseData, { headers })
   } catch (error) {
     console.error("Error fetching payments:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    return NextResponse.json({ 
+      error: "Internal server error",
+      details: (error as any)?.message || String(error)
+    }, { status: 500 })
   }
 }

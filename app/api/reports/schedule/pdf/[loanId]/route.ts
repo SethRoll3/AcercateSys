@@ -65,11 +65,19 @@ export async function GET(_req: Request, { params }: { params: Promise<{ loanId:
     const n = Number(loanRow.term_months || 0)
     const amount = Number(loanRow.amount || 0)
     const monthlyRate = Number(loanRow.interest_rate || 0) / 100
-    const capitalMes = Math.round((amount / n) * 100) / 100
+    const capitalMes = Math.round(((n > 0 ? amount / n : 0)) * 100) / 100
     const interesMes = Math.round((amount * monthlyRate) * 100) / 100
     const adminFees = 20
-    const cuotaBase = Math.round((capitalMes + interesMes + adminFees) * 100) / 100
-    const totalBase = Math.round((cuotaBase * n) * 100) / 100
+    const firstRow = Array.isArray(schedule) && schedule.length ? (schedule as any[])[0] : null
+    const cuotaBase = firstRow ? Math.round(((Number(firstRow.principal||0)) + (Number(firstRow.interest||0)) + (Number(firstRow.admin_fees||0))) * 100) / 100 : Math.round((capitalMes + interesMes + adminFees) * 100) / 100
+    const totalBase = Math.round(((cuotaBase * (schedule?.length || 0))) * 100) / 100
+    const isQuincenal = (() => {
+      if (!Array.isArray(schedule) || schedule.length < 2) return false
+      const d1 = new Date((schedule as any[])[0].due_date as any)
+      const d2 = new Date((schedule as any[])[1].due_date as any)
+      const diffDays = Math.round((d2.getTime() - d1.getTime()) / 86400000)
+      return diffDays === 15
+    })()
 
     let saldoTotal = totalBase
     const rowsHtml = (schedule || []).map((s: any) => {
@@ -112,7 +120,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ loanId:
         <div class="meta">Monto prestado: ${currency(amount)}</div>
         <div class="breakdown">
           <div><strong>Capital mensual:</strong> ${currency(capitalMes)} | <strong>Interés mensual:</strong> ${currency(interesMes)} | <strong>Aporte:</strong> ${currency(adminFees)}</div>
-          <div><strong>Cuota base mensual:</strong> ${currency(cuotaBase)} | <strong>Total del préstamo (sin mora):</strong> ${currency(totalBase)} | + mora si aplica</div>
+          <div><strong>Cuota base ${isQuincenal ? 'quincenal' : 'mensual'}:</strong> ${currency(cuotaBase)} | <strong>Total del préstamo (sin mora):</strong> ${currency(totalBase)} | + mora si aplica</div>
         </div>
         <table>
           <thead>
