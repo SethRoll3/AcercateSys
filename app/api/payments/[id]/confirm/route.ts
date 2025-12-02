@@ -176,6 +176,19 @@ export async function PATCH(
             paid_amount: totalPaidAmount,
           })
           .eq("id", payment.schedule_id);
+
+        // After approving and updating the schedule, if all schedules of the loan are paid, mark loan as paid
+        const { data: schedules } = await serviceSupabase
+          .from('payment_schedule')
+          .select('status')
+          .eq('loan_id', updatedPayment.loan_id)
+        const allPaid = (schedules || []).length > 0 && (schedules || []).every((s: any) => String(s.status).toLowerCase() === 'paid')
+        if (allPaid) {
+          await serviceSupabase
+            .from('loans')
+            .update({ status: 'paid' })
+            .eq('id', updatedPayment.loan_id)
+        }
       }
     } else if (action === "rechazar") {
       await serviceSupabase

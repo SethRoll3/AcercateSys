@@ -1,183 +1,133 @@
-# Supabase CLI
+# Sistema de Gestión de Préstamos Cooperativa
 
-[![Coverage Status](https://coveralls.io/repos/github/supabase/cli/badge.svg?branch=main)](https://coveralls.io/github/supabase/cli?branch=main) [![Bitbucket Pipelines](https://img.shields.io/bitbucket/pipelines/supabase-cli/setup-cli/master?style=flat-square&label=Bitbucket%20Canary)](https://bitbucket.org/supabase-cli/setup-cli/pipelines) [![Gitlab Pipeline Status](https://img.shields.io/gitlab/pipeline-status/sweatybridge%2Fsetup-cli?label=Gitlab%20Canary)
-](https://gitlab.com/sweatybridge/setup-cli/-/pipelines)
+## Descripción del Proyecto
+Este proyecto es un sistema integral de gestión de préstamos diseñado para cooperativas o instituciones financieras similares. Permite la administración eficiente de clientes, préstamos individuales y grupales, planes de pago, historial de pagos, y notificaciones. La aplicación está construida con un enfoque en la escalabilidad, seguridad y facilidad de uso, proporcionando una plataforma robusta para la gestión financiera.
 
-[Supabase](https://supabase.io) is an open source Firebase alternative. We're building the features of Firebase using enterprise-grade open source tools.
+## Características Principales
 
-This repository contains all the functionality for Supabase CLI.
+-   **Gestión de Clientes**:
+    -   Registro y edición de información detallada de clientes.
+    -   Asignación de roles (Administrador, Asesor, Cliente) con permisos específicos.
+    -   Visualización de un historial completo de interacciones y transacciones por cliente.
+-   **Gestión de Préstamos Individuales y Grupales**:
+    -   Creación y administración de préstamos con diferentes términos y condiciones.
+    -   Soporte para préstamos individuales y la capacidad de agrupar clientes para préstamos grupales.
+    -   Cálculo automático de planes de pago y amortización.
+-   **Planes de Pago y Pagos**:
+    -   Generación de calendarios de pago detallados.
+    -   Registro de pagos, incluyendo pagos parciales y anticipados.
+    -   Seguimiento del estado de los pagos y saldos pendientes.
+-   **Notificaciones y Alertas**:
+    -   Sistema de notificaciones para recordar fechas de pago, vencimientos y otras alertas importantes.
+    -   Comunicación eficiente con clientes y asesores.
+-   **Roles y Permisos**:
+    -   Control de acceso basado en roles para Administradores, Asesores y Clientes.
+    -   Los administradores tienen control total, los asesores gestionan clientes y préstamos, y los clientes pueden ver sus propios préstamos y pagos.
+-   **Panel de Control (Dashboard)**:
+    -   Vista general de métricas clave, como préstamos activos, pagos pendientes y rendimiento general.
+    -   Gráficos y reportes para una toma de decisiones informada.
+-   **Seguridad**:
+    -   Autenticación de usuarios robusta.
+    -   Reglas de seguridad a nivel de fila (RLS) implementadas en la base de datos para proteger la información sensible.
+    -   Uso de variables de entorno para credenciales y configuraciones sensibles.
 
-- [x] Running Supabase locally
-- [x] Managing database migrations
-- [x] Creating and deploying Supabase Functions
-- [x] Generating types directly from your database schema
-- [x] Making authenticated HTTP requests to [Management API](https://supabase.com/docs/reference/api/introduction)
+## Tecnologías Utilizadas
 
-## Getting started
+-   **Frontend**:
+    -   **Next.js**: Framework de React para el desarrollo de aplicaciones web con renderizado del lado del servidor (SSR) y generación de sitios estáticos (SSG).
+    -   **React**: Biblioteca de JavaScript para construir interfaces de usuario interactivas.
+    -   **TypeScript**: Superset de JavaScript que añade tipado estático para mejorar la robustez del código.
+    -   **Tailwind CSS**: Framework CSS utilitario para un diseño rápido y responsivo.
+    -   **shadcn/ui**: Colección de componentes de UI reusables y accesibles construidos con Tailwind CSS y Radix UI.
+    -   **Lucide React**: Biblioteca de iconos.
+    -   **Sonner**: Componente de notificaciones toast.
+-   **Backend y Base de Datos**:
+    -   **Supabase**: Plataforma de código abierto que proporciona una base de datos PostgreSQL, autenticación, APIs instantáneas y funciones Edge.
+    -   **PostgreSQL**: Sistema de gestión de bases de datos relacionales robusto y extensible.
+    -   **API Routes (Next.js)**: Para la creación de endpoints de API personalizados y la interacción segura con Supabase.
+-   **Herramientas de Desarrollo**:
+    -   **ESLint**: Para mantener la calidad y consistencia del código.
+    -   **Prettier**: Para formatear automáticamente el código.
+    -   **Dotenv**: Para la gestión de variables de entorno.
 
-### Install the CLI
+## Arquitectura
 
-Available via [NPM](https://www.npmjs.com) as dev dependency. To install:
+La aplicación sigue una arquitectura moderna basada en Next.js, aprovechando sus capacidades de renderizado del lado del servidor y del cliente.
 
-```bash
-npm i supabase --save-dev
-```
+-   **Frontend**: Desarrollado con React y Next.js, utilizando `shadcn/ui` para los componentes de la interfaz de usuario y `Tailwind CSS` para el estilado. La interacción con la API se realiza a través de `fetch` a las API Routes de Next.js.
+-   **Backend**: Las API Routes de Next.js actúan como una capa intermedia, manejando las solicitudes del frontend y comunicándose con Supabase. Esto permite implementar lógica de negocio y seguridad adicional antes de interactuar con la base de datos.
+-   **Base de Datos**: Supabase (PostgreSQL) es el corazón del sistema, almacenando toda la información de clientes, préstamos, pagos y usuarios. Se utilizan las características de autenticación de Supabase y las Row Level Security (RLS) para asegurar los datos.
+-   **Autenticación y Autorización**: Supabase maneja la autenticación de usuarios. La autorización se gestiona mediante roles almacenados en la base de datos y verificados en las API Routes y las políticas de RLS.
 
-To install the beta release channel:
+## Cómo Empezar
 
-```bash
-npm i supabase@beta --save-dev
-```
+Sigue estos pasos para configurar y ejecutar el proyecto en tu entorno local.
 
-When installing with yarn 4, you need to disable experimental fetch with the following nodejs config.
+### Prerrequisitos
 
-```
-NODE_OPTIONS=--no-experimental-fetch yarn add supabase
-```
+Asegúrate de tener instalado lo siguiente:
 
-> **Note**
-For Bun versions below v1.0.17, you must add `supabase` as a [trusted dependency](https://bun.sh/guides/install/trusted) before running `bun add -D supabase`.
+-   Node.js (versión 18 o superior)
+-   npm o Yarn
+-   Git
+-   Una cuenta de Supabase y un proyecto configurado.
 
-<details>
-  <summary><b>macOS</b></summary>
+### Configuración del Proyecto
 
-  Available via [Homebrew](https://brew.sh). To install:
+1.  **Clonar el repositorio**:
+    ```bash
+    git clone https://github.com/tu-usuario/cooperativa.git
+    cd cooperativa
+    ```
 
-  ```sh
-  brew install supabase/tap/supabase
-  ```
+2.  **Instalar dependencias**:
+    ```bash
+    npm install
+    # o
+    yarn install
+    ```
 
-  To install the beta release channel:
-  
-  ```sh
-  brew install supabase/tap/supabase-beta
-  brew link --overwrite supabase-beta
-  ```
-  
-  To upgrade:
+3.  **Configurar variables de entorno**:
+    Crea un archivo `.env.local` en la raíz del proyecto y añade tus credenciales de Supabase:
+    ```
+    NEXT_PUBLIC_SUPABASE_URL=tu_url_supabase
+    NEXT_PUBLIC_SUPABASE_ANON_KEY=tu_clave_anon_supabase
+    SUPABASE_SERVICE_ROLE_KEY=tu_clave_rol_servicio_supabase
+    ```
+    Puedes encontrar estas claves en la configuración de tu proyecto Supabase. La `SUPABASE_SERVICE_ROLE_KEY` es crucial para operaciones que requieren eludir RLS, como la eliminación en cascada.
 
-  ```sh
-  brew upgrade supabase
-  ```
-</details>
+4.  **Configurar la Base de Datos Supabase**:
+    -   Asegúrate de que tu base de datos PostgreSQL en Supabase tenga las tablas necesarias (clientes, grupos, prestamos, pagos, usuarios, etc.) y las relaciones configuradas.
+    -   Implementa las políticas de Row Level Security (RLS) adecuadas para cada tabla para asegurar que los usuarios solo puedan acceder a los datos a los que tienen permiso.
+    -   Configura los triggers o funciones de base de datos si son necesarios para la lógica de negocio (ej. eliminación en cascada).
 
-<details>
-  <summary><b>Windows</b></summary>
+### Ejecutar la Aplicación
 
-  Available via [Scoop](https://scoop.sh). To install:
+1.  **Iniciar el servidor de desarrollo**:
+    ```bash
+    npm run dev
+    # o
+    yarn dev
+    ```
+2.  Abre [http://localhost:3000](http://localhost:3000) en tu navegador para ver la aplicación.
 
-  ```powershell
-  scoop bucket add supabase https://github.com/supabase/scoop-bucket.git
-  scoop install supabase
-  ```
+## Uso
 
-  To upgrade:
+-   **Administradores**: Acceso completo para gestionar usuarios, clientes, grupos y préstamos.
+-   **Asesores**: Pueden crear y gestionar clientes y sus préstamos asociados.
+-   **Clientes**: Pueden ver el estado de sus propios préstamos y el historial de pagos.
 
-  ```powershell
-  scoop update supabase
-  ```
-</details>
+## Contribución
 
-<details>
-  <summary><b>Linux</b></summary>
+Las contribuciones son bienvenidas. Por favor, sigue estos pasos:
 
-  Available via [Homebrew](https://brew.sh) and Linux packages.
+1.  Haz un fork del repositorio.
+2.  Crea una nueva rama (`git checkout -b feature/nueva-caracteristica`).
+3.  Realiza tus cambios y asegúrate de que el código pase las pruebas y el linter.
+4.  Haz commit de tus cambios (`git commit -am 'feat: Añadir nueva característica'`).
+5.  Sube tu rama (`git push origin feature/nueva-caracteristica`).
+6.  Abre un Pull Request.
 
-  #### via Homebrew
+## Licencia
 
-  To install:
-
-  ```sh
-  brew install supabase/tap/supabase
-  ```
-
-  To upgrade:
-
-  ```sh
-  brew upgrade supabase
-  ```
-
-  #### via Linux packages
-
-  Linux packages are provided in [Releases](https://github.com/supabase/cli/releases). To install, download the `.apk`/`.deb`/`.rpm`/`.pkg.tar.zst` file depending on your package manager and run the respective commands.
-
-  ```sh
-  sudo apk add --allow-untrusted <...>.apk
-  ```
-
-  ```sh
-  sudo dpkg -i <...>.deb
-  ```
-
-  ```sh
-  sudo rpm -i <...>.rpm
-  ```
-
-  ```sh
-  sudo pacman -U <...>.pkg.tar.zst
-  ```
-</details>
-
-<details>
-  <summary><b>Other Platforms</b></summary>
-
-  You can also install the CLI via [go modules](https://go.dev/ref/mod#go-install) without the help of package managers.
-
-  ```sh
-  go install github.com/supabase/cli@latest
-  ```
-
-  Add a symlink to the binary in `$PATH` for easier access:
-
-  ```sh
-  ln -s "$(go env GOPATH)/bin/cli" /usr/bin/supabase
-  ```
-
-  This works on other non-standard Linux distros.
-</details>
-
-<details>
-  <summary><b>Community Maintained Packages</b></summary>
-
-  Available via [pkgx](https://pkgx.sh/). Package script [here](https://github.com/pkgxdev/pantry/blob/main/projects/supabase.com/cli/package.yml).
-  To install in your working directory:
-
-  ```bash
-  pkgx install supabase
-  ```
-
-  Available via [Nixpkgs](https://nixos.org/). Package script [here](https://github.com/NixOS/nixpkgs/blob/master/pkgs/development/tools/supabase-cli/default.nix).
-</details>
-
-### Run the CLI
-
-```bash
-supabase bootstrap
-```
-
-Or using npx:
-
-```bash
-npx supabase bootstrap
-```
-
-The bootstrap command will guide you through the process of setting up a Supabase project using one of the [starter](https://github.com/supabase-community/supabase-samples/blob/main/samples.json) templates.
-
-## Docs
-
-Command & config reference can be found [here](https://supabase.com/docs/reference/cli/about).
-
-## Breaking changes
-
-We follow semantic versioning for changes that directly impact CLI commands, flags, and configurations.
-
-However, due to dependencies on other service images, we cannot guarantee that schema migrations, seed.sql, and generated types will always work for the same CLI major version. If you need such guarantees, we encourage you to pin a specific version of CLI in package.json.
-
-## Developing
-
-To run from source:
-
-```sh
-# Go >= 1.22
-go run . help
-```
+Este proyecto está bajo la Licencia MIT. Consulta el archivo `LICENSE` para más detalles.
