@@ -4,7 +4,7 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = await createClient()
@@ -35,6 +35,8 @@ export async function PATCH(
     const body = await request.json()
     let { mora, adminFees } = body as { mora?: number; adminFees?: number }
 
+    const { id } = await params
+
     // Defaulting and sanitization
     const parsedMora = Math.round(Number(mora || 0) * 100) / 100
     const parsedAdminFees = Math.round(Number(adminFees ?? 20) * 100) / 100
@@ -54,7 +56,7 @@ export async function PATCH(
     const { data: currentRow } = await serviceSupabase
       .from("payment_schedule")
       .select("principal, interest")
-      .eq("id", params.id)
+      .eq("id", id)
       .single()
 
     const newAmount = Math.round(((Number(currentRow?.principal || 0) + Number(currentRow?.interest || 0) + parsedAdminFees)) * 100) / 100
@@ -62,7 +64,7 @@ export async function PATCH(
     const { data: updated, error: updateError } = await serviceSupabase
       .from("payment_schedule")
       .update({ mora: parsedMora, admin_fees: parsedAdminFees, amount: newAmount })
-      .eq("id", params.id)
+      .eq("id", id)
       .select("*")
       .single()
 

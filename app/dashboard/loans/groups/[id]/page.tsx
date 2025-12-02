@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { LoadingSpinner } from "@/components/loading-spinner"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { LoanInfoCard } from "@/components/loan-info-card"
 import { ExportPlanModal } from "@/components/export-plan-modal"
 import { PaymentScheduleTable } from "@/components/payment-schedule-table"
@@ -33,6 +34,9 @@ const writeCache = (key: string, data: any) => {
     sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }))
   } catch {}
 }
+const clearCache = (key: string) => {
+  try { sessionStorage.removeItem(key) } catch {}
+}
 
 const K = {
   groupLoanDetails: 'groupLoanDetails:',
@@ -54,6 +58,9 @@ export default function GroupLoanDetailPage() {
   const [items, setItems] = useState<LoanDetailItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [exportOpen, setExportOpen] = useState(false)
+  const [confirmRegenerateOpen, setConfirmRegenerateOpen] = useState(false)
+  const [regenerateTargetLoanId, setRegenerateTargetLoanId] = useState<string | null>(null)
+  const [isRegeneratingLoanId, setIsRegeneratingLoanId] = useState<string | null>(null)
 
   useEffect(() => {
     const cacheKey = K.groupLoanDetails + params.id
@@ -215,12 +222,56 @@ export default function GroupLoanDetailPage() {
     router.push(`/dashboard/loans/${loanId}/review?scheduleId=${scheduleId}`)
   }
 
-  const handleScheduleUpdate = () => {
-    window.location.reload()
+  const refreshOneLoanDetails = async (loanId: string) => {
+    const cacheKey = K.groupLoanDetails + params.id
+    try {
+      const res = await fetch(`/api/loans/${loanId}/details`, { credentials: 'include' })
+      if (res.ok) {
+        const data = await res.json()
+        setItems(prev => {
+          const next = (prev || []).map(it => it.loan?.id === loanId ? {
+            loan: data.loan,
+            schedule: data.schedule || [],
+            payments: data.payments || [],
+            totalPaid: Number(data.totalPaid || 0),
+            remainingBalance: Number(data.remainingBalance || 0),
+          } : it)
+          writeCache(String(cacheKey), { groupName, items: next })
+          return next
+        })
+      } else {
+        clearCache(String(cacheKey))
+      }
+    } catch {
+      clearCache(String(cacheKey))
+    }
   }
 
   const handlePaymentUpdate = () => {
     window.location.reload()
+  }
+
+  const confirmRegenerate = async () => {
+    if (!regenerateTargetLoanId) return
+    setIsRegeneratingLoanId(regenerateTargetLoanId)
+    try {
+      const response = await fetch(`/api/loans/${regenerateTargetLoanId}/regenerate-schedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include'
+      })
+      if (response.ok) {
+        await refreshOneLoanDetails(regenerateTargetLoanId)
+      } else {
+        console.error('Error regenerando plan de pagos')
+      }
+    } catch (error) {
+      console.error('Error:', error)
+    } finally {
+      setIsRegeneratingLoanId(null)
+      setConfirmRegenerateOpen(false)
+      setRegenerateTargetLoanId(null)
+    }
   }
 
   if (isLoading) return <LoadingSpinner />
@@ -376,6 +427,15 @@ export default function GroupLoanDetailPage() {
                   <div className="space-y-4">
                     <div className="flex justify-between items-center">
                       <h3 className="text-xl font-semibold text-foreground">Plan de Pagos</h3>
+                      {role === 'admin' && (
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={() => { setRegenerateTargetLoanId(it.loan.id); setConfirmRegenerateOpen(true) }}
+                        >
+                          Regenerar Plan de Pagos
+                        </Button>
+                      )}
                     </div>
                     <PaymentScheduleTable
                       schedule={it.schedule}
@@ -383,7 +443,8 @@ export default function GroupLoanDetailPage() {
                       payments={it.payments}
                       onPaymentClick={(sid) => handlePaymentClick(it.loan.id, sid)}
                       onReviewClick={(sid) => handleReviewClick(it.loan.id, sid)}
-                      onScheduleUpdate={handleScheduleUpdate}
+                      onScheduleUpdate={() => refreshOneLoanDetails(it.loan.id)}
+                      loading={isRegeneratingLoanId === it.loan.id}
                     />
                   </div>
                 </TabsContent>
@@ -403,6 +464,21 @@ export default function GroupLoanDetailPage() {
           </TabsContent>
         ))}
       </Tabs>
+      <Dialog open={confirmRegenerateOpen} onOpenChange={setConfirmRegenerateOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Regenerar Plan de Pagos</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm text-muted-foreground">
+            <p>Al regenerar el plan de pagos, se eliminarán todos los pagos registrados para este préstamo.</p>
+            <p>El préstamo volverá a estar como el día 1. ¿Deseas continuar?</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmRegenerateOpen(false)} disabled={!!isRegeneratingLoanId}>Cancelar</Button>
+            <Button onClick={confirmRegenerate} disabled={!!isRegeneratingLoanId}>{isRegeneratingLoanId ? 'Procesando…' : 'Regenerar'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <ExportPlanModal
         open={exportOpen}
         onOpenChange={setExportOpen}

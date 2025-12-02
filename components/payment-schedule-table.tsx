@@ -12,6 +12,7 @@ import type { PaymentSchedule, Loan, Payment } from "@/lib/types"
 import { formatYMDGT } from "@/lib/utils"
 import { CheckCircle2, Clock, AlertCircle } from "lucide-react"
 import { useRole } from "@/contexts/role-context"
+import { LoadingSpinner } from "@/components/loading-spinner"
 
 interface PaymentScheduleTableProps {
   schedule: PaymentSchedule[]
@@ -20,9 +21,10 @@ interface PaymentScheduleTableProps {
   loan?: Loan
   payments?: Payment[]
   onScheduleUpdate?: () => void
+  loading?: boolean
 }
 
-export function PaymentScheduleTable({ schedule, onPaymentClick, onReviewClick, loan, payments = [], onScheduleUpdate }: PaymentScheduleTableProps) {
+export function PaymentScheduleTable({ schedule, onPaymentClick, onReviewClick, loan, payments = [], onScheduleUpdate, loading = false }: PaymentScheduleTableProps) {
   const [editingId, setEditingId] = React.useState<string | null>(null)
   const [moraValue, setMoraValue] = React.useState<number>(0)
   const [adminFeesValue, setAdminFeesValue] = React.useState<number>(20)
@@ -132,19 +134,18 @@ export function PaymentScheduleTable({ schedule, onPaymentClick, onReviewClick, 
     saldoPorPagarPrefix,
   } = React.useMemo(() => {
     const baseAmounts = schedule.map((s) => Number(s.principal || 0) + Number(s.interest || 0) + Number(s.admin_fees ?? 20))
-    const moras = schedule.map((s) => Number(s.mora || 0))
     const totalBaseLocal = round2(baseAmounts.reduce((a, b) => a + b, 0))
     const prefix: number[] = []
     let acc = 0
     for (let i = 0; i < schedule.length; i++) {
-      acc += baseAmounts[i] + moras[i]
+      acc += baseAmounts[i]
       prefix[i] = round2(Math.max(0, totalBaseLocal - acc))
     }
     return { totalBase: totalBaseLocal, saldoPorPagarPrefix: prefix }
   }, [schedule])
 
   return (
-    <div className="rounded-lg border border-border/50 bg-card/50 backdrop-blur-sm overflow-hidden">
+    <div className="rounded-lg border border-border/50 bg-card/50 backdrop-blur-sm overflow-hidden relative">
       {loan && loan.status !== 'active' && (
         <div className="px-4 pt-4 text-sm text-destructive">
           Este préstamo no está activo. No se permiten pagos.
@@ -170,7 +171,7 @@ export function PaymentScheduleTable({ schedule, onPaymentClick, onReviewClick, 
           {schedule.map((item, idx) => {
             const adminFees = Number(item.admin_fees ?? 20)
             const mora = Number(item.mora || 0)
-            const totalDue = Number(item.amount) + mora
+            const totalDue = Number(item.principal || 0) + Number(item.interest || 0) + adminFees + mora
             const saldoPorPagar = saldoPorPagarPrefix[idx]
             // Encontrar el último pago para esta cuota (por fecha de creación)
             const latestPaymentForSchedule = payments
@@ -213,16 +214,16 @@ export function PaymentScheduleTable({ schedule, onPaymentClick, onReviewClick, 
                             Bloqueado
                           </Button>
                         )}
-                        {(role === 'admin' || role === 'asesor') && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openEdit(item)}
-                          >
-                            Editar
-                          </Button>
-                        )}
                       </>
+                    )}
+                    {(role === 'admin' || role === 'asesor') && item.status !== 'paid' && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openEdit(item)}
+                      >
+                        Editar
+                      </Button>
                     )}
                     {onReviewClick && item.status === "pending_confirmation" && (role === 'admin' || role === 'asesor') && (
                       latestPaymentForSchedule && latestPaymentForSchedule.confirmationStatus === 'pending_confirmation' ? (
@@ -265,6 +266,15 @@ export function PaymentScheduleTable({ schedule, onPaymentClick, onReviewClick, 
           })}
         </TableBody>
       </Table>
+
+      {loading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-2">
+            <LoadingSpinner />
+            <div className="text-sm text-muted-foreground">Regenerando plan de pagos…</div>
+          </div>
+        </div>
+      )}
 
       <Dialog open={!!editingId} onOpenChange={(open) => !open && closeEdit()}>
         <DialogContent className="sm:max-w-md">
