@@ -136,7 +136,6 @@ export async function POST(request: Request) {
 
   if (scheduleError) {
     console.error("[v0] Error creating payment schedule:", scheduleError)
-    // Note: Decide if you want to roll back the loan creation here
   }
 
   return NextResponse.json({ message: 'Loan created successfully', data: newLoan }, { status: 201 })
@@ -163,7 +162,7 @@ export async function GET(request: NextRequest) {
       .from("users")
       .select("id, role, email")
       .eq("auth_id", user.id)
-      .single()
+      .maybeSingle()
 
     if (userError || !userData) {
       console.error("User not found for auth_id:", user.id, userError)
@@ -181,6 +180,10 @@ export async function GET(request: NextRequest) {
       )
     `)
 
+    if (id) {
+      query = query.eq('id', id)
+    }
+
     // Apply filters based on user role
     if (userData.role === "cliente") {
       // Find the client ID based on the user's email
@@ -188,7 +191,7 @@ export async function GET(request: NextRequest) {
         .from("clients")
         .select("id")
         .eq("email", userData.email)
-        .single()
+        .maybeSingle()
 
       if (clientError || !clientData) {
         console.error(
@@ -202,10 +205,6 @@ export async function GET(request: NextRequest) {
           { status: 404 }
         )
       }
-
-      console.log(
-        `Found client id: ${clientData.id} for email ${userData.email}. Filtering loans.`
-      )
       query = query.eq("client_id", clientData.id)
     } else if (userData.role === "asesor") {
       const { data: advisorClients, error: advisorError } = await supabase
@@ -226,10 +225,11 @@ export async function GET(request: NextRequest) {
     }
 
     // Execute the query
-    const { data, error } = await (id ? query.single() : query)
+    const { data, error } = await (id ? query.maybeSingle() : query)
+
 
     if (error) {
-      console.error('[v0] Error fetching loans:', error)
+      console.error('Error fetching loans:', error)
       return NextResponse.json({ error: 'Failed to fetch loans' }, { status: 500 })
     }
 

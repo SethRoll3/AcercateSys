@@ -46,7 +46,7 @@ export default function ReporteriaPage() {
           role="button"
           aria-label="Reporte General de Pagos"
           onClick={() => setSelected("payments_general")}
-          className={`cursor-pointer border ${selected === "payments_general" ? "ring-2 ring-primary" : "hover:bg-muted/40"}`}
+          className={`cursor-pointer border bg-card/50 backdrop-blur-sm ${selected === "payments_general" ? "ring-2 ring-primary" : "hover:bg-muted/40"}`}
         >
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -64,7 +64,7 @@ export default function ReporteriaPage() {
           role="button"
           aria-label="Reporte de Cartera en Mora"
           onClick={() => setSelected("delinquent_portfolio")}
-          className={`cursor-pointer border ${selected === "delinquent_portfolio" ? "ring-2 ring-primary" : "hover:bg-muted/40"}`}
+          className={`cursor-pointer border bg-card/50 backdrop-blur-sm ${selected === "delinquent_portfolio" ? "ring-2 ring-primary" : "hover:bg-muted/40"}`}
         >
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -83,7 +83,7 @@ export default function ReporteriaPage() {
         <div className="w-full max-w-2xl">
           {selected === "payments_general" && <PaymentsReport />}
           {selected === "delinquent_portfolio" && (
-            <Card>
+            <Card className="bg-card/50 backdrop-blur-sm">
               <CardHeader>
                 <CardTitle>Reporte de Cartera en Mora</CardTitle>
                 <CardDescription>Descarga el Excel con las cuotas en mora.</CardDescription>

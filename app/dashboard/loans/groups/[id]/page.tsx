@@ -4,15 +4,39 @@ import { useEffect, useMemo, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { LoadingSpinner } from "@/components/loading-spinner"
 import { LoanInfoCard } from "@/components/loan-info-card"
 import { ExportPlanModal } from "@/components/export-plan-modal"
 import { PaymentScheduleTable } from "@/components/payment-schedule-table"
 import { PaymentHistoryTable } from "@/components/payment-history-table"
 import { createClient } from "@/lib/supabase/client"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, CheckCircle2, AlertCircle, Clock } from "lucide-react"
 import type { PaymentSchedule, Payment } from "@/lib/types"
 import { useRole } from "@/contexts/role-context"
+import { cn } from "@/lib/utils"
+
+const CACHE_TTL_MS = Number.MAX_SAFE_INTEGER
+const readCache = (key: string) => {
+  try {
+    const raw = sessionStorage.getItem(key)
+    if (!raw) return null
+    const obj = JSON.parse(raw)
+    if (!obj || typeof obj.ts !== 'number') return null
+    if (Date.now() - obj.ts > CACHE_TTL_MS) return null
+    return obj.data ?? null
+  } catch {}
+  return null
+}
+const writeCache = (key: string, data: any) => {
+  try {
+    sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }))
+  } catch {}
+}
+
+const K = {
+  groupLoanDetails: 'groupLoanDetails:',
+}
 
 interface LoanDetailItem {
   loan: any
@@ -32,6 +56,15 @@ export default function GroupLoanDetailPage() {
   const [exportOpen, setExportOpen] = useState(false)
 
   useEffect(() => {
+    const cacheKey = K.groupLoanDetails + params.id
+    const cachedData = readCache(cacheKey)
+    if (cachedData) {
+      setGroupName(cachedData.groupName)
+      setItems(cachedData.items)
+      setIsLoading(false)
+      return
+    }
+
     const fetchAll = async () => {
       try {
         const supabase = createClient()
@@ -52,7 +85,8 @@ export default function GroupLoanDetailPage() {
           setIsLoading(false)
           return
         }
-        setGroupName(groupRow.group?.nombre || "Grupo")
+        const currentGroupName = groupRow.group?.nombre || "Grupo"
+        setGroupName(currentGroupName)
 
         const loansList: { loan_id: string }[] = groupRow.loans || []
         const details = await Promise.all(
@@ -74,7 +108,9 @@ export default function GroupLoanDetailPage() {
             }
           })
         )
-        setItems((details || []).filter(Boolean) as LoanDetailItem[])
+        const filteredDetails = (details || []).filter(Boolean) as LoanDetailItem[]
+        setItems(filteredDetails)
+        writeCache(cacheKey, { groupName: currentGroupName, items: filteredDetails })
       } catch {
       } finally {
         setIsLoading(false)
@@ -85,6 +121,90 @@ export default function GroupLoanDetailPage() {
 
   const groupTotal = useMemo(() => {
     return items.reduce((sum, it) => sum + (Number(it.loan?.amount) || 0), 0)
+  }, [items])
+
+  const groupInstallments = useMemo(() => {
+    if (!items.length) return []
+
+    // Find max payment number
+    let maxNum = 0
+    items.forEach(item => {
+      const max = Math.max(...item.schedule.map(s => s.payment_number || s.paymentNumber || 0))
+      if (max > maxNum) maxNum = max
+    })
+
+    const installments = []
+    for (let i = 1; i <= maxNum; i++) {
+      let totalAmount = 0
+      let totalPaid = 0
+      let dueDate = ''
+      const details = []
+      let activeClientsCount = 0
+      let paidClientsCount = 0
+
+      for (const item of items) {
+        const s = item.schedule.find(s => (s.payment_number || s.paymentNumber) === i)
+        const clientName = (item.loan.client?.first_name || item.loan.client?.firstName || '') + ' ' + (item.loan.client?.last_name || item.loan.client?.lastName || '')
+        
+        if (s) {
+          const amount = Number(s.amount || 0)
+          let paid = Number(s.paidAmount || s.paid_amount || 0)
+          const status = (s.status || 'pending').toLowerCase()
+          
+          // Si está pagado pero el monto pagado es 0 o menor al monto, asumimos pago completo
+          // (Dependiendo de cómo el backend maneje paid_amount)
+          if ((status === 'paid' || status === 'completado') && paid < amount) {
+             paid = amount
+          }
+
+          totalAmount += amount
+          totalPaid += paid
+          const currentDueDate = s.due_date || s.dueDate
+          if (currentDueDate) {
+             // Usar la fecha más tardía
+             if (!dueDate || new Date(currentDueDate) > new Date(dueDate)) {
+                dueDate = currentDueDate
+             }
+          }
+          
+          activeClientsCount++
+          if (paid >= amount - 0.01) paidClientsCount++ // Tolerance for floating point
+
+          details.push({
+             clientName,
+             amount,
+             paid,
+             status,
+             dueDate: currentDueDate,
+             hasInstallment: true
+          })
+        } else {
+           // Client has no installment #i
+           details.push({
+             clientName,
+             amount: 0,
+             paid: 0,
+             status: 'N/A',
+             dueDate: null,
+             hasInstallment: false
+          })
+        }
+      }
+      
+      const percentage = totalAmount > 0 ? (totalPaid / totalAmount) * 100 : 0
+
+      installments.push({
+        number: i,
+        totalAmount,
+        totalPaid,
+        dueDate,
+        details,
+        percentage: Math.min(percentage, 100),
+        activeClientsCount,
+        paidClientsCount
+      })
+    }
+    return installments
   }, [items])
 
   const handlePaymentClick = (loanId: string, scheduleId: string) => {
@@ -132,14 +252,114 @@ export default function GroupLoanDetailPage() {
         </div>
       </div>
 
-      <Tabs defaultValue={items[0]?.loan?.id} className="w-full">
+      <Tabs defaultValue="group-installments" className="w-full">
         <TabsList className="flex flex-wrap gap-2 bg-muted/50 max-w-full">
+          <TabsTrigger value="group-installments">Cuotas de Grupo</TabsTrigger>
           {items.filter(it => it?.loan?.id).map((it) => (
             <TabsTrigger key={it.loan.id} value={it.loan.id} className="whitespace-nowrap">
               {(it.loan.client?.first_name || it.loan.client?.firstName || '') + ' ' + (it.loan.client?.last_name || it.loan.client?.lastName || '')}
             </TabsTrigger>
           ))}
         </TabsList>
+
+        <TabsContent value="group-installments" className="mt-6 space-y-6">
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+             {groupInstallments.map((inst) => (
+               <Card key={inst.number} className="overflow-hidden border-muted/60 shadow-sm hover:shadow-md transition-shadow bg-card/50 backdrop-blur-sm">
+                 <CardHeader className="bg-muted/20 pb-4">
+                   <div className="flex justify-between items-center">
+                     <CardTitle className="text-lg">Cuota #{inst.number}</CardTitle>
+                     {inst.percentage >= 100 ? (
+                       <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-100">
+                         Completada
+                       </span>
+                     ) : inst.percentage > 0 ? (
+                        <span className="inline-flex items-center rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-medium text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100">
+                         Parcial
+                       </span>
+                     ) : (
+                        <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-800 dark:bg-gray-800 dark:text-gray-100">
+                         Pendiente
+                       </span>
+                     )}
+                   </div>
+                   <div className="text-xs text-muted-foreground flex items-center mt-1">
+                      <Clock className="h-3 w-3 mr-1" />
+                      Fecha de vencimiento: {inst.dueDate ? new Date(inst.dueDate).toLocaleDateString('es-GT', { timeZone: 'UTC' }) : 'N/A'}
+                    </div>
+                 </CardHeader>
+                 <CardContent className="pt-6">
+                   <div className="flex flex-col items-center mb-6">
+                     <div className="relative h-32 w-32 mb-2">
+                       {/* Simple CSS Donut Chart */}
+                       <div 
+                         className="absolute inset-0 rounded-full"
+                         style={{
+                           background: `conic-gradient(
+                             hsl(var(--primary)) ${inst.percentage}%, 
+                             hsl(var(--muted)) ${inst.percentage}% 100%
+                           )`
+                         }}
+                       />
+                       <div className="absolute inset-2 bg-card rounded-full flex flex-col items-center justify-center">
+                         <span className="text-xs text-muted-foreground">Pagado</span>
+                         <span className="text-sm font-bold">{Math.round(inst.percentage)}%</span>
+                       </div>
+                     </div>
+                     <div className="text-center">
+                        <div className="text-xl font-bold">
+                          {new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(inst.totalAmount)}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                           Total de la cuota
+                        </div>
+                        <div className="mt-2 text-sm font-medium">
+                           {inst.paidClientsCount} de {inst.activeClientsCount} clientes al día
+                        </div>
+                     </div>
+                   </div>
+
+                   <div className="space-y-3 border-t pt-4">
+                     {inst.details.map((detail, idx) => (
+                       detail.hasInstallment && (
+                         <div key={idx} className="flex items-center justify-between text-sm">
+                           <div className="flex flex-col flex-1 mr-2">
+                             <span className="font-medium leading-tight">{detail.clientName}</span>
+                             <div className="flex items-center gap-2 mt-1 flex-wrap">
+                               <span className="text-xs text-muted-foreground">
+                                 {detail.status === 'paid' ? 'Pagado' : detail.status === 'partial' ? 'Parcial' : 'Pendiente'}
+                               </span>
+                               {detail.dueDate && (
+                                  <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground whitespace-nowrap">
+                                    {new Date(detail.dueDate).toLocaleDateString('es-GT', { timeZone: 'UTC', day: '2-digit', month: '2-digit' })}
+                                  </span>
+                               )}
+                             </div>
+                           </div>
+                           <div className="text-right whitespace-nowrap">
+                             <div className={cn("font-medium", detail.paid >= detail.amount ? "text-green-600" : "")}>
+                               {new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(detail.amount)}
+                             </div>
+                             {detail.paid > 0 && detail.paid < detail.amount && (
+                               <div className="text-xs text-muted-foreground">
+                                 Pagado: {new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(detail.paid)}
+                               </div>
+                             )}
+                           </div>
+                         </div>
+                       )
+                     ))}
+                     {inst.details.some(d => !d.hasInstallment) && (
+                       <div className="text-xs text-muted-foreground italic pt-2">
+                         * Algunos clientes no tienen esta cuota.
+                       </div>
+                     )}
+                   </div>
+                 </CardContent>
+               </Card>
+             ))}
+           </div>
+        </TabsContent>
 
         {items.filter(it => it?.loan?.id).map((it) => (
           <TabsContent key={it.loan.id} value={it.loan.id} className="mt-6">

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 
 export async function POST(request: Request) {
   try {
@@ -76,6 +77,60 @@ export async function POST(request: Request) {
       paymentMethod: newPayment.payment_method,
       notes: newPayment.notes,
       createdAt: newPayment.created_at,
+    }
+
+    try {
+      const serviceSupabase = createSupabaseClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        { auth: { autoRefreshToken: false, persistSession: false } }
+      )
+
+      const { data: loanRow } = await serviceSupabase
+        .from('loans')
+        .select(`id, client:clients(id, first_name, last_name, email, advisor:users!advisor_id(email))`)
+        .eq('id', loanId)
+        .limit(1)
+        .single()
+
+      const client = loanRow?.client
+      const advisorEmail: string | null = client?.advisor?.email || null
+      const actionUrl = `/dashboard/loans/${loanId}`
+      const fmt = new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' })
+      const amountText = fmt.format(Number(newPayment.amount) || 0)
+
+      const rows: any[] = []
+      if (advisorEmail) {
+        rows.push({
+          recipient_email: advisorEmail,
+          recipient_role: 'asesor',
+          title: 'Nuevo pago registrado',
+          body: `El cliente ${client?.first_name || ''} ${client?.last_name || ''} registró un pago de ${amountText}. Recibo ${newPayment.receipt_number || '-'}.`,
+          type: 'client_payment_registered',
+          status: 'unread',
+          related_entity_type: 'payment',
+          related_entity_id: newPayment.id,
+          action_url: actionUrl,
+          meta_json: { loan_id: loanId, schedule_id: scheduleId },
+        })
+      }
+
+      rows.push({
+        recipient_role: 'admin',
+        recipient_email: null,
+        title: 'Pago registrado',
+        body: `Se registró un pago ${newPayment.receipt_number || '-'} por ${amountText}. Pendiente de revisión/confirmación.`,
+        type: 'payment_created',
+        status: 'unread',
+        related_entity_type: 'payment',
+        related_entity_id: newPayment.id,
+        action_url: actionUrl,
+        meta_json: { loan_id: loanId, schedule_id: scheduleId },
+      })
+
+      await serviceSupabase.from('notifications').insert(rows)
+    } catch (e) {
+      console.error('[IN-APP NOTIFS] Failed to insert notifications on payment create:', e)
     }
 
     return NextResponse.json(transformedPayment)

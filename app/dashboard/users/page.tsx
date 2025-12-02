@@ -3,11 +3,11 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Input } from "@/components/ui/input"
 import { CreateUserForm } from "@/components/forms/create-user-form"
-import { EditUserForm } from "@/components/forms/edit-user-form"
 import { toast } from "sonner"
-import { Edit, Trash2, Loader2 } from "lucide-react"
+import { Loader2 } from "lucide-react"
+import { useRouter } from "next/navigation"
 
 interface User {
   id: string
@@ -20,8 +20,30 @@ interface User {
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [editingUser, setEditingUser] = useState<User | null>(null)
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  const [searchTerm, setSearchTerm] = useState("")
+  const router = useRouter()
+
+  const CACHE_TTL_MS = Number.MAX_SAFE_INTEGER
+  const readCache = (key: string) => {
+    try {
+      const raw = sessionStorage.getItem(key)
+      if (!raw) return null
+      const obj = JSON.parse(raw)
+      if (!obj || typeof obj.ts !== 'number') return null
+      if (Date.now() - obj.ts > CACHE_TTL_MS) return null
+      return obj.data ?? null
+    } catch {}
+    return null
+  }
+  const writeCache = (key: string, data: any) => {
+    try {
+      sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }))
+    } catch {}
+  }
+
+  const K = {
+    users: 'users:list',
+  }
 
   const fetchUsers = async () => {
     try {
@@ -31,6 +53,7 @@ export default function UsersPage() {
       }
       const data = await response.json()
       setUsers(data)
+      writeCache(K.users, data)
     } catch (error) {
       console.error("Error fetching users:", error)
       toast.error("Error al cargar usuarios")
@@ -40,35 +63,19 @@ export default function UsersPage() {
   }
 
   useEffect(() => {
-    fetchUsers()
+    const cachedUsers = readCache(K.users)
+    if (cachedUsers) {
+      setUsers(cachedUsers)
+      setIsLoading(false)
+    } else {
+      fetchUsers()
+    }
   }, [])
 
-  const handleEditClick = (user: User) => {
-    setEditingUser(user)
-    setIsEditDialogOpen(true)
-  }
-
-  const handleDeleteClick = async (userId: string) => {
-    if (!confirm("¿Está seguro de que desea eliminar este usuario?")) {
-      return
-    }
-
-    try {
-      const response = await fetch(`/api/users?id=${userId}`, {
-        method: "DELETE",
-      })
-
-      if (!response.ok) {
-        throw new Error("Failed to delete user")
-      }
-
-      toast.success("Usuario eliminado exitosamente")
-      fetchUsers()
-    } catch (error) {
-      console.error("Error deleting user:", error)
-      toast.error("Error al eliminar usuario")
-    }
-  }
+  const filteredUsers = users.filter(user =>
+    user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    user.email.toLowerCase().includes(searchTerm.toLowerCase())
+  )
 
   const getRoleDisplayName = (role: string) => {
     switch (role) {
@@ -93,60 +100,39 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-2xl font-bold">Usuarios</CardTitle>
-          <CreateUserForm onUserCreated={fetchUsers} />
+      <Card className="bg-card/50 backdrop-blur-sm">
+        <CardHeader className="space-y-2">
+          <CardTitle>Usuarios</CardTitle>
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <Input
+              placeholder="Buscar usuario..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full md:max-w-sm"
+            />
+            <CreateUserForm onUserCreated={fetchUsers} />
+          </div>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Email</TableHead>
-                <TableHead>Nombre Completo</TableHead>
-                <TableHead>Rol</TableHead>
-                <TableHead>Fecha de Creación</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {users.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell>{user.email}</TableCell>
-                  <TableCell>{user.full_name}</TableCell>
-                  <TableCell>{getRoleDisplayName(user.role)}</TableCell>
-                  <TableCell>{new Date(user.created_at).toLocaleDateString()}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end space-x-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleEditClick(user)}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleDeleteClick(user.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <div className="space-y-2">
+            {filteredUsers.map((user) => (
+              <div key={user.id} className="flex items-center justify-between rounded-md border bg-card/50 backdrop-blur-sm px-4 py-3 transition-all duration-200 hover:bg-muted/40">
+                <div className="font-medium">
+                  <div>{user.full_name}</div>
+                  <div className="text-sm text-muted-foreground">{user.email} - {getRoleDisplayName(user.role)}</div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => router.push(`/dashboard/users/${user.id}`)}
+                >
+                  Ver detalles
+                </Button>
+              </div>
+            ))}
+          </div>
         </CardContent>
       </Card>
-
-      <EditUserForm
-        user={editingUser}
-        isOpen={isEditDialogOpen}
-        onClose={() => setIsEditDialogOpen(false)}
-        onUserUpdated={fetchUsers}
-      />
     </div>
   )
 }

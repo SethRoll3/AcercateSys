@@ -1,11 +1,11 @@
+import * as React from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import type { LucideIcon } from "lucide-react"
 
 interface StatsCardProps {
   title: string
   value: string | number
   description?: string
-  icon: LucideIcon
+  icon: React.ComponentType<{ className?: string }>
   trend?: {
     value: number
     isPositive: boolean

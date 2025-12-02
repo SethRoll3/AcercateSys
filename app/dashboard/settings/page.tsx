@@ -11,6 +11,7 @@ import { useRole } from "@/contexts/role-context"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { createClient } from "@/lib/supabase/client"
 import { PhoneInput } from "@/components/phone-input"
+import { Switch } from "@/components/ui/switch"
 
 interface SystemSettingsForm {
   support_contact: string
@@ -19,6 +20,8 @@ interface SystemSettingsForm {
   default_quiet_hours_end: string
   default_country_code: string
   timezone: string
+  dynamic_mora_enabled: boolean
+  dynamic_mora_amount: string
 }
 
 interface MeUser {
@@ -32,7 +35,12 @@ export default function SettingsPage() {
   const { role } = useRole()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [tab, setTab] = useState(role === 'admin' ? 'notifications' : role === 'cliente' ? 'profile' : 'credentials')
+  const availableTabs = role === 'admin'
+    ? ['notifications','mora','credentials']
+    : role === 'cliente'
+      ? ['profile','credentials']
+      : ['credentials']
+  const [tab, setTab] = useState<string>(availableTabs[0])
   const [form, setForm] = useState<SystemSettingsForm>({
     support_contact: "+502 5555-5555",
     payment_instructions: "Paga en ventanilla, transferencia o vía asesor.",
@@ -40,6 +48,8 @@ export default function SettingsPage() {
     default_quiet_hours_end: "18:00",
     default_country_code: "+502",
     timezone: "America/Guatemala",
+    dynamic_mora_enabled: false,
+    dynamic_mora_amount: "0",
   })
   const [templates, setTemplates] = useState<any[]>([])
   const [tplSaving, setTplSaving] = useState(false)
@@ -60,58 +70,127 @@ export default function SettingsPage() {
   const [advisorForm, setAdvisorForm] = useState({ email: "", full_name: "", password: "" })
   const [advisorSaving, setAdvisorSaving] = useState(false)
 
+  const CACHE_TTL_MS = Number.MAX_SAFE_INTEGER
+  const readCache = (key: string) => {
+    try {
+      const raw = sessionStorage.getItem(key)
+      if (!raw) return null
+      const obj = JSON.parse(raw)
+      if (!obj || typeof obj.ts !== 'number') return null
+      if (Date.now() - obj.ts > CACHE_TTL_MS) return null
+      return obj.data ?? null
+    } catch {}
+    return null
+  }
+  const writeCache = (key: string, data: any) => {
+    try {
+      sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }))
+    } catch {}
+  }
+
+  const K = {
+    system: 'settings:system',
+    templates: 'settings:templates',
+    profile: 'settings:profile',
+    advisor: 'settings:advisor'
+  }
+
   useEffect(() => {
     const load = async () => {
       try {
         if (role === 'admin') {
-          const res = await fetch('/api/settings/system')
-          if (!res.ok) throw new Error('No autorizado o error de servidor')
-          const data = await res.json()
-          if (data) {
-            setForm({
-              support_contact: data.support_contact ?? form.support_contact,
-              payment_instructions: data.payment_instructions ?? form.payment_instructions,
-              default_quiet_hours_start: data.default_quiet_hours_start ?? form.default_quiet_hours_start,
-              default_quiet_hours_end: data.default_quiet_hours_end ?? form.default_quiet_hours_end,
-              default_country_code: data.default_country_code ?? form.default_country_code,
-              timezone: data.timezone ?? form.timezone,
-            })
+          // Try cache first
+          const cachedSystem = readCache(K.system)
+          const cachedTemplates = readCache(K.templates)
+          
+          if (cachedSystem) {
+             setForm(prev => ({ ...prev, ...cachedSystem }))
           }
-          const tRes = await fetch('/api/settings/templates')
-          if (tRes.ok) {
-            const tData = await tRes.json()
-            setTemplates(Array.isArray(tData) ? tData : [])
+          if (cachedTemplates) {
+            setTemplates(cachedTemplates)
+          }
+          
+          if (cachedSystem && cachedTemplates) {
+             setLoading(false)
+          }
+
+          if (!cachedSystem) {
+             const res = await fetch('/api/settings/system')
+             if (res.ok) {
+                const data = await res.json()
+                if (data) {
+                  const newForm = {
+                    support_contact: data.support_contact ?? form.support_contact,
+                    payment_instructions: data.payment_instructions ?? form.payment_instructions,
+                    default_quiet_hours_start: data.default_quiet_hours_start ?? form.default_quiet_hours_start,
+                    default_quiet_hours_end: data.default_quiet_hours_end ?? form.default_quiet_hours_end,
+                    default_country_code: data.default_country_code ?? form.default_country_code,
+                    timezone: data.timezone ?? form.timezone,
+                    dynamic_mora_enabled: !!data.dynamic_mora_enabled,
+                    dynamic_mora_amount: String(Number(data.dynamic_mora_amount ?? 0)),
+                  }
+                  setForm(newForm)
+                  writeCache(K.system, newForm)
+                }
+             }
+          }
+          
+          if (!cachedTemplates) {
+            const tRes = await fetch('/api/settings/templates')
+            if (tRes.ok) {
+              const tData = await tRes.json()
+              const arr = Array.isArray(tData) ? tData : []
+              setTemplates(arr)
+              writeCache(K.templates, arr)
+            }
           }
         } else if (role === 'cliente') {
-          const pRes = await fetch('/api/profile', { credentials: 'include' as any })
-          if (pRes.ok) {
-            const pData = await pRes.json()
-            const c = pData.client || {}
-            const u = pData.user || {}
-            setProfile({
-              first_name: c.first_name || '',
-              last_name: c.last_name || '',
-              email: u.email || c.email || '',
-              address: c.address || '',
-              phone: c.phone || '',
-              phone_country_code: c.phone_country_code || '+502',
-              emergency_phone: c.emergency_phone || '',
-              full_name: u.full_name || '',
-            })
+          const cachedProfile = readCache(K.profile)
+          if (cachedProfile) {
+            setProfile(cachedProfile)
+            setProfileLoading(false)
+            setLoading(false)
+          } else {
+            const pRes = await fetch('/api/profile', { credentials: 'include' as any })
+            if (pRes.ok) {
+              const pData = await pRes.json()
+              const c = pData.client || {}
+              const u = pData.user || {}
+              const newProfile = {
+                first_name: c.first_name || '',
+                last_name: c.last_name || '',
+                email: u.email || c.email || '',
+                address: c.address || '',
+                phone: c.phone || '',
+                phone_country_code: c.phone_country_code || '+502',
+                emergency_phone: c.emergency_phone || '',
+                full_name: u.full_name || '',
+              }
+              setProfile(newProfile)
+              writeCache(K.profile, newProfile)
+            }
           }
         } else if (role === 'asesor') {
-          const pRes = await fetch('/api/profile', { credentials: 'include' as any })
-          if (pRes.ok) {
-            const pData = await pRes.json()
-            const u = pData.user || {}
-            const me: MeUser = {
-              id: u.id || '',
-              email: u.email || '',
-              full_name: u.full_name || '',
-              role: u.role || 'asesor',
+          const cachedAdvisor = readCache(K.advisor)
+          if (cachedAdvisor) {
+            setAdvisor(cachedAdvisor)
+            setAdvisorForm({ email: cachedAdvisor.email, full_name: cachedAdvisor.full_name, password: "" })
+            setLoading(false)
+          } else {
+            const pRes = await fetch('/api/profile', { credentials: 'include' as any })
+            if (pRes.ok) {
+              const pData = await pRes.json()
+              const u = pData.user || {}
+              const me: MeUser = {
+                id: u.id || '',
+                email: u.email || '',
+                full_name: u.full_name || '',
+                role: u.role || 'asesor',
+              }
+              setAdvisor(me)
+              setAdvisorForm({ email: me.email, full_name: me.full_name, password: "" })
+              writeCache(K.advisor, me)
             }
-            setAdvisor(me)
-            setAdvisorForm({ email: me.email, full_name: me.full_name, password: "" })
           }
         }
       } catch (e) {
@@ -135,13 +214,17 @@ export default function SettingsPage() {
       const res = await fetch('/api/settings/system', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          ...form,
+          dynamic_mora_amount: Number(form.dynamic_mora_amount || 0),
+        }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         console.error('Settings save error:', err)
         toast.error(err?.error || 'No se pudo guardar')
       } else {
+        writeCache(K.system, form)
         toast.success('Configuraciones guardadas')
       }
     } catch (e) {
@@ -193,6 +276,7 @@ export default function SettingsPage() {
         const err = await res.json().catch(() => ({}))
         toast.error(err?.error || 'No se pudo guardar el perfil')
       } else {
+        writeCache(K.profile, profile)
         toast.success('Perfil actualizado')
       }
     } catch (e) {
@@ -216,8 +300,10 @@ export default function SettingsPage() {
         toast.error(err?.error || 'No se pudo actualizar')
       } else {
         const data = await res.json()
-        setAdvisor({ id: data.id, email: data.email, full_name: data.full_name, role: data.role })
+        const newAdvisor = { id: data.id, email: data.email, full_name: data.full_name, role: data.role }
+        setAdvisor(newAdvisor)
         setAdvisorForm((f) => ({ ...f, password: "" }))
+        writeCache(K.advisor, newAdvisor)
         toast.success('Credenciales actualizadas')
       }
     } catch (e) {
@@ -238,20 +324,23 @@ export default function SettingsPage() {
   return (
     <div className="max-w-4xl mx-auto">
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className={`grid ${role === 'asesor' ? 'grid-cols-1' : 'grid-cols-3'} w-full`}>
-          {role !== 'asesor' && (
-            <TabsTrigger value="notifications" disabled={role !== 'admin'}>Notificaciones</TabsTrigger>
+        <TabsList className="flex w-full gap-2 flex-wrap md:flex-nowrap">
+          {availableTabs.includes('notifications') && (
+            <TabsTrigger className="flex-1 min-w-[120px]" value="notifications">Notificaciones</TabsTrigger>
           )}
-          {role !== 'asesor' && (
-            <TabsTrigger value="profile" disabled={role !== 'cliente'}>Perfil</TabsTrigger>
+          {availableTabs.includes('mora') && (
+            <TabsTrigger className="flex-1 min-w-[120px]" value="mora">Mora dinámica</TabsTrigger>
           )}
-          <TabsTrigger value="credentials">Credenciales</TabsTrigger>
+          {availableTabs.includes('profile') && (
+            <TabsTrigger className="flex-1 min-w-[120px]" value="profile">Perfil</TabsTrigger>
+          )}
+          {availableTabs.includes('credentials') && (
+            <TabsTrigger className="flex-1 min-w-[120px]" value="credentials">Credenciales</TabsTrigger>
+          )}
         </TabsList>
 
-        <TabsContent value="notifications">
-          {role !== 'admin' ? (
-            <div className="text-muted-foreground p-6">Acceso denegado</div>
-          ) : (
+        {availableTabs.includes('notifications') && (
+          <TabsContent value="notifications">
             <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
               <CardHeader>
                 <CardTitle>Configuración de Notificaciones</CardTitle>
@@ -293,15 +382,13 @@ export default function SettingsPage() {
                 </div>
               </CardContent>
             </Card>
-          )}
-        </TabsContent>
+          </TabsContent>
+        )}
 
         
 
-        <TabsContent value="profile">
-          {role !== 'cliente' ? (
-            <div className="text-muted-foreground p-6">Acceso denegado</div>
-          ) : (
+        {availableTabs.includes('profile') && (
+          <TabsContent value="profile">
             <Card className="border-border/50 bg-card/50 backdrop-blur-sm transition-all duration-200 hover:shadow-md">
               <CardHeader>
                 <CardTitle>Mi Perfil</CardTitle>
@@ -365,10 +452,11 @@ export default function SettingsPage() {
                 </div>
               </CardContent>
             </Card>
-          )}
-        </TabsContent>
+          </TabsContent>
+        )}
 
-        <TabsContent value="credentials">
+        {availableTabs.includes('credentials') && (
+          <TabsContent value="credentials">
           {role === 'asesor' ? (
             <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
               <CardHeader>
@@ -414,7 +502,46 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
           )}
-        </TabsContent>
+          </TabsContent>
+        )}
+
+        {availableTabs.includes('mora') && (
+          <TabsContent value="mora">
+            <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
+              <CardHeader>
+                <CardTitle>Mora dinámica</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid md:grid-cols-3 gap-4">
+                  <div className="flex items-center gap-3">
+                    <Label htmlFor="dynamic_mora_enabled">Activar mora automática</Label>
+                    <Switch
+                      id="dynamic_mora_enabled"
+                      checked={form.dynamic_mora_enabled}
+                      onCheckedChange={(checked) =>
+                        setForm(prev => ({ ...prev, dynamic_mora_enabled: checked }))
+                      }
+                      className="data-[state=checked]:bg-green-500 data-[state=unchecked]:bg-red-500"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="dynamic_mora_amount">Monto mora automática (Q)</Label>
+                    <Input
+                      id="dynamic_mora_amount"
+                      name="dynamic_mora_amount"
+                      value={form.dynamic_mora_amount}
+                      onChange={handleChange}
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <Button onClick={handleSave} disabled={saving}>{saving ? 'Guardando...' : 'Guardar'}</Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   )

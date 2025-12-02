@@ -14,10 +14,10 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Obtener el rol del usuario desde la tabla 'users'
+    // Obtener el rol y estado del usuario desde la tabla 'users'
     const { data: userData, error: userError } = await supabase
       .from('users')
-      .select('role')
+      .select('role, status')
       .eq('auth_id', user.id)
       .single()
 
@@ -26,7 +26,11 @@ export async function GET() {
       return NextResponse.json({ error: 'User role not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ id: user.id, email: user.email, role: userData.role })
+    if (userData.status && userData.status !== 'active') {
+      return NextResponse.json({ error: 'Usuario inactivo' }, { status: 403 })
+    }
+
+    return NextResponse.json({ id: user.id, email: user.email, role: userData.role, status: userData.status || 'active' })
   } catch (err) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

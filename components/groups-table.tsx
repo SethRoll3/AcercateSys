@@ -26,14 +26,37 @@ export function GroupsTable({ searchTerm, onEditGroup, onDeleteGroup }: GroupsTa
   const canDeleteGroups = usePermission('canDeleteGroups')
   const router = useRouter()
 
+  const CACHE_TTL_MS = Number.MAX_SAFE_INTEGER
+  const readCache = (key: string) => {
+    try {
+      const raw = sessionStorage.getItem(key)
+      if (!raw) return null
+      const obj = JSON.parse(raw)
+      if (!obj || typeof obj.ts !== 'number') return null
+      if (Date.now() - obj.ts > CACHE_TTL_MS) return null
+      return obj.data ?? null
+    } catch {}
+    return null
+  }
+  const writeCache = (key: string, data: any) => {
+    try {
+      sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }))
+    } catch {}
+  }
+
+  const K = {
+    groups: 'groups:list',
+  }
+
   const fetchGroups = async () => {
-    setIsLoading(true)
+    // Don't force loading state if we have cache
     try {
       const res = await fetch('/api/grupos')
       if (res.ok) {
         const data = await res.json()
         if (Array.isArray(data)) {
           setGroups(data)
+          writeCache(K.groups, data)
         } else {
           toast.error('La respuesta del servidor de grupos no es válida.')
           setGroups([])
@@ -51,8 +74,15 @@ export function GroupsTable({ searchTerm, onEditGroup, onDeleteGroup }: GroupsTa
   }
 
   useEffect(() => {
-    fetchGroups()
-
+    const cachedGroups = readCache(K.groups)
+    if (cachedGroups) {
+      setGroups(cachedGroups)
+      setIsLoading(false)
+    } else {
+      setIsLoading(true)
+      fetchGroups()
+    }
+    
     const fetchCurrentUser = async () => {
       try {
         const res = await fetch('/api/auth/user')

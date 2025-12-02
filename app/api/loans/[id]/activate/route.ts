@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient, createAdminClient } from "@/lib/supabase/server"
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -19,13 +19,25 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (scheduleError) return NextResponse.json({ error: "Failed to verify schedule" }, { status: 500 })
     if (!schedule || schedule.length === 0) return NextResponse.json({ error: "Loan has no payment schedule" }, { status: 409 })
 
-    const { data: updated, error: updateError } = await supabase
+    // Use admin client to bypass RLS and ensure system fields are updated
+    const adminSupabase = await createAdminClient()
+    const { data: updated, error: updateError } = await adminSupabase
       .from("loans")
-      .update({ status: "active", updated_at: new Date().toISOString(), activated_by_admin_id: me.id, activated_at: new Date().toISOString() })
+      .update({ 
+        status: "active", 
+        updated_at: new Date().toISOString(), 
+        activated_by_admin_id: me.id, 
+        activated_at: new Date().toISOString() 
+      })
       .eq("id", id)
       .select("*")
       .single()
-    if (updateError) return NextResponse.json({ error: "Failed to activate loan" }, { status: 500 })
+
+    if (updateError) {
+      console.error("Error activating loan:", updateError)
+      return NextResponse.json({ error: "Failed to activate loan" }, { status: 500 })
+    }
+    
     const transformed = {
       id: updated.id,
       clientId: updated.client_id,
@@ -42,6 +54,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
     return NextResponse.json(transformed)
   } catch (e) {
+    console.error("Activation error:", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

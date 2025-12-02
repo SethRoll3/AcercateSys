@@ -55,6 +55,8 @@ export async function PATCH(req: NextRequest) {
           default_quiet_hours_end: body.default_quiet_hours_end,
           default_country_code: body.default_country_code,
           timezone: body.timezone,
+          dynamic_mora_enabled: !!body.dynamic_mora_enabled,
+          dynamic_mora_amount: Number(body.dynamic_mora_amount ?? 0),
           updated_at: new Date().toISOString(),
         })
         .eq('id', id)
@@ -72,6 +74,8 @@ export async function PATCH(req: NextRequest) {
           default_quiet_hours_end: body.default_quiet_hours_end,
           default_country_code: body.default_country_code,
           timezone: body.timezone,
+          dynamic_mora_enabled: !!body.dynamic_mora_enabled,
+          dynamic_mora_amount: Number(body.dynamic_mora_amount ?? 0),
         })
       if (error) {
         console.error('[settings.system] Insert error:', error)

@@ -12,12 +12,17 @@ import { CreateLoanDialog } from "@/components/create-loan-dialog"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { DollarSign, Users, TrendingUp, FileText, Download } from "lucide-react"
+import { Users, TrendingUp, FileText, Download } from "lucide-react"
+const QuetzalIcon = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+    <text x="12" y="16" textAnchor="middle" fontSize="16" fill="currentColor" fontWeight="bold">Q</text>
+  </svg>
+)
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
 const CACHE_TTL_MS = Number.MAX_SAFE_INTEGER
 const readCache = (key: string) => {
   try {
-    const raw = localStorage.getItem(key)
+    const raw = sessionStorage.getItem(key)
     if (!raw) return null
     const obj = JSON.parse(raw)
     if (!obj || typeof obj.ts !== 'number') return null
@@ -28,7 +33,7 @@ const readCache = (key: string) => {
 }
 const writeCache = (key: string, data: any) => {
   try {
-    localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }))
+    sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }))
   } catch {}
 }
 const K = {
@@ -145,136 +150,177 @@ export default function DashboardPage() {
     if (inFlightRef.current) return
     inFlightRef.current = true
     const fetchData = async () => {
-      // Si hay cache completo válido, usarlo y evitar llamadas
-      try {
-        const uc = readCache(K.userData)
-        const lc = readCache(K.loans)
-        const cc = readCache(K.clients)
-        const gc = readCache(K.groupLoans)
-        const lgm = readCache(K.loanGroupMap)
-        const ac = readCache(K.advisors)
-        if (uc) setUserData(uc)
-        if (Array.isArray(lc)) setLoans(lc)
-        if (Array.isArray(cc)) setClients(cc)
-        if (Array.isArray(gc)) setGroupLoans(gc)
-        if (lgm && typeof lgm === 'object') setLoanGroupMap(lgm)
-        if (Array.isArray(ac)) setAdvisors(ac)
-        if (uc && Array.isArray(lc) && Array.isArray(cc) && Array.isArray(gc) && Array.isArray(ac)) {
-          setIsLoading(false)
-          return
-        }
-      } catch {}
       setIsLoading(true);
       try {
         const supabase = createClient();
         const user = await getUserWithRetry()
         setUser(user);
         if (user) writeCache(K.user, user)
-        {
-          const clientsQueryController = new AbortController()
-          const clientsQueryTimeout = setTimeout(() => clientsQueryController.abort(), 8000)
 
-          const cachedUserData = readCache(K.userData)
-          if (cachedUserData && cachedUserData.id) {
-            setUserData(cachedUserData)
-            setUserDataError(null)
-          } else if (!user) {
-            window.location.href = '/auth/login'
-            return
-          }
-
-          const [loansResponse, clientsResponse, groupsLoansResponse, paymentsResponse, advisorsResponse] = await Promise.all([
-            fetchWithTimeout('/api/loans', { timeoutMs: 12000 }),
-            fetchWithTimeout('/api/clients', { timeoutMs: 12000 }),
-            fetchWithTimeout('/api/loans-groups', { timeoutMs: 12000 }),
-            fetchWithTimeout('/api/payments', { timeoutMs: 12000, cache: 'no-store' as any }),
-            fetchWithTimeout('/api/advisors', { timeoutMs: 12000 }),
-          ])
-
-          if (loansResponse.ok) {
-            const loansData = await loansResponse.json();
-            setLoans(loansData || []);
-            setLoansError(null);
-            writeCache(K.loans, loansData || [])
-          } else {
-            console.error('[dashboard] Failed to load loans:', loansResponse);
-            setLoans([]);
-            setLoansError('No se pudieron cargar los préstamos');
-          }
-
-          if (clientsResponse.ok) {
-            const clientsData = await clientsResponse.json();
-            setClients(clientsData || []);
-            writeCache(K.clients, clientsData || [])
-          } else {
-            console.error('[dashboard] Failed to load clients:', clientsResponse);
-          }
-
-          if (groupsLoansResponse.ok) {
-            const groupsData = await groupsLoansResponse.json();
-            setGroupLoans(groupsData || []);
-            const map: Record<string, { groupName: string }> = {};
-            for (const g of groupsData || []) {
-              const name = g.group?.nombre || 'Grupo';
-              for (const item of g.loans || []) {
-                if (item.loan_id) {
-                  map[item.loan_id] = { groupName: name };
-                }
-              }
+        // 1. Garantizar que tenemos userData (perfil) para saber el rol
+        let currentUserData = readCache(K.userData)
+        if (!currentUserData || !currentUserData.id) {
+          if (user) {
+            const { data: profile } = await supabase
+              .from('users')
+              .select('*')
+              .eq('auth_id', user.id)
+              .maybeSingle()
+            if (profile) {
+              currentUserData = profile
+              setUserData(profile)
+              writeCache(K.userData, profile)
+              setUserDataError(null)
             }
-            setLoanGroupMap(map);
-            setGroupsError(null);
-            writeCache(K.groupLoans, groupsData || [])
-            writeCache(K.loanGroupMap, map)
-          } else {
-            console.error('[dashboard] Failed to load group loans:', groupsLoansResponse);
-            setGroupsError('No se pudieron cargar los préstamos por grupo');
           }
-
-          if (paymentsResponse.ok) {
-            const paymentsData = await paymentsResponse.json();
-            const agg: Record<string, number> = {};
-            const confirmedByLoan: Record<string, Set<string>> = {}
-            for (const p of paymentsData || []) {
-              const status = String(p.confirmationStatus || p.confirmation_status || '').toLowerCase()
-              if (status !== 'confirmado' && status !== 'aprobado') continue
-              const k = String(p.loanId || p.loan_id)
-              const amt = Number(p.amount || 0)
-              if (!k) continue
-              agg[k] = (agg[k] || 0) + amt
-              const sid = String(p.scheduleId || p.schedule_id || '')
-              if (sid) {
-                (confirmedByLoan[k] ||= new Set()).add(sid)
-              }
-            }
-            setPaymentsAgg(agg)
-            writeCache(K.paymentsAgg, agg)
-            const counts: Record<string, number> = {}
-            for (const [k, set] of Object.entries(confirmedByLoan)) counts[k] = set.size
-            setPaymentsConfirmedCounts(counts)
-          } else if (paymentsResponse.status === 304) {
-            const cached = readCache(K.paymentsAgg)
-            if (cached && typeof cached === 'object') {
-              setPaymentsAgg(cached)
-            }
-          } else {
-            let err: any = null
-            try { err = await paymentsResponse.json() } catch {}
-            console.error('[dashboard] Failed to load payments:', paymentsResponse.status, err?.error || paymentsResponse.statusText, err?.details || err);
-          }
-
-          if (advisorsResponse.ok) {
-            const advisorsData = await advisorsResponse.json();
-            setAdvisors(advisorsData || [])
-            writeCache(K.advisors, advisorsData || [])
-          } else if (advisorsResponse.status === 304) {
-            const cached = readCache(K.advisors)
-            if (Array.isArray(cached)) setAdvisors(cached)
-          }
-          
-          //clearTimeout(userQueryTimeout);
-          clearTimeout(clientsQueryTimeout);
+        } else {
+          setUserData(currentUserData)
+          setUserDataError(null)
         }
+
+        if (!currentUserData && !user) {
+          window.location.href = '/auth/login'
+          return
+        }
+
+        const role = currentUserData?.role
+
+        // 2. Carga condicional de recursos basada en caché y rol
+        const promises: Promise<any>[] = []
+        const keys: string[] = []
+
+        // Loans
+        if (!readCache(K.loans)) {
+          promises.push(fetchWithTimeout('/api/loans', { timeoutMs: 12000 }).then(r => r.ok ? r.json() : null))
+          keys.push('loans')
+        } else {
+          setLoans(readCache(K.loans))
+        }
+
+        // Clients
+        if (!readCache(K.clients)) {
+          promises.push(fetchWithTimeout('/api/clients', { timeoutMs: 12000 }).then(r => r.ok ? r.json() : null))
+          keys.push('clients')
+        } else {
+          setClients(readCache(K.clients))
+        }
+
+        // Group Loans
+        if (!readCache(K.groupLoans)) {
+          promises.push(fetchWithTimeout('/api/loans-groups', { timeoutMs: 12000 }).then(r => r.ok ? r.json() : null))
+          keys.push('groupLoans')
+        } else {
+          const gl = readCache(K.groupLoans)
+          setGroupLoans(gl)
+          // Reconstruir mapa si existe en cache
+          const map = readCache(K.loanGroupMap)
+          if (map) setLoanGroupMap(map)
+          else {
+             // Si falta el mapa pero tenemos grupos, reconstruirlo
+             const newMap: Record<string, { groupName: string }> = {};
+             for (const g of gl || []) {
+               const name = g.group?.nombre || 'Grupo';
+               for (const item of g.loans || []) {
+                 if (item.loan_id) newMap[item.loan_id] = { groupName: name };
+               }
+             }
+             setLoanGroupMap(newMap)
+             writeCache(K.loanGroupMap, newMap)
+          }
+        }
+
+        // Payments
+        if (!readCache(K.paymentsAgg)) {
+           promises.push(fetchWithTimeout('/api/payments', { timeoutMs: 12000, cache: 'no-store' as any }).then(r => r.ok ? r.json() : null))
+           keys.push('payments')
+        } else {
+           setPaymentsAgg(readCache(K.paymentsAgg))
+        }
+
+        // Advisors (Solo admin/asesor)
+        if (['admin', 'asesor'].includes(role)) {
+          if (!readCache(K.advisors)) {
+            promises.push(fetchWithTimeout('/api/advisors', { timeoutMs: 12000 }).then(r => r.ok ? r.json() : null))
+            keys.push('advisors')
+          } else {
+            setAdvisors(readCache(K.advisors))
+          }
+        }
+
+        // Ejecutar llamadas faltantes
+        if (promises.length > 0) {
+          const results = await Promise.all(promises)
+          
+          results.forEach((data, index) => {
+            const key = keys[index]
+            
+            if (key === 'loans') {
+              if (data) {
+                setLoans(data)
+                writeCache(K.loans, data)
+                setLoansError(null)
+              } else {
+                setLoansError('No se pudieron cargar los préstamos')
+              }
+            }
+            
+            if (key === 'clients') {
+              if (data) {
+                setClients(data)
+                writeCache(K.clients, data)
+              }
+            }
+
+            if (key === 'groupLoans') {
+              if (data) {
+                setGroupLoans(data)
+                writeCache(K.groupLoans, data)
+                const map: Record<string, { groupName: string }> = {};
+                for (const g of data) {
+                  const name = g.group?.nombre || 'Grupo';
+                  for (const item of g.loans || []) {
+                    if (item.loan_id) map[item.loan_id] = { groupName: name };
+                  }
+                }
+                setLoanGroupMap(map)
+                writeCache(K.loanGroupMap, map)
+                setGroupsError(null)
+              } else {
+                setGroupsError('No se pudieron cargar los préstamos por grupo')
+              }
+            }
+
+            if (key === 'payments') {
+               if (data) {
+                  const agg: Record<string, number> = {};
+                  const confirmedByLoan: Record<string, Set<string>> = {}
+                  for (const p of data) {
+                    const status = String(p.confirmationStatus || p.confirmation_status || '').toLowerCase()
+                    if (status !== 'confirmado' && status !== 'aprobado') continue
+                    const k = String(p.loanId || p.loan_id)
+                    const amt = Number(p.amount || 0)
+                    if (!k) continue
+                    agg[k] = (agg[k] || 0) + amt
+                    const sid = String(p.scheduleId || p.schedule_id || '')
+                    if (sid) (confirmedByLoan[k] ||= new Set()).add(sid)
+                  }
+                  setPaymentsAgg(agg)
+                  writeCache(K.paymentsAgg, agg)
+                  const counts: Record<string, number> = {}
+                  for (const [k, set] of Object.entries(confirmedByLoan)) counts[k] = set.size
+                  setPaymentsConfirmedCounts(counts)
+               }
+            }
+
+            if (key === 'advisors') {
+               if (data) {
+                 setAdvisors(data)
+                 writeCache(K.advisors, data)
+               }
+            }
+          })
+        }
+
       } catch (e) {
         console.error("Dashboard load error:", e)
       } finally {
@@ -560,7 +606,7 @@ const formatCurrency = (amount: number) => {
             title="Total en Préstamos"
             value={formatCurrency(totalLoanAmount)}
             description="Monto total prestado"
-            icon={DollarSign}
+            icon={QuetzalIcon}
           />
         )}
         {userData.role === 'cliente' && (
@@ -574,7 +620,7 @@ const formatCurrency = (amount: number) => {
           <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Total en Préstamos (Individuales)</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
+              <QuetzalIcon className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="flex items-center justify-between gap-6">
@@ -603,7 +649,7 @@ const formatCurrency = (amount: number) => {
           <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Total en Préstamos de Grupo</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
+              <QuetzalIcon className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="flex items-center justify-between gap-6">
@@ -648,7 +694,7 @@ const formatCurrency = (amount: number) => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {/* Card progreso préstamo */}
                   <div
-                    className="rounded-lg border bg-card/50 p-4 hover:bg-muted/40 transition-all duration-200 cursor-pointer"
+                    className="rounded-lg border bg-card/50 backdrop-blur-sm p-4 hover:bg-muted/40 transition-all duration-200 cursor-pointer"
                     onClick={() => {
                       if (loan?.id) {
                         window.location.href = `/dashboard/loans/${loan.id}`
@@ -684,7 +730,7 @@ const formatCurrency = (amount: number) => {
 
                   {/* Card registrar pago */}
                   <div
-                    className="rounded-lg border bg-card/50 p-4 hover:bg-muted/40 transition-all duration-200 cursor-pointer"
+                    className="rounded-lg border bg-card/50 backdrop-blur-sm p-4 hover:bg-muted/40 transition-all duration-200 cursor-pointer"
                     onClick={() => {
                       const schedule: any[] = (activeLoanDetails[loan.id]?.schedule || [])
                       const next = schedule.find((s: any) => s.status !== 'paid')
@@ -812,7 +858,7 @@ const formatCurrency = (amount: number) => {
                           <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
                             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                               <CardTitle className="text-sm font-medium text-muted-foreground">Recuperación de dinero de asesores</CardTitle>
-                              <DollarSign className="h-4 w-4 text-muted-foreground" />
+                              <QuetzalIcon className="h-4 w-4 text-muted-foreground" />
                             </CardHeader>
                             <CardContent>
                               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
@@ -878,7 +924,7 @@ const formatCurrency = (amount: number) => {
                                         const confirmedInstallments = activeLoans.reduce((s: number, l: any) => s + Number(paymentsConfirmedCounts[String(l.id)] || 0), 0)
                                         const clientLoans = (loans || []).filter((l: any) => String((l?.client || {}).id) === clientId)
                                         return (
-                                          <Card key={i} className="border-border/50 bg-card/50">
+                                          <Card key={i} className="border-border/50 bg-card/50 backdrop-blur-sm">
                                             <CardHeader className="pb-2">
                                               <CardTitle className="text-sm font-medium text-foreground truncate">{clientName}</CardTitle>
                                               <div className="text-xs text-muted-foreground truncate">{String(c.email || '-')}</div>

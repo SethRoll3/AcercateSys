@@ -4,7 +4,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { Loan, PaymentSchedule } from "@/lib/types"
-import { Calendar, DollarSign, Percent, Clock, Download } from "lucide-react"
+import { Calendar, Percent, Clock, Download } from "lucide-react"
+const QuetzalIcon = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+    <text x="12" y="16" textAnchor="middle" fontSize="16" fill="currentColor" fontWeight="bold">Q</text>
+  </svg>
+)
 import { useState } from "react"
 import { ExportPlanModal } from "@/components/export-plan-modal"
 
@@ -103,7 +108,7 @@ export function LoanInfoCard({ loan, totalPaid, remainingBalance, schedule }: Lo
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2 text-muted-foreground text-sm">
-              <DollarSign className="h-4 w-4" />
+              <QuetzalIcon className="h-4 w-4" />
               <span>Monto Total</span>
             </div>
             <p className="text-xl font-bold text-foreground">{formatCurrency(loan.amount)}</p>

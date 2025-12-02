@@ -22,7 +22,7 @@ CREATE POLICY "Role-based loan access" ON loans
         ((SELECT role FROM users WHERE auth_id = auth.uid()) = 'asesor' AND 
          client_id IN (SELECT id FROM clients WHERE advisor_id = (SELECT id FROM users WHERE auth_id = auth.uid()))) OR
         -- Client can see their own loans
-        ((SELECT role FROM users WHERE auth_id = auth.uid()) = 'cliente' AND client_id = (SELECT id FROM users WHERE auth_id = auth.uid()))
+        ((SELECT role FROM users WHERE auth_id = auth.uid()) = 'cliente' AND client_id = (SELECT id FROM clients WHERE email = (SELECT email FROM users WHERE auth_id = auth.uid())))
     );
 
 DROP POLICY IF EXISTS "Role-based loan update" ON loans;

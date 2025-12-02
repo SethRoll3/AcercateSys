@@ -14,12 +14,17 @@ import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { UserPlus, Loader2 } from 'lucide-react'
 
-import type { Client } from '@/lib/types'
+type MinimalClient = {
+  id: string
+  first_name: string
+  last_name: string
+  email?: string | null
+}
 
 interface CreateClientUserDialogProps {
   isOpen: boolean
   onClose: () => void
-  client: Client | null
+  client: MinimalClient | null
   onUserCreated?: () => void
 }
 

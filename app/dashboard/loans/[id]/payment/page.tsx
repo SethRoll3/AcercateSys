@@ -137,6 +137,10 @@ export default function PaymentPage() {
   }
 
   const handleLogout = async () => {
+    try {
+      localStorage.clear()
+      sessionStorage.clear()
+    } catch {}
     const supabase = createClient()
     await supabase.auth.signOut()
     router.push("/auth/login")

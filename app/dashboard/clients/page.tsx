@@ -65,14 +65,41 @@ export default function ClientsPage() {
   const canEditGroups = usePermission('canEditGroups'); // New permission for editing groups
   const canDeleteGroups = usePermission('canDeleteGroups'); // New permission for deleting groups
 
+  const CACHE_TTL_MS = Number.MAX_SAFE_INTEGER
+  const readCache = (key: string) => {
+    try {
+      const raw = sessionStorage.getItem(key)
+      if (!raw) return null
+      const obj = JSON.parse(raw)
+      if (!obj || typeof obj.ts !== 'number') return null
+      if (Date.now() - obj.ts > CACHE_TTL_MS) return null
+      return obj.data ?? null
+    } catch {}
+    return null
+  }
+  const writeCache = (key: string, data: any) => {
+    try {
+      sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }))
+    } catch {}
+  }
+
+  const K = {
+    clients: 'clients:list',
+    userEmails: 'clients:userEmails',
+  }
+
   const fetchClients = async () => {
-    setIsLoading(true)
+    // Don't set isLoading(true) if we already have data (from cache or previous fetch) to avoid flickering
+    // But if we have no data, we might want to show spinner if cache miss.
+    // actually, we handle cache reading in useEffect.
+    // Here we just fetch and update.
     try {
       const res = await fetch('/api/clients')
       if (res.ok) {
         const data = await res.json()
         if (Array.isArray(data)) {
           setClients(data)
+          writeCache(K.clients, data)
         } else {
           toast.error('La respuesta del servidor no es válida.')
           setClients([])
@@ -96,6 +123,7 @@ export default function ClientsPage() {
         const users: { email: string }[] = await response.json()
         const emails = new Set(users.map((user) => user.email.toLowerCase()))
         setExistingUserEmails(emails)
+        writeCache(K.userEmails, Array.from(emails))
       }
     } catch (error) {
       console.error('Error fetching users:', error)
@@ -113,7 +141,21 @@ export default function ClientsPage() {
   }
 
   useEffect(() => {
-    fetchClients()
+    const cachedClients = readCache(K.clients)
+    if (cachedClients) {
+      setClients(cachedClients)
+      setIsLoading(false)
+    } else {
+      setIsLoading(true)
+      fetchClients()
+    }
+
+    const cachedEmails = readCache(K.userEmails)
+    if (cachedEmails) {
+      setExistingUserEmails(new Set(cachedEmails))
+    } else {
+      fetchExistingUserEmails()
+    }
     
     // Obtener el userId actual
     const fetchCurrentUser = async () => {
@@ -127,7 +169,6 @@ export default function ClientsPage() {
     }
     
     fetchCurrentUser()
-    fetchExistingUserEmails()
   }, [])
 
   const handleEditClick = (client: Client) => {
@@ -232,7 +273,7 @@ export default function ClientsPage() {
           <TabsTrigger value="groups">Grupos</TabsTrigger>
         </TabsList>
         <TabsContent value="clients" forceMount>
-          <Card>
+          <Card className="bg-card/50 backdrop-blur-sm">
             <CardHeader className="space-y-2">
               <CardTitle>Clientes</CardTitle>
               <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -255,7 +296,7 @@ export default function ClientsPage() {
             <CardContent>
               <div className="space-y-2">
                 {filteredClients.map((client) => (
-                  <div key={client.id} className="flex items-center justify-between rounded-md border bg-card/50 px-4 py-3 transition-all duration-200 hover:bg-muted/40">
+                  <div key={client.id} className="flex items-center justify-between rounded-md border bg-card/50 backdrop-blur-sm px-4 py-3 transition-all duration-200 hover:bg-muted/40">
                     <div className="font-medium">{`${client.first_name} ${client.last_name}`}</div>
                     <Button
                       variant="ghost"
@@ -271,7 +312,7 @@ export default function ClientsPage() {
           </Card>
         </TabsContent>
         <TabsContent value="groups" forceMount>
-          <Card>
+          <Card className="bg-card/50 backdrop-blur-sm">
             <CardHeader className="space-y-2">
               <CardTitle>Grupos</CardTitle>
               <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">

@@ -127,6 +127,41 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Verificar si ya existe usuario con mismo email
+    const { data: existingByEmail } = await admin
+      .from('users')
+      .select('id, auth_id, status')
+      .eq('email', userData.email)
+      .limit(1)
+
+    if (Array.isArray(existingByEmail) && existingByEmail[0]) {
+      const existing = existingByEmail[0]
+      if (existing.status === 'inactive') {
+        const { error: reactivateAuthError } = await admin.auth.admin.updateUserById(existing.auth_id, {
+          password: userData.password,
+          email: userData.email,
+          user_metadata: { full_name: userData.full_name, role: userData.role },
+        })
+        if (reactivateAuthError) {
+          return NextResponse.json({ error: reactivateAuthError.message }, { status: 500 })
+        }
+
+        const { data: updatedRow, error: reactivateDbError } = await admin
+          .from('users')
+          .update({ full_name: userData.full_name, role: userData.role, status: 'active' })
+          .eq('id', existing.id)
+          .select('id, email, full_name, role, auth_id, created_at')
+
+        if (reactivateDbError) {
+          return NextResponse.json({ error: reactivateDbError.message }, { status: 500 })
+        }
+
+        return NextResponse.json(updatedRow?.[0] ?? { id: existing.id, email: userData.email, full_name: userData.full_name, role: userData.role })
+      } else {
+        return NextResponse.json({ error: 'Ya existe un usuario activo con este email' }, { status: 409 })
+      }
+    }
+
     // Crear usuario en auth.users con service role
     const { data: authUser, error: authError } = await admin.auth.admin.createUser({
       email: userData.email,
@@ -300,44 +335,67 @@ export async function PUT(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const supabase = await createClient({ admin: true })
+  const admin = await createAdminClient()
   const url = new URL(req.url)
   const id = url.searchParams.get('id')
+  const cascadeClient = url.searchParams.get('cascadeClient') === 'true'
 
   if (!id) {
     return NextResponse.json({ error: 'ID de usuario requerido' }, { status: 400 })
   }
 
   try {
-    // Buscar auth_id antes de eliminar para borrar también en Auth
-    const { data: userRow, error: fetchError } = await supabase
+    // Obtener email y auth_id para posibles sincronizaciones
+    const { data: userRow, error: fetchError } = await admin
       .from('users')
-      .select('auth_id')
+      .select('auth_id, email')
       .eq('id', id)
       .single()
 
-    if (fetchError) {
-      return NextResponse.json({ error: fetchError.message }, { status: 500 })
+    if (fetchError || !userRow) {
+      return NextResponse.json({ error: fetchError?.message || 'Usuario no encontrado' }, { status: 404 })
     }
 
-    // Eliminar de la tabla users primero
-    const { error: userError } = await supabase
+    // Marcar usuario como inactivo (no eliminar)
+    const { error: inactivateError } = await admin
       .from('users')
-      .delete()
+      .update({ status: 'inactive' })
       .eq('id', id)
 
-    if (userError) {
-      return NextResponse.json({ error: userError.message }, { status: 500 })
+    if (inactivateError) {
+      return NextResponse.json({ error: inactivateError.message }, { status: 500 })
     }
 
-    // Eliminar del sistema de autenticación
-    const { error: authError } = await supabase.auth.admin.deleteUser(userRow?.auth_id ?? id)
+    // Opcional: cascada al cliente y sus préstamos activos/pendientes
+    if (cascadeClient && userRow.email) {
+      const { data: clientRow } = await admin
+        .from('clients')
+        .select('id')
+        .eq('email', userRow.email)
+        .single()
 
-    if (authError) {
-      return NextResponse.json({ error: authError.message }, { status: 500 })
+      if (clientRow?.id) {
+        const { error: clientError } = await admin
+          .from('clients')
+          .update({ status: 'inactive' })
+          .eq('id', clientRow.id)
+
+        if (clientError) {
+          console.error('Error al inactivar cliente vinculado:', clientError)
+        } else {
+          const { error: loansError } = await admin
+            .from('loans')
+            .update({ status: 'inactive' })
+            .eq('client_id', clientRow.id)
+            .in('status', ['active', 'pending'])
+          if (loansError) {
+            console.error('Error al inactivar préstamos del cliente vinculado:', loansError)
+          }
+        }
+      }
     }
 
-    return NextResponse.json({ message: 'Usuario eliminado con éxito' })
+    return NextResponse.json({ message: 'Usuario inactivado con éxito' })
   } catch (error) {
     return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
   }

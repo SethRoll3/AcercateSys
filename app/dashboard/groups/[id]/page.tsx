@@ -90,7 +90,7 @@ export default function GroupDetailPage() {
         </div>
       </div>
 
-      <Card className="transition-all duration-200">
+      <Card className="transition-all duration-200 bg-card/50 backdrop-blur-sm">
         <CardHeader>
           <CardTitle>Información del Grupo</CardTitle>
         </CardHeader>
@@ -102,7 +102,7 @@ export default function GroupDetailPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {group.clients.map((c) => (
-          <Card key={c.id} className="transition-all duration-200">
+          <Card key={c.id} className="transition-all duration-200 bg-card/50 backdrop-blur-sm">
             <CardHeader>
               <CardTitle>{`${c.first_name} ${c.last_name}`}</CardTitle>
             </CardHeader>
