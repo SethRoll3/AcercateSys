@@ -1,5 +1,5 @@
 import type { Payment, Loan, Client } from "./types"
-import { parseYMDToUTC } from "./utils"
+import { parseYMDToUTC, translateStatus } from "./utils"
 
 type ReceiptBranding = {
   coopName?: string
@@ -143,7 +143,7 @@ export function generatePaymentReceipt(
             <div class="section-title">Préstamo</div>
             <div class="item"><div class="label">Número de préstamo</div><div class="value">${safe(loan.loanNumber)}</div></div>
             <div class="item"><div class="label">Cuota mensual</div><div class="value">${formatCurrency(Number(loan.monthlyPayment) || 0)}</div></div>
-            <div class="item"><div class="label">Estado</div><div class="value">${safe(loan.status)}</div></div>
+            <div class="item"><div class="label">Estado</div><div class="value">${translateStatus(loan.status)}</div></div>
           </div>
         </div>
 

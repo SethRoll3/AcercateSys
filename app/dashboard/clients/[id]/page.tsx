@@ -12,6 +12,8 @@ import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
 import { ArrowLeft, Pencil, Trash2, Mail, Phone, PhoneCall, MapPin, UserCheck, Users, Eye, UserCircle } from 'lucide-react'
+import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
+import { CreateClientUserDialog } from '@/components/create-client-user-dialog'
 
 interface Client {
   id: string
@@ -27,6 +29,7 @@ interface Client {
   phone_country_code?: string | null
   group_id?: string | null
   group_name?: string | null
+  status?: string
 }
 
 interface GroupDetails {
@@ -45,6 +48,13 @@ export default function ClientDetailPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [groupDetails, setGroupDetails] = useState<GroupDetails | null>(null)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [activeLoansCount, setActiveLoansCount] = useState(0)
+  const [hasActiveUser, setHasActiveUser] = useState(false)
+  const [isCreateUserOpen, setIsCreateUserOpen] = useState(false)
+  const [linkedUserStatus, setLinkedUserStatus] = useState<string | null>(null)
+  const [linkedUserId, setLinkedUserId] = useState<string | null>(null)
 
   useEffect(() => {
     const run = async () => {
@@ -54,7 +64,7 @@ export default function ClientDetailPage() {
 
         const { data: row, error } = await supabase
           .from('clients')
-          .select('id, first_name, last_name, email, address, phone, phone_country_code, emergency_phone, advisor_id, group_id')
+          .select('id, first_name, last_name, email, address, phone, phone_country_code, emergency_phone, advisor_id, group_id, status')
           .eq('id', id)
           .single()
 
@@ -62,6 +72,15 @@ export default function ClientDetailPage() {
           setClient(null)
           return
         }
+
+        // Fetch active/pending loans count
+        const { count: loansCount } = await supabase
+          .from('loans')
+          .select('id', { count: 'exact', head: true })
+          .eq('client_id', id)
+          .in('status', ['active', 'pending'])
+        
+        setActiveLoansCount(loansCount || 0)
 
         let advisorName: string | null = null
         let advisorEmail: string | null = null
@@ -104,8 +123,26 @@ export default function ClientDetailPage() {
           advisor_name: advisorName,
           group_id: row.group_id,
           group_name: groupName,
+          status: row.status,
         })
         setGroupDetails(fetchedGroup)
+
+        if (row.email) {
+          const { data: userRows } = await supabase
+            .from('users')
+            .select('id, status')
+            .eq('email', row.email)
+            .limit(1)
+          const u = Array.isArray(userRows) && userRows[0] ? userRows[0] as { id: string; status?: string } : null
+          const st = u?.status ?? null
+          setLinkedUserStatus(st)
+          setLinkedUserId(u?.id ?? null)
+          setHasActiveUser(st === 'active')
+        } else {
+          setLinkedUserStatus(null)
+          setLinkedUserId(null)
+          setHasActiveUser(false)
+        }
       } finally {
         setIsLoading(false)
       }
@@ -113,8 +150,9 @@ export default function ClientDetailPage() {
     run()
   }, [params.id])
 
-  const handleDelete = async () => {
+  const confirmDelete = async () => {
     if (!client) return
+    setIsDeleting(true)
     try {
       const res = await fetch('/api/clients', {
         method: 'DELETE',
@@ -127,9 +165,11 @@ export default function ClientDetailPage() {
       } else {
         const err = await res.json()
         toast.error(err?.error || 'Error al eliminar')
+        setIsDeleting(false)
       }
     } catch {
       toast.error('No se pudo conectar con el servidor')
+      setIsDeleting(false)
     }
   }
 
@@ -159,8 +199,13 @@ export default function ClientDetailPage() {
               Editar
             </Button>
           )}
+          {role && ['admin','asesor'].includes(role) && client.email && !hasActiveUser && (
+            <Button variant="default" size="sm" className="gap-2" onClick={() => setIsCreateUserOpen(true)}>
+              Crear Usuario
+            </Button>
+          )}
           {canDeleteClients && (
-            <Button variant="destructive" size="sm" className="gap-2" onClick={handleDelete}>
+            <Button variant="destructive" size="sm" className="gap-2" onClick={() => setIsDeleteDialogOpen(true)}>
               <Trash2 className="h-4 w-4" />
               Eliminar
             </Button>
@@ -169,7 +214,7 @@ export default function ClientDetailPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card className="transition-all duration-200 hover:shadow-md bg-card/60">
+        <Card className="transition-all duration-200 hover:shadow-md bg-card/50 backdrop-blur-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <UserCircle className="h-5 w-5" />
@@ -185,7 +230,9 @@ export default function ClientDetailPage() {
               </div>
               <div className="flex items-center gap-2">
                 <div className="text-lg font-semibold">{`${client.first_name} ${client.last_name}`}</div>
-                <Badge variant="outline">Cliente</Badge>
+                <Badge variant={client.status === 'inactive' ? 'destructive' : 'secondary'}>
+                  {client.status === 'inactive' ? 'Inactivo' : 'Activo'}
+                </Badge>
               </div>
             </div>
             <div className="space-y-2">
@@ -195,6 +242,19 @@ export default function ClientDetailPage() {
                   <a href={`mailto:${client.email}`} className="hover:underline">{client.email}</a>
                 ) : (
                   <span className="text-muted-foreground">Sin email</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <UserCircle className="h-4 w-4 text-muted-foreground" />
+                <span>Usuario vinculado</span>
+                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${linkedUserStatus === 'active' ? 'bg-green-100 text-green-700' : linkedUserStatus === 'inactive' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'}`}>
+                  {linkedUserStatus === 'active' ? 'Activo' : linkedUserStatus === 'inactive' ? 'Inactivo' : 'No existe'}
+                </span>
+                {linkedUserId && (
+                  <Button variant="ghost" size="sm" className="gap-1" onClick={() => router.push(`/dashboard/users/${linkedUserId}`)}>
+                    <Eye className="h-4 w-4" />
+                    Ver usuario
+                  </Button>
                 )}
               </div>
               <div className="flex items-center gap-2 text-sm">
@@ -229,7 +289,7 @@ export default function ClientDetailPage() {
           </CardContent>
         </Card>
 
-        <Card className="transition-all duration-200 hover:shadow-md bg-card/60">
+        <Card className="transition-all duration-200 hover:shadow-md bg-card/50 backdrop-blur-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="h-5 w-5" />
@@ -281,6 +341,28 @@ export default function ClientDetailPage() {
           />
         </DialogContent>
       </Dialog>
+
+      <DeleteConfirmationDialog
+        isOpen={isDeleteDialogOpen}
+        onClose={() => setIsDeleteDialogOpen(false)}
+        onConfirm={confirmDelete}
+        title="¿Eliminar cliente?"
+        description={activeLoansCount > 0 
+          ? `Este cliente tiene ${activeLoansCount} préstamo(s) activo(s) o pendiente(s). Al eliminarlo, el cliente y sus préstamos pasarán a estado inactivo. Esta acción no se puede deshacer.`
+          : "Esta acción no se puede deshacer. El cliente pasará a estado inactivo."}
+        isDeleting={isDeleting}
+      />
+
+      <CreateClientUserDialog
+        isOpen={isCreateUserOpen}
+        onClose={() => setIsCreateUserOpen(false)}
+        client={client}
+        onUserCreated={() => {
+          setHasActiveUser(true)
+          setIsCreateUserOpen(false)
+          router.refresh()
+        }}
+      />
     </div>
   )
 }

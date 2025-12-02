@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
+import { translateStatus } from "@/lib/utils"
 import ExcelJS from "exceljs"
 import path from "path"
 import fs from "fs"
@@ -125,7 +126,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ loanId:
         Number(s.admin_fees || 0),
         remaining,
         saldoTotal,
-        s.status,
+        translateStatus(s.status),
       ])
       row.getCell(2).numFmt = dateFmt
       ;[3,4,5,6,7,8,9].forEach((i) => { row.getCell(i).numFmt = currencyFmt })

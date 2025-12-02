@@ -1,7 +1,8 @@
   import { NextResponse } from "next/server"
-  import { createClient, createAdminClient } from "@/lib/supabase/server"
-  import ExcelJS from "exceljs"
-  import path from "path"
+import { createClient, createAdminClient } from "@/lib/supabase/server"
+import { translateStatus } from "@/lib/utils"
+import ExcelJS from "exceljs"
+import path from "path"
 
   export async function GET(request: Request) {
     try {
@@ -159,13 +160,6 @@
       const grouped = filteredSchedules.filter((s: any) => loanToGroup[String(s.loan_id)])
 
       const addRows = (rows: any[], tipo: 'Individual' | 'Grupo') => {
-        const statusMap: Record<string, string> = {
-          paid: 'Pagado',
-          pending: 'Pendiente',
-          pending_confirmation: 'Pendiente Confirmación',
-          rejected: 'Rechazado',
-          overdue: 'En Mora',
-        }
         for (const s of rows) {
           const loan = loansMap[String((s as any).loan_id)]
           const client = loan?.client
@@ -179,7 +173,7 @@
         const mora = Number((s as any).mora || 0)
         const gastos = Number((s as any).admin_fees || 0)
         const totalPagar = programado + mora
-          const translatedStatus = statusMap[String((s as any).status || '')] || String((s as any).status || '')
+          const translatedStatus = translateStatus(String((s as any).status || ''))
           const row = ws.addRow([
             tipo,
             nombre || (tipo === 'Individual' ? 'N/A' : 'Grupo sin nombre'),

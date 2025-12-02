@@ -294,6 +294,53 @@ export async function PATCH(
       notificationError = e instanceof Error ? e.message : 'Failed to send notification.';
     }
 
+    try {
+      const clientEmail: string | null = payment?.loan?.client?.email || null
+      const advisorEmail: string | null = payment?.loan?.client?.advisor?.email || null
+      const fmt = new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' })
+      const amountText = fmt.format(Number(updatedPayment.amount) || 0)
+      const actionUrl = `/dashboard/loans/${updatedPayment.loan_id}`
+
+      const rows: any[] = []
+      if (clientEmail) {
+        rows.push({
+          recipient_email: clientEmail,
+          recipient_role: 'cliente',
+          title: action === 'aprobar' ? 'Pago aprobado' : 'Pago rechazado',
+          body: action === 'aprobar'
+            ? `Tu pago de ${amountText} fue aprobado. Recibo ${updatedPayment.receipt_number || '-'}.`
+            : `Tu pago de ${amountText} fue rechazado. Motivo: ${updatedPayment.rejection_reason || '-'}.`,
+          type: action === 'aprobar' ? 'payment_confirmed' : 'payment_rejected',
+          status: 'unread',
+          related_entity_type: 'payment',
+          related_entity_id: updatedPayment.id,
+          action_url: actionUrl,
+          meta_json: { loan_id: updatedPayment.loan_id, schedule_id: updatedPayment.schedule_id },
+        })
+      }
+
+      if (userData.role === 'asesor') {
+        rows.push({
+          recipient_role: 'admin',
+          recipient_email: null,
+          title: action === 'aprobar' ? 'Asesor aprobó un pago' : 'Asesor rechazó un pago',
+          body: `El asesor ${userData.email} ${action === 'aprobar' ? 'aprobó' : 'rechazó'} el pago ${updatedPayment.receipt_number || '-'} (${amountText}).`,
+          type: action === 'aprobar' ? 'advisor_payment_approved' : 'advisor_payment_rejected',
+          status: 'unread',
+          related_entity_type: 'payment',
+          related_entity_id: updatedPayment.id,
+          action_url: actionUrl,
+          meta_json: { loan_id: updatedPayment.loan_id, schedule_id: updatedPayment.schedule_id },
+        })
+      }
+
+      if (rows.length) {
+        await serviceSupabase.from('notifications').insert(rows)
+      }
+    } catch (e) {
+      console.error('[IN-APP NOTIFS] Failed to insert notifications:', e)
+    }
+
     return NextResponse.json({
       message: `Payment ${action === "aprobar" ? "aprobado" : "rechazado"} successfully`,
       payment: transformedPayment,

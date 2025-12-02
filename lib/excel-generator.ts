@@ -1,6 +1,6 @@
 import type { Loan, Payment, PaymentSchedule, Client } from "./types"
 import * as XLSX from "xlsx"
-import { parseYMDToUTC } from "./utils"
+import { parseYMDToUTC, translateStatus } from "./utils"
 import * as fs from "fs"
 import * as path from "path"
 
@@ -55,7 +55,7 @@ export function generateLoansExcel(loans: (Loan & { client: Client })[]): Buffer
     loan.interestRate / 100,
     loan.termMonths,
     loan.monthlyPayment,
-    loan.status,
+    translateStatus(loan.status),
     parseYMDToUTC(loan.startDate),
     parseYMDToUTC(loan.endDate),
   ]);
@@ -154,7 +154,7 @@ export function generatePaymentScheduleExcel(
       totalDue,
       item.principal,
       item.interest,
-      item.status,
+      translateStatus(item.status),
       payment ? parseYMDToUTC(payment.paymentDate) : "-",
       payment ? payment.receiptNumber : "-",
     ];

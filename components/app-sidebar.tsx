@@ -54,17 +54,21 @@ export function AppSidebar({ variant = "desktop" }: { variant?: "desktop" | "mob
 
   const handleLogout = async () => {
     setIsLoggingOut(true)
+    try {
+      localStorage.clear()
+      sessionStorage.clear()
+    } catch {}
     await supabase.auth.signOut()
     window.location.href = "/auth/login"
   }
 
   const Container = variant === "desktop" ? "aside" : "div"
-  const containerClass = variant === "desktop" ? "flex h-screen w-64 flex-col overflow-y-auto border-r bg-card px-4 py-8" : "flex w-64 flex-col overflow-y-auto bg-card px-4 py-6"
+  const containerClass = variant === "desktop" ? "flex h-screen w-64 flex-col overflow-y-auto border-r bg-card/50 backdrop-blur-sm px-4 py-8" : "flex w-64 flex-col overflow-y-auto bg-card/50 backdrop-blur-sm px-4 py-6"
 
   return (
     <Container className={containerClass}>
       <Link href="/" className="flex items-center gap-3 px-4 mb-6">
-        <img src="/logoCooperativaSinTextoSinFondo.png" alt="acercate" className="h-8 w-8" />
+        <img src="/logoCooperativaSinTextoSinFondo.png" alt="acercate" className="h-12 w-12" />
         <span className="text-2xl font-bold text-foreground">acercate</span>
       </Link>
 

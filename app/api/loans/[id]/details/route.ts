@@ -69,7 +69,7 @@ export async function GET(
         .from("clients")
         .select("id")
         .eq("email", userData.email)
-        .single()
+        .maybeSingle()
 
       if (clientError || !clientData) {
         return NextResponse.json({ error: "Client not found" }, { status: 404 })
@@ -118,7 +118,7 @@ export async function GET(
 
     if (debug) console.log("[DEBUG] Executing final loan query...")
     
-    const { data: loan, error: loanError } = await loanQuery.single()
+    const { data: loan, error: loanError } = await loanQuery.maybeSingle()
 
     if (debug) console.log("[DEBUG] Loan query result:", { loan: loan ? "found" : "not found", loanError })
 

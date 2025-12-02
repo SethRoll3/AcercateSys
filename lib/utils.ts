@@ -64,3 +64,18 @@ export function formatYMDGT(
   const dt = parseYMDToUTC(dateStr)
   return new Intl.DateTimeFormat(locale, { timeZone: "America/Guatemala", ...options }).format(dt)
 }
+
+export function translateStatus(status: string | null | undefined): string {
+  if (!status) return ""
+  const map: Record<string, string> = {
+    'paid': 'Pagado',
+    'pending': 'Pendiente',
+    'pending-confirmation': 'Pendiente de confirmación',
+    'inactive': 'Inactivo',
+    'active': 'Activo',
+    'rejected': 'Rechazado',
+    'partially_paid': 'Pago Parcial',
+    'overdue': 'En Mora'
+  }
+  return map[status] || status
+}

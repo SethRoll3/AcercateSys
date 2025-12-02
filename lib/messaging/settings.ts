@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 
 export interface SystemSettings {
   support_contact: string
@@ -7,10 +7,12 @@ export interface SystemSettings {
   default_quiet_hours_end: string | null
   default_country_code: string
   timezone: string
+  dynamic_mora_enabled: boolean
+  dynamic_mora_amount: number
 }
 
 export async function getSystemSettings(): Promise<SystemSettings> {
-  const admin = await createClient({ admin: true })
+  const admin = await createAdminClient()
   const { data } = await admin.from('system_settings').select('*').limit(1)
   const row = Array.isArray(data) ? data[0] : null
   return {
@@ -20,6 +22,7 @@ export async function getSystemSettings(): Promise<SystemSettings> {
     default_quiet_hours_end: row?.default_quiet_hours_end ?? '18:00',
     default_country_code: row?.default_country_code ?? '+502',
     timezone: row?.timezone ?? 'America/Guatemala',
+    dynamic_mora_enabled: !!row?.dynamic_mora_enabled,
+    dynamic_mora_amount: Number(row?.dynamic_mora_amount ?? 0),
   }
 }
-

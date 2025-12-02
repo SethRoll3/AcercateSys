@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
+import { translateStatus } from "@/lib/utils"
 import ExcelJS from "exceljs"
 import path from "path"
 
@@ -149,7 +150,7 @@ export async function GET(request: Request) {
         capital,
         intereses,
         paid,
-        p.schedule?.status === 'partially_paid' ? 'Parcial' : 'Completo',
+        translateStatus(p.schedule?.status),
         mora,
         adminFees,
         p.schedule?.due_date ? new Date(p.schedule?.due_date) : null,

@@ -13,6 +13,28 @@ import type { Loan, User, PaymentSchedule, Payment } from "@/lib/types"
 import { ArrowLeft, LogOut } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 
+const CACHE_TTL_MS = Number.MAX_SAFE_INTEGER
+const readCache = (key: string) => {
+  try {
+    const raw = sessionStorage.getItem(key)
+    if (!raw) return null
+    const obj = JSON.parse(raw)
+    if (!obj || typeof obj.ts !== 'number') return null
+    if (Date.now() - obj.ts > CACHE_TTL_MS) return null
+    return obj.data ?? null
+  } catch {}
+  return null
+}
+const writeCache = (key: string, data: any) => {
+  try {
+    sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }))
+  } catch {}
+}
+
+const K = {
+  loanDetails: 'loanDetails:',
+}
+
 export default function LoanDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -63,7 +85,7 @@ export default function LoanDetailPage() {
 
   useEffect(() => {
     const supabase = createClient()
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event: string) => {
       if (event === 'SIGNED_OUT') {
         router.push('/auth/login')
       }
@@ -72,6 +94,20 @@ export default function LoanDetailPage() {
     inFlightRef.current = true
     setIsLoading(true)
     setErrorMsg(null)
+
+    const cacheKey = K.loanDetails + params.id
+    const cachedData = readCache(cacheKey)
+    if (cachedData) {
+      setLoan(cachedData.loan)
+      setSchedule(cachedData.schedule)
+      setPayments(cachedData.payments)
+      setTotalPaid(cachedData.totalPaid)
+      setRemainingBalance(cachedData.remainingBalance)
+      setIsLoading(false)
+      inFlightRef.current = false
+      return
+    }
+
     const hardTimeout = setTimeout(() => {
       setErrorMsg('No se pudieron cargar los detalles del préstamo. Intenta nuevamente.')
       setIsLoading(false)
@@ -100,6 +136,7 @@ export default function LoanDetailPage() {
           setPayments(data.payments)
           setTotalPaid(data.totalPaid)
           setRemainingBalance(data.remainingBalance)
+          writeCache(cacheKey, data)
           setIsLoading(false)
           setErrorMsg(null)
         } else {

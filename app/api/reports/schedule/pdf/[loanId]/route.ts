@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
+import { translateStatus } from "@/lib/utils"
 import puppeteer from "puppeteer"
 import type { Browser } from "puppeteer"
 import path from "path"
@@ -92,7 +93,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ loanId:
         <td>${currency(Number(s.mora || 0))}</td>
         <td>${currency(Number(s.admin_fees || 0))}</td>
         <td>${currency(saldoTotal)}</td>
-        <td>${s.status}</td>
+        <td>${translateStatus(s.status)}</td>
       </tr>`
     }).join('')
 

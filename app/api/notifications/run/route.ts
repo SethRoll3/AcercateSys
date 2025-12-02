@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
-import { sendMessage, sendWhatsAppTemplate } from '@/lib/messaging'
+//import { sendMessage, sendWhatsAppTemplate } from '@/lib/messaging'
 import { getSystemSettings } from '@/lib/messaging/settings'
-import { getTemplate, renderTemplate, getTemplateRow } from '@/lib/messaging/templates'
+//import { getTemplate, renderTemplate, getTemplateRow } from '@/lib/messaging/templates'
+import { parseYMDToUTC } from '@/lib/utils'
 
 type StageKey = 'D-15' | 'D-2' | 'D-1' | 'D0' | 'D+1' | 'D+3' | `WEEKLY_${number}`
 
@@ -69,12 +70,14 @@ export async function POST(req: NextRequest) {
 
 
 
-    const today = new Date()
     const sysSettings = await getSystemSettings()
+    const tz = sysSettings.timezone || 'America/Guatemala'
+    const todayYMD = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date())
+    const today = parseYMDToUTC(todayYMD)
 
     const { data: schedules } = await admin
       .from('payment_schedule')
-      .select(`*, loan:loans(*, client:clients(*))`)
+      .select(`*, loan:loans(*, client:clients(*, advisor:users!advisor_id(email)))`)
       .in('status', ['pending','overdue'])
 
     const results: any[] = []
@@ -84,9 +87,12 @@ export async function POST(req: NextRequest) {
       if (!stage) continue
 
       const loan = s.loan
-      const client = loan?.client
-      const clientId = client?.id || client?.id
-      const phone = client?.phone || ''
+      const clientRaw: any = loan?.client as any
+      const clientObj: any = Array.isArray(clientRaw) ? clientRaw[0] : clientRaw
+      const advisorRaw: any = clientObj?.advisor as any
+      const advisorObj: any = Array.isArray(advisorRaw) ? advisorRaw[0] : advisorRaw
+      const clientId = clientObj?.id
+      const phone = clientObj?.phone || ''
 
       // Settings
       const { data: settingsRows } = await admin
@@ -96,7 +102,74 @@ export async function POST(req: NextRequest) {
         .limit(1)
       const clientSettings = Array.isArray(settingsRows) ? settingsRows[0] : null
 
-      if (!isWithinQuietHours(today, clientSettings?.timezone || 'UTC', clientSettings?.quiet_hours_start ?? sysSettings.default_quiet_hours_start, clientSettings?.quiet_hours_end ?? sysSettings.default_quiet_hours_end)) {
+      // In-app notifications (centro de notificaciones)
+      try {
+        const actionUrl = `/dashboard/loans/${loan?.id}`
+        const scheduledAmountIn = Number(s.amount || 0) + Number(s.admin_fees || 0) + Number(s.mora || 0)
+        const paidAmountIn = Number(s.paid_amount || 0)
+        const pendingIn = Math.max(0, scheduledAmountIn - paidAmountIn)
+        const typeIn = templateKeyForStage(stage)
+
+        if (clientObj?.email) {
+          const orFilterClient = `recipient_email.eq.${clientObj.email},recipient_role.eq.cliente`
+          const { data: existingClient } = await admin
+            .from('notifications')
+            .select('id')
+            .eq('type', typeIn)
+            .eq('related_entity_id', s.id)
+            .eq('status', 'unread')
+            .or(orFilterClient)
+            .limit(1)
+          if (!Array.isArray(existingClient) || existingClient.length === 0) {
+            await admin.from('notifications').insert({
+              recipient_email: clientObj.email,
+              recipient_role: 'cliente',
+              title: stage === 'D0' ? 'Hoy es día de tu pago' : 'Recordatorio de pago',
+              body: stage === 'D0'
+                ? `Tu pago vence hoy. Monto pendiente ${new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(pendingIn)}.`
+                : `Tu pago vence el ${new Date(dueDate).toLocaleDateString('es-GT')}. Monto pendiente ${new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(pendingIn)}.`,
+              type: typeIn,
+              status: 'unread',
+              related_entity_type: 'schedule',
+              related_entity_id: s.id,
+              action_url: actionUrl,
+              meta_json: { loan_id: loan?.id, schedule_id: s.id, due_date: s.due_date, pending: pendingIn },
+            })
+          }
+        }
+
+        const diasMoraIn = Math.max(0, daysBetween(today, dueDate))
+        if (diasMoraIn > 0 && advisorObj?.email) {
+          const orFilterAdvisor = `recipient_email.eq.${advisorObj.email},recipient_role.eq.asesor`
+          const { data: existingAdvisor } = await admin
+            .from('notifications')
+            .select('id')
+            .eq('type', 'advisor_overdue_alert')
+            .eq('related_entity_id', s.id)
+            .eq('status', 'unread')
+            .or(orFilterAdvisor)
+            .limit(1)
+          if (!Array.isArray(existingAdvisor) || existingAdvisor.length === 0) {
+            await admin.from('notifications').insert({
+              recipient_email: advisorObj.email,
+              recipient_role: 'asesor',
+              title: diasMoraIn === 1 ? 'Cliente en mora' : 'Cliente continúa en mora',
+              body: `El cliente ${clientObj?.first_name || ''} ${clientObj?.last_name || ''} tiene ${diasMoraIn} día(s) de mora en la cuota ${s.payment_number}.`,
+              type: 'advisor_overdue_alert',
+              status: 'unread',
+              related_entity_type: 'schedule',
+              related_entity_id: s.id,
+              action_url: actionUrl,
+              meta_json: { loan_id: loan?.id, schedule_id: s.id, dias_mora: diasMoraIn },
+            })
+          }
+        }
+      } catch (e) {
+        try { console.error('[IN-APP NOTIFS] run insert failed', e) } catch {}
+      }
+
+      /*
+      if (!isWithinQuietHours(today, clientSettings?.timezone || tz, clientSettings?.quiet_hours_start ?? sysSettings.default_quiet_hours_start, clientSettings?.quiet_hours_end ?? sysSettings.default_quiet_hours_end)) {
         results.push({ scheduleId: s.id, stage, status: 'ignored_quiet_hours' })
         continue
       }
@@ -162,7 +235,7 @@ export async function POST(req: NextRequest) {
       const waText = renderTemplate(waTpl, vars)
       const textByChannel: Record<'sms'|'whatsapp', string> = { sms: smsText, whatsapp: waText }
 
-      const countryCode = (client?.phone_country_code as string) || sysSettings.default_country_code
+      const countryCode = (clientObj?.phone_country_code as string) || sysSettings.default_country_code
       let sendRes = await sendMessage(channels, phone, channels.length === 1 ? textByChannel[channels[0]] : smsText, countryCode)
       const envTemplateNameKey = `WHATSAPP_TEMPLATE_${tkey}`
       const autoTemplateName = (process.env as any)[envTemplateNameKey]
@@ -219,6 +292,10 @@ export async function POST(req: NextRequest) {
       }
 
       results.push({ scheduleId: s.id, stage, status: 'processed', channels })
+      */
+
+      results.push({ scheduleId: s.id, stage, status: 'in_app_only' })
+      continue
     }
 
     return NextResponse.json({ ok: true, count: results.length, results })

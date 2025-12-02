@@ -295,7 +295,7 @@ export default function ReviewPage() {
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
           {!payment ? (
-            <Card>
+            <Card className="bg-card/50 backdrop-blur-sm">
               <CardHeader>
                 <CardTitle>Pago Pendiente</CardTitle>
               </CardHeader>
@@ -306,7 +306,7 @@ export default function ReviewPage() {
           ) : (
             <>
               {/* Payment Details */}
-              <Card>
+              <Card className="bg-card/50 backdrop-blur-sm">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2"><Banknote className="h-5 w-5" />Detalles del Pago</CardTitle>
                 </CardHeader>
@@ -322,7 +322,7 @@ export default function ReviewPage() {
 
               {/* Boletas Details */}
               {boletas.length > 0 ? (
-                <Card>
+                <Card className="bg-card/50 backdrop-blur-sm">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5" />Boletas Asociadas</CardTitle>
                   </CardHeader>
@@ -363,7 +363,7 @@ export default function ReviewPage() {
                   </CardContent>
                 </Card>
               ) : (
-                <Card>
+                <Card className="bg-card/50 backdrop-blur-sm">
                   <CardHeader><CardTitle>Boletas no encontradas</CardTitle></CardHeader>
                   <CardContent><p className="text-muted-foreground">No se encontraron boletas asociadas a esta cuota.</p></CardContent>
                 </Card>
@@ -374,7 +374,7 @@ export default function ReviewPage() {
 
         {/* Loan Summary */}
         <div className="lg:col-span-1 space-y-6">
-          <Card>
+          <Card className="bg-card/50 backdrop-blur-sm">
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5" />Resumen</CardTitle>
             </CardHeader>

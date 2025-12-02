@@ -20,7 +20,7 @@ export default function LoginPage() {
   // --- Mantengo tus funciones auxiliares intactas ---
   const writeCache = (key: string, data: any) => {
     try {
-      localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }))
+      sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }))
     } catch {}
   }
   const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeoutMs: number = 8000) => {
@@ -63,13 +63,19 @@ export default function LoginPage() {
       }
       try {
         const userRes = await fetchWithTimeout('/api/auth/user', { credentials: 'include' as any }, 6000)
+        if (userRes.status === 403) {
+          await supabase.auth.signOut()
+          toast.error('Tu usuario está inactivo. Contacta al administrador.')
+          setIsLoading(false)
+          return
+        }
         if (userRes.ok) {
           const userData = await userRes.json()
           writeCache(K.userData, userData)
           writeCache(K.user, { id: userData.id, email: userData.email })
           try {
-            localStorage.removeItem(K.selectedLoanId)
-            localStorage.removeItem(K.activeLoanDetails)
+            sessionStorage.removeItem(K.selectedLoanId)
+            sessionStorage.removeItem(K.activeLoanDetails)
           } catch {}
         }
       } catch {}

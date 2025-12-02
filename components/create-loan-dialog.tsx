@@ -1,7 +1,7 @@
 'use client'
 
 import type React from 'react'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback, memo } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -20,11 +20,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus } from 'lucide-react'
+import { Plus, Check, ChevronsUpDown } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { calculateMonthlyPayment, calculateEndDate, gtDateInputValue } from '@/lib/utils'
+import { calculateMonthlyPayment, calculateEndDate, gtDateInputValue, cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { useEffect } from 'react'
 
 interface Client {
@@ -37,6 +50,63 @@ interface CreateLoanDialogProps {
   onLoanCreated: () => void
 }
 
+const calculateGroupPayment = (amount: string, term: string, rate: string, freq: string) => {
+  const amountNum = parseFloat(amount)
+  const rateNum = parseFloat(rate) || 0
+  const termNum = parseInt(term, 10)
+  if (amountNum > 0 && termNum > 0) {
+    const capitalMes = amountNum / termNum
+    const interesMes = amountNum * (rateNum / 100)
+    const aporte = 20
+    if (freq === 'quincenal') {
+      return capitalMes + (interesMes / 2) + aporte
+    }
+    return capitalMes + interesMes + aporte
+  }
+  return 0
+}
+
+const ClientLoanRow = memo(({
+  client,
+  amount,
+  globalData,
+  onAmountChange
+}: {
+  client: any,
+  amount: string,
+  globalData: { termMonths: string, interestRate: string, frequency: string, startDate: string },
+  onAmountChange: (id: string, amount: string) => void
+}) => {
+  const mp = calculateGroupPayment(amount, globalData.termMonths, globalData.interestRate, globalData.frequency)
+  const endDateStr = (globalData.startDate && parseInt(globalData.termMonths) > 0)
+     ? calculateEndDate(globalData.startDate, parseInt(globalData.termMonths))
+     : ''
+
+  return (
+    <div className="rounded-lg border bg-card/50 backdrop-blur-sm p-4">
+      <div className="font-semibold text-foreground mb-2">{client.first_name} {client.last_name}</div>
+      <div className="space-y-2">
+        <Input
+          type="number"
+          placeholder="Monto"
+          value={amount}
+          onChange={(e) => onAmountChange(client.id, e.target.value)}
+          className="bg-background/50"
+        />
+        <div className="flex justify-between text-xs text-muted-foreground pt-2">
+          <span>Cuota</span>
+          <span>{new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(mp)}</span>
+        </div>
+        <div className="flex justify-between text-xs text-muted-foreground">
+          <span>Fin Estimado</span>
+          <span>{endDateStr}</span>
+        </div>
+      </div>
+    </div>
+  )
+})
+ClientLoanRow.displayName = 'ClientLoanRow'
+
 export function CreateLoanDialog({
   clients,
   onLoanCreated,
@@ -46,6 +116,7 @@ export function CreateLoanDialog({
   const [step, setStep] = useState(1)
   const [activeTab, setActiveTab] = useState<'client' | 'group'>('client')
   const router = useRouter()
+  const [openClient, setOpenClient] = useState(false)
   const [formData, setFormData] = useState({
     clientId: '',
     amount: '',
@@ -58,15 +129,25 @@ export function CreateLoanDialog({
 
   const [groups, setGroups] = useState<any[]>([])
   const [selectedGroupId, setSelectedGroupId] = useState<string>('')
+  const [isLoadingGroups, setIsLoadingGroups] = useState(false)
+  
+  const [groupFormData, setGroupFormData] = useState({
+    interestRate: '',
+    startDate: gtDateInputValue(),
+    frequency: 'mensual' as 'mensual' | 'quincenal',
+    termMonths: '',
+  })
+
   const [assignments, setAssignments] = useState<Record<string, {
     amount: string
-    interestRate: string
-    termMonths: string
-    startDate: string
-    frequency?: 'mensual' | 'quincenal'
-    monthlyPayment: number
-    endDate: string
   }>>({})
+
+  const handleAmountChange = useCallback((id: string, value: string) => {
+    setAssignments((prev) => ({
+      ...prev,
+      [id]: { amount: value }
+    }))
+  }, [])
 
   const monthlyPayment = useMemo(() => {
     const amount = parseFloat(formData.amount)
@@ -119,12 +200,16 @@ export function CreateLoanDialog({
     if (open && activeTab === 'group') {
       ;(async () => {
         try {
+          setIsLoadingGroups(true)
           const res = await fetch('/api/grupos')
           if (res.ok) {
             const data = await res.json()
             setGroups(Array.isArray(data) ? data : [])
           }
-        } catch {}
+        } catch {
+        } finally {
+          setIsLoadingGroups(false)
+        }
       })()
     }
   }, [open, activeTab])
@@ -175,33 +260,6 @@ export function CreateLoanDialog({
     }
   }
 
-  const assignClientLoan = (clientId: string, values: { amount: string; interestRate: string; termMonths: string; startDate: string; frequency?: 'mensual' | 'quincenal' }) => {
-    const amountNum = parseFloat(values.amount)
-    const rateNum = parseFloat(values.interestRate) || 0
-    const termNum = parseInt(values.termMonths, 10)
-    const capitalMes = amountNum / termNum
-    const interesMes = amountNum * (rateNum / 100)
-    const aporte = 20
-    const mp = amountNum > 0 && termNum > 0
-      ? ((values.frequency === 'quincenal')
-          ? (capitalMes + (interesMes/2) + aporte)
-          : (capitalMes + interesMes + aporte))
-      : 0
-    const ed = values.startDate && termNum > 0 ? calculateEndDate(values.startDate, termNum) : ''
-    setAssignments((prev) => ({
-      ...prev,
-      [clientId]: {
-        amount: values.amount,
-        interestRate: values.interestRate,
-        termMonths: values.termMonths,
-        startDate: values.startDate,
-        frequency: values.frequency || 'mensual',
-        monthlyPayment: mp,
-        endDate: ed,
-      },
-    }))
-    toast.success('Asignación guardada')
-  }
 
   const createGroupLoans = async () => {
     if (!selectedGroup || !selectedGroup.clients || selectedGroup.clients.length === 0) return
@@ -210,21 +268,33 @@ export function CreateLoanDialog({
       toast.error('Todos los integrantes deben tener asignación')
       return
     }
+    
+    // Validar datos globales
+    if (!groupFormData.startDate || !groupFormData.interestRate || !groupFormData.frequency || !groupFormData.termMonths) {
+      toast.error('Complete los datos generales del grupo (Fecha, Tasa, Frecuencia, Plazo)')
+      return
+    }
+
     setIsLoading(true)
     try {
       const created: { client_id: string; loan_id: string }[] = []
       for (const c of selectedGroup.clients) {
         const a = assignments[c.id]
+        const mp = calculateGroupPayment(a.amount, groupFormData.termMonths, groupFormData.interestRate, groupFormData.frequency)
+        const ed = (groupFormData.startDate && parseInt(groupFormData.termMonths) > 0) 
+          ? calculateEndDate(groupFormData.startDate, parseInt(groupFormData.termMonths)) 
+          : ''
+
         const payload = {
           clientId: c.id,
           amount: a.amount,
-          interestRate: a.interestRate,
-          termMonths: a.termMonths,
-          startDate: a.startDate,
-          frequency: (a as any).frequency || 'mensual',
+          interestRate: groupFormData.interestRate,
+          termMonths: groupFormData.termMonths,
+          startDate: groupFormData.startDate,
+          frequency: groupFormData.frequency,
           status: 'pending',
-          monthlyPayment: a.monthlyPayment.toFixed(2),
-          endDate: a.endDate,
+          monthlyPayment: mp.toFixed(2),
+          endDate: ed,
         }
         const res = await fetch('/api/loans', {
           method: 'POST',
@@ -268,13 +338,22 @@ export function CreateLoanDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
+      <style jsx global>{`
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background-color: #94a3b8 !important;
+          border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+           background-color: transparent;
+        }
+      `}</style>
       <DialogTrigger asChild>
         <Button className="gap-2 bg-primary hover:bg-primary/90">
           <Plus className="h-4 w-4" />
           Nuevo Préstamo
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[500px] bg-card border-border max-h-[80vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[500px] bg-card border-border max-h-[80vh] overflow-y-auto custom-scrollbar pr-2">
         <DialogHeader>
           <DialogTitle className="text-foreground">
             Crear Nuevo Préstamo
@@ -296,23 +375,51 @@ export function CreateLoanDialog({
                     <Label htmlFor="clientId" className="text-foreground">
                       Cliente
                     </Label>
-                    <Select
-                      value={formData.clientId}
-                      onValueChange={(value) =>
-                        setFormData({ ...formData, clientId: value })
-                      }
-                    >
-                      <SelectTrigger className="bg-background/50">
-                        <SelectValue placeholder="Seleccione un cliente" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {clients.map((client) => (
-                          <SelectItem key={client.id} value={client.id}>
-                            {client.fullName}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Popover open={openClient} onOpenChange={setOpenClient}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={openClient}
+                          className="w-full justify-between bg-background/50"
+                        >
+                          {formData.clientId
+                            ? clients.find((client) => client.id === formData.clientId)?.fullName
+                            : "Seleccione un cliente"}
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[400px] p-0">
+                        {openClient ? (
+                          <Command>
+                            <CommandInput placeholder="Buscar cliente..." />
+                            <CommandList>
+                              <CommandEmpty>No se encontró el cliente.</CommandEmpty>
+                              <CommandGroup>
+                                {clients.map((client) => (
+                                  <CommandItem
+                                    key={client.id}
+                                    value={client.fullName}
+                                    onSelect={() => {
+                                      setFormData({ ...formData, clientId: client.id })
+                                      setOpenClient(false)
+                                    }}
+                                  >
+                                    <Check
+                                      className={cn(
+                                        "mr-2 h-4 w-4",
+                                        formData.clientId === client.id ? "opacity-100" : "opacity-0"
+                                      )}
+                                    />
+                                    {client.fullName}
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        ) : null}
+                      </PopoverContent>
+                    </Popover>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -450,54 +557,82 @@ export function CreateLoanDialog({
             <div className="space-y-4 mt-4">
               <div className="space-y-2">
                 <Label className="text-foreground">Grupo</Label>
-                <Select value={selectedGroupId} onValueChange={(v) => setSelectedGroupId(v)}>
+                <Select value={selectedGroupId} onValueChange={(v) => setSelectedGroupId(v)} disabled={isLoadingGroups}>
                   <SelectTrigger className="bg-background/50">
-                    <SelectValue placeholder="Seleccione un grupo" />
+                    <SelectValue placeholder={isLoadingGroups ? "Cargando grupos..." : "Seleccione un grupo"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {groups.map((g: any) => (
-                      <SelectItem key={g.id} value={g.id}>{g.nombre}</SelectItem>
-                    ))}
+                    {isLoadingGroups ? (
+                      <div className="p-2 text-sm text-muted-foreground text-center">Cargando...</div>
+                    ) : (
+                      groups.map((g: any) => (
+                        <SelectItem key={g.id} value={g.id}>{g.nombre}</SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>
               {selectedGroup && (
                 <div className="space-y-4">
-                  <div className="text-sm text-muted-foreground">Asignados {selectedGroup.clients.filter((c: any) => assignments[c.id]).length} de {selectedGroup.clients.length}</div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {selectedGroup.clients.map((c: any) => {
-                      const a = assignments[c.id] || { amount: '', interestRate: '', termMonths: '', startDate: '', frequency: 'mensual', monthlyPayment: 0, endDate: '' }
-                      return (
-                        <div key={c.id} className="rounded-lg border bg-card p-4">
-                          <div className="font-semibold text-foreground mb-2">{c.first_name} {c.last_name}</div>
-                          <div className="space-y-2">
-                            <Input type="number" placeholder="Monto" value={a.amount} onChange={(e) => setAssignments((prev) => ({ ...prev, [c.id]: { ...a, amount: e.target.value } }))} className="bg-background/50" />
-                            <Input type="number" step="0.1" placeholder="Tasa (%)" value={a.interestRate} onChange={(e) => setAssignments((prev) => ({ ...prev, [c.id]: { ...a, interestRate: e.target.value } }))} className="bg-background/50" />
-                            <Input type="number" placeholder="Plazo" value={a.termMonths} onChange={(e) => setAssignments((prev) => ({ ...prev, [c.id]: { ...a, termMonths: e.target.value } }))} className="bg-background/50" />
-                            <div className="grid grid-cols-1 gap-2">
-                              <Input type="date" value={a.startDate} onChange={(e) => setAssignments((prev) => ({ ...prev, [c.id]: { ...a, startDate: e.target.value } }))} className="bg-background/50" />
-                              <Tabs value={(a as any).frequency || 'mensual'} onValueChange={(v) => setAssignments((prev) => ({ ...prev, [c.id]: { ...a, frequency: v as 'mensual' | 'quincenal' } }))} className="w-full">
+                  <div className="rounded-lg border bg-card p-4 space-y-4">
+                     <h3 className="font-semibold text-foreground">Datos Generales del Grupo</h3>
+                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                           <Label>Fecha de Inicio</Label>
+                           <Input 
+                             type="date" 
+                             value={groupFormData.startDate} 
+                             onChange={(e) => setGroupFormData(prev => ({...prev, startDate: e.target.value}))}
+                             className="bg-background/50"
+                           />
+                           <div className="text-xs text-muted-foreground">
+                              La primera cuota será {groupFormData.frequency === 'quincenal' ? 'una quincena' : 'un mes'} después de la fecha de inicio.
+                           </div>
+                        </div>
+                        <div className="space-y-2">
+                           <Label>Frecuencia</Label>
+                           <Tabs value={groupFormData.frequency} onValueChange={(v) => setGroupFormData(prev => ({...prev, frequency: v as 'mensual' | 'quincenal'}))} className="w-full">
                                 <TabsList className="grid grid-cols-2 w-full">
                                   <TabsTrigger value="mensual" className="text-sm">Mensual</TabsTrigger>
                                   <TabsTrigger value="quincenal" className="text-sm">Quincenal</TabsTrigger>
                                 </TabsList>
-                              </Tabs>
-                            </div>
-                            <div className="flex justify-between text-xs text-muted-foreground">
-                              <span>Cuota</span>
-                              <span>{new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(a.monthlyPayment || 0)}</span>
-                            </div>
-                            <div className="flex justify-between text-xs text-muted-foreground">
-                              <span>Fin</span>
-                              <span>{a.endDate || ''}</span>
-                            </div>
-                          </div>
-                          <div className="flex justify-end pt-2">
-                            <Button type="button" size="sm" onClick={() => assignClientLoan(c.id, { amount: a.amount, interestRate: a.interestRate, termMonths: a.termMonths, startDate: a.startDate, frequency: (a as any).frequency || 'mensual' })}>Asignar</Button>
-                          </div>
+                           </Tabs>
                         </div>
-                      )
-                    })}
+                        <div className="space-y-2">
+                           <Label>Tasa de Interés (%)</Label>
+                           <Input 
+                             type="number" 
+                             step="0.1" 
+                             placeholder="12.5" 
+                             value={groupFormData.interestRate} 
+                             onChange={(e) => setGroupFormData(prev => ({...prev, interestRate: e.target.value}))}
+                             className="bg-background/50"
+                           />
+                        </div>
+                        <div className="space-y-2">
+                           <Label>Plazo (Meses)</Label>
+                           <Input 
+                             type="number" 
+                             placeholder="12" 
+                             value={groupFormData.termMonths} 
+                             onChange={(e) => setGroupFormData(prev => ({...prev, termMonths: e.target.value}))}
+                             className="bg-background/50"
+                           />
+                        </div>
+                     </div>
+                  </div>
+
+                  <div className="text-sm text-muted-foreground">Asignados {selectedGroup.clients.filter((c: any) => assignments[c.id]).length} de {selectedGroup.clients.length}</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {selectedGroup.clients.map((c: any) => (
+                      <ClientLoanRow
+                        key={c.id}
+                        client={c}
+                        amount={assignments[c.id]?.amount || ''}
+                        globalData={groupFormData}
+                        onAmountChange={handleAmountChange}
+                      />
+                    ))}
                   </div>
                   <div className="rounded-lg border bg-card p-4">
                     <div className="flex justify-between">
