@@ -53,13 +53,17 @@ export function DashboardHeader({ userRole, userEmail }: DashboardHeaderProps) {
     const fetchNotifications = async () => {
       if (!userEmail && !userRole) return
       setLoadingNotifs(true)
-      const orFilter = userEmail && userRole ? `recipient_email.eq.${userEmail},recipient_role.eq.${userRole}` : (userEmail ? `recipient_email.eq.${userEmail}` : `recipient_role.eq.${userRole}`)
-      const { data } = await supabase
+      let query = supabase
         .from('notifications')
         .select('id, title, body, type, status, created_at, action_url')
-        .or(orFilter)
         .order('created_at', { ascending: false })
         .limit(20)
+      if (userRole === 'admin') {
+        query = query.eq('recipient_role', 'admin')
+      } else {
+        query = query.eq('recipient_email', userEmail)
+      }
+      const { data } = await query
       const rows = Array.isArray(data) ? data : []
       setNotifications(rows.map(r => ({ id: String(r.id), title: String(r.title || ''), body: r.body ?? null, type: String(r.type || ''), status: (r.status as any) || 'unread', created_at: String(r.created_at || new Date().toISOString()), action_url: (r as any).action_url || null })))
       setUnreadCount(rows.filter(r => String(r.status) === 'unread').length)
@@ -68,7 +72,7 @@ export function DashboardHeader({ userRole, userEmail }: DashboardHeaderProps) {
 
     const subscribe = () => {
       try {
-        const filter = userEmail ? `recipient_email=eq.${userEmail}` : `recipient_role=eq.${userRole}`
+        const filter = userRole === 'admin' ? `recipient_role=eq.admin` : `recipient_email=eq.${userEmail}`
         channel = supabase
           .channel('notifications_channel')
           .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter }, () => {
@@ -175,7 +179,7 @@ export function DashboardHeader({ userRole, userEmail }: DashboardHeaderProps) {
               </div>
               <div className="px-3 py-2 flex items-center justify-between">
                 <Button variant="ghost" size="sm" onClick={markAllRead} disabled={unreadCount === 0}>Marcar todas</Button>
-                <Button variant="ghost" size="sm" onClick={() => router.push('/dashboard')}>Ver todo</Button>
+                <Button variant="ghost" size="sm" onClick={() => router.push('/dashboard/notifications')}>Ver todo</Button>
               </div>
             </DropdownMenuContent>
           </DropdownMenu>

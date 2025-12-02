@@ -5,7 +5,7 @@ import { getSystemSettings } from '@/lib/messaging/settings'
 //import { getTemplate, renderTemplate, getTemplateRow } from '@/lib/messaging/templates'
 import { parseYMDToUTC } from '@/lib/utils'
 
-type StageKey = 'D-15' | 'D-2' | 'D-1' | 'D0' | 'D+1' | 'D+3' | `WEEKLY_${number}`
+type StageKey = 'D-2' | 'D-1'
 
 function daysBetween(a: Date, b: Date) {
   const ms = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate()) - Date.UTC(b.getFullYear(), b.getMonth(), b.getDate())
@@ -13,32 +13,15 @@ function daysBetween(a: Date, b: Date) {
 }
 
 function computeStage(today: Date, dueDate: Date, status: string): StageKey | null {
-  const diff = daysBetween(dueDate, today) // positive when today > dueDate
-  if (diff < 0) {
-    const before = -diff
-    if (before === 15) return 'D-15'
-    if (before === 2) return 'D-2'
-    if (before === 1) return 'D-1'
-    return null
-  }
-  if (diff === 0) return 'D0'
-  if (diff === 1) return 'D+1'
-  if (diff === 3) return 'D+3'
-  if (diff >= 7 && (status === 'overdue' || status === 'pending')) {
-    const week = Math.floor(diff / 7)
-    return `WEEKLY_${week}`
-  }
+  const diff = daysBetween(dueDate, today)
+  if (diff === 2) return 'D-2'
+  if (diff === 1) return 'D-1'
   return null
 }
 
-function templateKeyForStage(stage: StageKey): 'reminder_D15'|'reminder_D2'|'reminder_D1'|'due_D0'|'overdue_D1'|'overdue_D3'|'overdue_WEEKLY' {
-  if (stage === 'D-15') return 'reminder_D15'
+function templateKeyForStage(stage: StageKey): 'reminder_D2'|'reminder_D1' {
   if (stage === 'D-2') return 'reminder_D2'
-  if (stage === 'D-1') return 'reminder_D1'
-  if (stage === 'D0') return 'due_D0'
-  if (stage === 'D+1') return 'overdue_D1'
-  if (stage === 'D+3') return 'overdue_D3'
-  return 'overdue_WEEKLY'
+  return 'reminder_D1'
 }
 
 function hourInTZ(now: Date, tz: string) {
@@ -82,7 +65,7 @@ export async function POST(req: NextRequest) {
 
     const results: any[] = []
     for (const s of schedules || []) {
-      const dueDate = new Date(s.due_date || s.dueDate)
+      const dueDate = parseYMDToUTC(String(s.due_date || s.dueDate))
       const stage = computeStage(today, dueDate, s.status)
       if (!stage) continue
 
@@ -124,10 +107,8 @@ export async function POST(req: NextRequest) {
             await admin.from('notifications').insert({
               recipient_email: clientObj.email,
               recipient_role: 'cliente',
-              title: stage === 'D0' ? 'Hoy es día de tu pago' : 'Recordatorio de pago',
-              body: stage === 'D0'
-                ? `Tu pago vence hoy. Monto pendiente ${new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(pendingIn)}.`
-                : `Tu pago vence el ${new Date(dueDate).toLocaleDateString('es-GT')}. Monto pendiente ${new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(pendingIn)}.`,
+              title: 'Recordatorio de pago',
+              body: `Tu pago vence el ${new Date(dueDate).toLocaleDateString('es-GT')}. Monto pendiente ${new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(pendingIn)}.`,
               type: typeIn,
               status: 'unread',
               related_entity_type: 'schedule',

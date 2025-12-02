@@ -8,6 +8,7 @@ import { PaymentScheduleTable } from "@/components/payment-schedule-table"
 import { PaymentHistoryTable } from "@/components/payment-history-table"
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { Loan, User, PaymentSchedule, Payment } from "@/lib/types"
 import { ArrowLeft, LogOut } from "lucide-react"
@@ -30,6 +31,9 @@ const writeCache = (key: string, data: any) => {
     sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }))
   } catch {}
 }
+const clearCache = (key: string) => {
+  try { sessionStorage.removeItem(key) } catch {}
+}
 
 const K = {
   loanDetails: 'loanDetails:',
@@ -44,6 +48,8 @@ export default function LoanDetailPage() {
   const [totalPaid, setTotalPaid] = useState(0)
   const [remainingBalance, setRemainingBalance] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
+  const [isRegenerating, setIsRegenerating] = useState(false)
+  const [confirmRegenerateOpen, setConfirmRegenerateOpen] = useState(false)
   const [userEmail, setUserEmail] = useState("")
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const { role } = useRole()
@@ -181,14 +187,50 @@ export default function LoanDetailPage() {
     window.open(`/api/reports/receipt/${payment.id}`, "_blank")
   }
 
-  const handleScheduleUpdate = () => {
-    // Recargar los datos del préstamo
-    window.location.reload()
+  const handleScheduleUpdate = async () => {
+    const cacheKey = K.loanDetails + params.id
+    try {
+      const detailsRes = await fetchWithTimeout(`/api/loans/${params.id}/details`, { credentials: 'include' as any })
+      if (detailsRes.ok) {
+        const data = await detailsRes.json()
+        setLoan(data.loan)
+        setSchedule(data.schedule)
+        setPayments(data.payments)
+        setTotalPaid(data.totalPaid)
+        setRemainingBalance(data.remainingBalance)
+        writeCache(String(cacheKey), data)
+      } else {
+        clearCache(String(cacheKey))
+      }
+    } catch {
+      clearCache(String(cacheKey))
+    }
   }
 
   const handlePaymentUpdate = () => {
     // Recargar los datos del préstamo para reflejar cambios en el estado de confirmación
     window.location.reload()
+  }
+
+  const confirmRegenerate = async () => {
+    setIsRegenerating(true)
+    try {
+      const response = await fetch(`/api/loans/${params.id}/regenerate-schedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include'
+      })
+      if (response.ok) {
+        await handleScheduleUpdate()
+      } else {
+        console.error('Error regenerando plan de pagos')
+      }
+    } catch (error) {
+      console.error('Error:', error)
+    } finally {
+      setIsRegenerating(false)
+      setConfirmRegenerateOpen(false)
+    }
   }
 
 
@@ -267,24 +309,7 @@ export default function LoanDetailPage() {
                     <Button 
                       variant="outline" 
                       size="sm" 
-                      onClick={async () => {
-                        try {
-                          const response = await fetch(`/api/loans/${params.id}/regenerate-schedule`, {
-                            method: 'POST',
-                            headers: {
-                              'Content-Type': 'application/json'
-                            },
-                            credentials: 'include'
-                          });
-                          if (response.ok) {
-                            window.location.reload();
-                          } else {
-                            console.error("Error regenerando plan de pagos");
-                          }
-                        } catch (error) {
-                          console.error("Error:", error);
-                        }
-                      }}
+                      onClick={() => setConfirmRegenerateOpen(true)}
                     >
                       Regenerar Plan de Pagos
                     </Button>
@@ -297,6 +322,7 @@ export default function LoanDetailPage() {
                 payments={payments}
                 onReviewClick={handleReviewClick}
                 onScheduleUpdate={handleScheduleUpdate}
+                loading={isRegenerating}
               />
             </div>
           </TabsContent>
@@ -313,6 +339,21 @@ export default function LoanDetailPage() {
           </TabsContent>
         </Tabs>
       </div>
+      <Dialog open={confirmRegenerateOpen} onOpenChange={setConfirmRegenerateOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Regenerar Plan de Pagos</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm text-muted-foreground">
+            <p>Al regenerar el plan de pagos, se eliminarán todos los pagos registrados para este préstamo.</p>
+            <p>El préstamo volverá a estar como el día 1. ¿Deseas continuar?</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmRegenerateOpen(false)} disabled={isRegenerating}>Cancelar</Button>
+            <Button onClick={confirmRegenerate} disabled={isRegenerating}>{isRegenerating ? 'Procesando…' : 'Regenerar'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

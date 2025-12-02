@@ -40,7 +40,32 @@ export async function POST(
     )
     console.log("[v0] Using direct service-role client for schedule regeneration")
 
-    // Eliminar el plan de pagos existente usando SQL directo
+    const { data: existingSchedules } = await supabaseAdmin
+      .from('payment_schedule')
+      .select('id')
+      .eq('loan_id', id)
+
+    if (existingSchedules && existingSchedules.length > 0) {
+      const scheduleIds = existingSchedules.map((r: any) => r.id)
+      const { error: unlinkError } = await supabaseAdmin
+        .from('cuota_boletas')
+        .delete()
+        .in('payment_schedule_id', scheduleIds)
+      if (unlinkError) {
+        console.error('[v0] Error deleting cuota_boletas links:', unlinkError)
+        return NextResponse.json({ error: 'Failed to unlink schedule receipts' }, { status: 500 })
+      }
+    }
+
+    const { error: paymentsDeleteError } = await supabaseAdmin
+      .from('payments')
+      .delete()
+      .eq('loan_id', id)
+    if (paymentsDeleteError) {
+      console.error('[v0] Error deleting payments:', paymentsDeleteError)
+      return NextResponse.json({ error: 'Failed to delete payments' }, { status: 500 })
+    }
+
     const { error: deleteError } = await supabaseAdmin
       .from('payment_schedule')
       .delete()
