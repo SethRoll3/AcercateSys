@@ -222,6 +222,11 @@ export default function ClientsPage() {
 
       if (response.ok) {
         toast.success('Grupo eliminado con éxito');
+        sessionStorage.removeItem('groupLoanDetails:' + groupId);
+        sessionStorage.removeItem('dashboard:groupLoans');
+        sessionStorage.removeItem('groups:list');
+        sessionStorage.removeItem('dashboard:loanGroupMap')
+        router.refresh(); // Refresh the page to clear Next.js cache and re-fetch data
         fetchClients(); // Refresh clients to reflect group changes
       } else {
         const errorData = await response.json();

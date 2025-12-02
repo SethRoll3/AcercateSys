@@ -12,7 +12,8 @@ import { CreateLoanDialog } from "@/components/create-loan-dialog"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Users, TrendingUp, FileText, Download } from "lucide-react"
+import { Users, TrendingUp, FileText, Download, Calculator } from "lucide-react"
+import { LoanCalculatorModal } from "@/components/loan-calculator-modal"
 const QuetzalIcon = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
     <text x="12" y="16" textAnchor="middle" fontSize="16" fill="currentColor" fontWeight="bold">Q</text>
@@ -71,6 +72,7 @@ export default function DashboardPage() {
   const [groupsTabVisited, setGroupsTabVisited] = useState(false)
   const [advisors, setAdvisors] = useState<any[]>([])
   const [advisorClientsView, setAdvisorClientsView] = useState<{ id: string, name: string, email: string } | null>(null)
+  const [calcOpen, setCalcOpen] = useState(false)
 
   const fetchLoans = useCallback(async () => {
     try {
@@ -529,11 +531,19 @@ const formatCurrency = (amount: number) => {
                 Exportar Excel
               </a>
             </Button>
+            <Button variant="outline" size="sm" className="gap-2 bg-transparent" onClick={() => setCalcOpen(true)}>
+              <Calculator className="h-4 w-4" />
+              Calculadora
+            </Button>
             <CreateLoanDialog clients={transformedClients} onLoanCreated={fetchLoans} />
           </div>
         )}
         {userData.role === 'asesor' && (
           <div className="flex flex-wrap md:flex-nowrap items-center gap-2 w-full md:w-auto">
+            <Button variant="outline" size="sm" className="gap-2 bg-transparent" onClick={() => setCalcOpen(true)}>
+              <Calculator className="h-4 w-4" />
+              Calculadora
+            </Button>
             <CreateLoanDialog clients={transformedClients} onLoanCreated={fetchLoans} />
           </div>
         )}
@@ -1083,6 +1093,7 @@ const formatCurrency = (amount: number) => {
           </Tabs>
         )}
       </div>
+      <LoanCalculatorModal open={calcOpen} onOpenChange={setCalcOpen} />
     </>
   )
 }
