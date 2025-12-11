@@ -132,10 +132,53 @@ export async function POST(request: Request) {
     }
   }
 
-  const { error: scheduleError } = await supabase.from("payment_schedule").insert(scheduleEntries)
+  const { data: insertedSchedule, error: scheduleError } = await supabase
+    .from("payment_schedule")
+    .insert(scheduleEntries)
+    .select("id")
 
   if (scheduleError) {
     console.error("[v0] Error creating payment schedule:", scheduleError)
+  } else if (insertedSchedule && insertedSchedule.length > 0) {
+    // Group logs: Delete individual logs created by trigger and insert a summary log
+    try {
+      const admin = await createAdminClient()
+      const scheduleIds = insertedSchedule.map((s) => s.id)
+      
+      // Delete individual logs
+      await admin
+        .from("logs")
+        .delete()
+        .eq("entity_name", "payment_schedule")
+        .in("entity_id", scheduleIds)
+        .eq("action_type", "CREATE")
+
+      // Get current user for the log
+      const { data: { user } } = await supabase.auth.getUser()
+      let actorId = null
+      if (user) {
+        const { data: userData } = await admin.from("users").select("id").eq("auth_id", user.id).single()
+        actorId = userData?.id
+      }
+
+      // Insert summary log
+      await admin.from("logs").insert({
+        actor_user_id: actorId,
+        action_type: "CREATE",
+        entity_name: "payment_schedule",
+        entity_id: newLoan.id, // Link to loan ID as the entity
+        action_at: new Date().toISOString(),
+        details: {
+          message: `Creó el plan de pagos para el préstamo ${newLoan.loan_number} (${scheduleEntries.length} cuotas)`,
+          loan_id: newLoan.id,
+          loan_number: newLoan.loan_number,
+          count: scheduleEntries.length,
+          schedule_ids: scheduleIds // Keep track of created IDs if needed
+        }
+      })
+    } catch (logError) {
+      console.error("Error grouping payment schedule logs:", logError)
+    }
   }
 
   return NextResponse.json({ message: 'Loan created successfully', data: newLoan }, { status: 201 })
@@ -496,8 +539,57 @@ export async function PATCH(request: NextRequest) {
             })
           }
         }
-        const { error: insErr } = await supabaseAdmin.from('payment_schedule').insert(entries)
-        if (insErr) console.error('Error recreando cronograma en PATCH:', insErr)
+        const { data: insertedSchedule, error: insErr } = await supabaseAdmin
+          .from('payment_schedule')
+          .insert(entries)
+          .select('id')
+
+        if (insErr) {
+          console.error('Error recreando cronograma en PATCH:', insErr)
+        } else if (insertedSchedule && insertedSchedule.length > 0) {
+          // Group logs for regenerated schedule
+          try {
+             const scheduleIds = insertedSchedule.map((s) => s.id)
+             
+             // Delete individual logs created by trigger
+             await supabaseAdmin
+               .from("logs")
+               .delete()
+               .eq("entity_name", "payment_schedule")
+               .in("entity_id", scheduleIds)
+               .eq("action_type", "CREATE")
+       
+             // Get current user for the log (we already have 'user' from earlier in the function)
+             let actorId = null
+             if (user) {
+               const { data: userData } = await supabaseAdmin.from("users").select("id").eq("auth_id", user.id).single()
+               actorId = userData?.id
+             }
+       
+             // Insert summary log
+             await supabaseAdmin.from("logs").insert({
+               actor_user_id: actorId,
+               action_type: "UPDATE", // It's an update to the loan's schedule
+               entity_name: "loans", // Associate with the loan
+               entity_id: id,
+               action_at: new Date().toISOString(),
+               details: {
+                 message: `Regeneró el plan de pagos para el préstamo ${transformedLoan.loanNumber} (${entries.length} cuotas)`,
+                 loan_id: id,
+                 loan_number: transformedLoan.loanNumber,
+                 count: entries.length,
+                 changes: {
+                   amount: updates.amount,
+                   term: updates.term_months,
+                   rate: interestRate,
+                   frequency: frequency
+                 }
+               }
+             })
+          } catch (logErr) {
+            console.error("Error grouping logs in PATCH:", logErr)
+          }
+        }
       } catch (e) {
         console.error('Fallo al regenerar cronograma en PATCH:', e)
       }

@@ -79,6 +79,14 @@ export default function LoginPage() {
           } catch {}
         }
       } catch {}
+      try {
+        await fetch('/api/logs/access', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ event: 'login' }),
+          credentials: 'include' as any,
+        })
+      } catch {}
       router.push("/dashboard")
       router.refresh()
     } catch (error: any) {

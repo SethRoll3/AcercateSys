@@ -244,6 +244,7 @@ export function CreateLoanDialog({
           status: 'pending',
           frequency: 'mensual',
         })
+        await new Promise((r) => setTimeout(r, 1200))
         onLoanCreated()
         toast.success('Préstamo creado con éxito')
       } else {
@@ -324,6 +325,7 @@ export function CreateLoanDialog({
       setActiveTab('client')
       setSelectedGroupId('')
       setAssignments({})
+      await new Promise((r) => setTimeout(r, 1500))
       onLoanCreated()
       toast.success('Préstamos de grupo creados')
     } catch {

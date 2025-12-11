@@ -69,7 +69,7 @@ export default function ReviewPage() {
         setIsLoading(false)
         setError('Tiempo de espera excedido al cargar la revisión del pago')
         console.warn('[review] Hard timeout reached while loading data')
-      }, 5000)
+      }, 50000)
       if (!scheduleId) {
         setError("No se proporcionó un ID de cuota válido.");
         setIsLoading(false);

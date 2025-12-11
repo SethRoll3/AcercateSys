@@ -150,6 +150,7 @@ const PROTECTED_ROUTES: Record<string, UserRole[]> = {
   '/dashboard/reports': ['admin', 'asesor'],
   '/dashboard/reporteria': ['admin', 'asesor'],
   '/dashboard/users': ['admin'],
+  '/dashboard/logs': ['admin'],
   '/dashboard/settings': ['admin', 'asesor', 'cliente'],
   '/client-portal': ['cliente'],
 }
