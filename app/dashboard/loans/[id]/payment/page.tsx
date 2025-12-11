@@ -141,6 +141,14 @@ export default function PaymentPage() {
       localStorage.clear()
       sessionStorage.clear()
     } catch {}
+    try {
+      await fetch('/api/logs/access', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ event: 'logout' }),
+        credentials: 'include' as any,
+      })
+    } catch {}
     const supabase = createClient()
     await supabase.auth.signOut()
     router.push("/auth/login")

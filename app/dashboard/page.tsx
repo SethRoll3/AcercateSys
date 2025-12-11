@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { StatsCard } from "@/components/stats-card"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { LoadingSpinner } from "@/components/loading-spinner";
+import { LoadingSpinner } from "@/components/loading-spinner"
 import { LoansTable } from "@/components/loans-table"
 import { GroupLoansTable } from "@/components/group-loans-table"
 import { CreateLoanDialog } from "@/components/create-loan-dialog"
@@ -73,6 +73,7 @@ export default function DashboardPage() {
   const [advisors, setAdvisors] = useState<any[]>([])
   const [advisorClientsView, setAdvisorClientsView] = useState<{ id: string, name: string, email: string } | null>(null)
   const [calcOpen, setCalcOpen] = useState(false)
+  const contentAnchorRef = useRef<HTMLDivElement | null>(null)
 
   const fetchLoans = useCallback(async () => {
     try {
@@ -88,6 +89,35 @@ export default function DashboardPage() {
       setLoans([]);
     }
   }, []);
+
+  const refreshAfterCreation = useCallback(async () => {
+    await delay(1000)
+    try {
+      const [loansRes, groupsRes] = await Promise.all([
+        fetchWithTimeout('/api/loans', { timeoutMs: 12000 }),
+        fetchWithTimeout('/api/loans-groups', { timeoutMs: 12000 })
+      ])
+      if (loansRes.ok) {
+        const data = await loansRes.json()
+        setLoans(data || [])
+        writeCache(K.loans, data || [])
+      }
+      if (groupsRes.ok) {
+        const data = await groupsRes.json()
+        setGroupLoans(data || [])
+        writeCache(K.groupLoans, data || [])
+        const map: Record<string, { groupName: string }> = {}
+        for (const g of (data || [])) {
+          const name = g.group?.nombre || 'Grupo'
+          for (const item of g.loans || []) {
+            if (item.loan_id) map[item.loan_id] = { groupName: name }
+          }
+        }
+        setLoanGroupMap(map)
+        writeCache(K.loanGroupMap, map)
+      }
+    } catch {}
+  }, [])
 
   const inFlightRef = useRef(false)
   const abortControllersRef = useRef<AbortController[]>([])
@@ -508,6 +538,11 @@ const formatCurrency = (amount: number) => {
   const handleAdvisorCardClick = (view: 'all'|'active'|'aldia'|'mora'|'pending'|'paid'|'asesores_stats') => {
     setAdvisorSelectedView(view)
     writeCache(K.advisorSelectedView, view)
+    const el = contentAnchorRef.current
+    if (el) {
+      const y = el.getBoundingClientRect().top + window.scrollY - 12
+      window.scrollTo({ top: y, behavior: 'smooth' })
+    }
   }
 
   return (
@@ -535,7 +570,7 @@ const formatCurrency = (amount: number) => {
               <Calculator className="h-4 w-4" />
               Calculadora
             </Button>
-            <CreateLoanDialog clients={transformedClients} onLoanCreated={fetchLoans} />
+            <CreateLoanDialog clients={transformedClients} onLoanCreated={refreshAfterCreation} />
           </div>
         )}
         {userData.role === 'asesor' && (
@@ -544,7 +579,7 @@ const formatCurrency = (amount: number) => {
               <Calculator className="h-4 w-4" />
               Calculadora
             </Button>
-            <CreateLoanDialog clients={transformedClients} onLoanCreated={fetchLoans} />
+            <CreateLoanDialog clients={transformedClients} onLoanCreated={refreshAfterCreation} />
           </div>
         )}
       </div>
@@ -689,6 +724,7 @@ const formatCurrency = (amount: number) => {
 
 
 
+      <div ref={contentAnchorRef} />
       <div className="mb-6">
         {userData.role === 'cliente' ? (
           <Tabs value={selectedLoanId || ''} onValueChange={(v) => { setSelectedLoanId(v); writeCache(K.selectedLoanId, v) }} className="w-full">

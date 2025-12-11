@@ -21,7 +21,7 @@ export async function POST(request: Request) {
 
   const { data: loan, error: loanError } = await supabase
     .from("loans")
-    .select("status")
+    .select("status, loan_number")
     .eq("id", loanId)
     .single()
   if (loanError || !loan) {
@@ -54,6 +54,28 @@ export async function POST(request: Request) {
     if (paymentError) {
       console.error("[v0] Error creating payment:", paymentError)
       return NextResponse.json({ error: "Failed to create payment" }, { status: 500 })
+    }
+
+    // Log the payment
+    try {
+      const admin = await (await import('@/lib/supabase/server')).createAdminClient()
+      const { data: userData } = await admin.from("users").select("id").eq("auth_id", user.id).single()
+      
+      await admin.from("logs").insert({
+        actor_user_id: userData?.id,
+        action_type: "CREATE",
+        entity_name: "payments",
+        entity_id: newPayment.id,
+        action_at: new Date().toISOString(),
+        details: {
+          message: `Registró un pago de ${new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(newPayment.amount)} para el préstamo ${loan.loan_number || loanId} (Recibo: ${newPayment.receipt_number})`,
+          amount: newPayment.amount,
+          receipt: newPayment.receipt_number,
+          loan_id: loanId
+        }
+      })
+    } catch (logErr) {
+      console.error("Error logging payment:", logErr)
     }
 
     // Update schedule status
@@ -93,8 +115,10 @@ export async function POST(request: Request) {
         .limit(1)
         .single()
 
-      const client = loanRow?.client
-      const advisorEmail: string | null = client?.advisor?.email || null
+      const rawClient = loanRow?.client as any
+      const client = Array.isArray(rawClient) ? rawClient[0] : rawClient
+      const rawAdvisor = client?.advisor as any
+      const advisorEmail: string | null = Array.isArray(rawAdvisor) ? (rawAdvisor[0]?.email ?? null) : (rawAdvisor?.email ?? null)
       const actionUrl = `/dashboard/loans/${loanId}`
       const fmt = new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' })
       const amountText = fmt.format(Number(newPayment.amount) || 0)

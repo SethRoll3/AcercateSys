@@ -8,7 +8,7 @@ import { FileSpreadsheet } from "lucide-react"
 import { LoadingSpinner } from "@/components/loading-spinner"
 import { format, toZonedTime } from 'date-fns-tz'
 
-type ReportKey = "payments_general" | "delinquent_portfolio" | null
+type ReportKey = "payments_general" | "delinquent_portfolio" | "aged_receivables" | null
 
 export default function ReporteriaPage() {
   const [selected, setSelected] = useState<ReportKey>(null)
@@ -41,7 +41,7 @@ export default function ReporteriaPage() {
         <p className="text-muted-foreground">Elige un reporte para ver sus opciones y descargarlo.</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <Card
           role="button"
           aria-label="Reporte General de Pagos"
@@ -77,11 +77,68 @@ export default function ReporteriaPage() {
             Disponible para asesores y administradores.
           </CardContent>
         </Card>
+
+        <Card
+          role="button"
+          aria-label="Reporte de Antigüedad de Saldos"
+          onClick={() => setSelected("aged_receivables")}
+          className={`cursor-pointer border bg-card/50 backdrop-blur-sm ${selected === "aged_receivables" ? "ring-2 ring-primary" : "hover:bg-muted/40"}`}
+        >
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="h-5 w-5" />
+              Antigüedad de Saldos
+            </CardTitle>
+            <CardDescription>Clasificación de saldos por tiempo de vencimiento.</CardDescription>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            Disponible para asesores y administradores.
+          </CardContent>
+        </Card>
       </div>
 
       <div className="flex justify-center">
         <div className="w-full max-w-2xl">
           {selected === "payments_general" && <PaymentsReport />}
+          {selected === "aged_receivables" && (
+            <Card className="bg-card/50 backdrop-blur-sm">
+              <CardHeader>
+                <CardTitle>Reporte de Antigüedad de Saldos</CardTitle>
+                <CardDescription>Descarga el reporte clasificado por días de atraso (Corriente, 1-30, 31-60, 61-90, +90).</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button
+                  onClick={async () => {
+                    setIsDownloading(true)
+                    try {
+                      const response = await fetch(`/api/reports/aged-receivables/excel`)
+                      if (!response.ok) {
+                        throw new Error("Error al descargar el reporte")
+                      }
+                      const blob = await response.blob()
+                      const url = window.URL.createObjectURL(blob)
+                      const a = document.createElement("a")
+                      a.href = url
+                      a.download = `Cooperativa_Antiguedad_Saldos_${new Date().toISOString().slice(0, 10)}.xlsx`
+                      document.body.appendChild(a)
+                      a.click()
+                      a.remove()
+                      window.URL.revokeObjectURL(url)
+                    } catch (error) {
+                      console.error("Error al descargar el reporte:", error)
+                      alert("Hubo un error al descargar el reporte.")
+                    } finally {
+                      setIsDownloading(false)
+                    }
+                  }}
+                  className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800"
+                  disabled={isDownloading}
+                >
+                  {isDownloading ? "Descargando..." : "Descargar Excel"}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
           {selected === "delinquent_portfolio" && (
             <Card className="bg-card/50 backdrop-blur-sm">
               <CardHeader>

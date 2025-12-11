@@ -33,6 +33,14 @@ export function DashboardHeader({ userRole, userEmail }: DashboardHeaderProps) {
       localStorage.clear()
       sessionStorage.clear()
     } catch {}
+    try {
+      await fetch('/api/logs/access', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ event: 'logout' }),
+        credentials: 'include' as any,
+      })
+    } catch {}
     const supabase = createClient()
     await supabase.auth.signOut()
     window.location.href = "/auth/login"
