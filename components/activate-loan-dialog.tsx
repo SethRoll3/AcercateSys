@@ -105,7 +105,7 @@ export function ActivateLoanDialog({ loan, onActivated, trigger }: ActivateLoanD
           <Button variant="outline" size="sm">Revisar y Activar</Button>
         )}
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[620px] bg-card border-border">
+      <DialogContent className="sm:max-w-[620px] bg-card border-border h-[75vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-foreground">Activar Préstamo</DialogTitle>
           <DialogDescription className="text-muted-foreground">Revisa y confirma la activación</DialogDescription>
