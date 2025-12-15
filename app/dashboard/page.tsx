@@ -20,6 +20,7 @@ const QuetzalIcon = ({ className }: { className?: string }) => (
   </svg>
 )
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
+
 const CACHE_TTL_MS = Number.MAX_SAFE_INTEGER
 const readCache = (key: string) => {
   try {
@@ -73,7 +74,9 @@ export default function DashboardPage() {
   const [advisors, setAdvisors] = useState<any[]>([])
   const [advisorClientsView, setAdvisorClientsView] = useState<{ id: string, name: string, email: string } | null>(null)
   const [calcOpen, setCalcOpen] = useState(false)
-  const contentAnchorRef = useRef<HTMLDivElement | null>(null)
+  
+  // REFERENCIA PARA EL SCROLL (LA SOLUCIÓN)
+  const resultsSectionRef = useRef<HTMLDivElement>(null)
 
   const fetchLoans = useCallback(async () => {
     try {
@@ -189,7 +192,6 @@ export default function DashboardPage() {
         setUser(user);
         if (user) writeCache(K.user, user)
 
-        // 1. Garantizar que tenemos userData (perfil) para saber el rol
         let currentUserData = readCache(K.userData)
         if (!currentUserData || !currentUserData.id) {
           if (user) {
@@ -217,11 +219,9 @@ export default function DashboardPage() {
 
         const role = currentUserData?.role
 
-        // 2. Carga condicional de recursos basada en caché y rol
         const promises: Promise<any>[] = []
         const keys: string[] = []
 
-        // Loans
         if (!readCache(K.loans)) {
           promises.push(fetchWithTimeout('/api/loans', { timeoutMs: 12000 }).then(r => r.ok ? r.json() : null))
           keys.push('loans')
@@ -229,7 +229,6 @@ export default function DashboardPage() {
           setLoans(readCache(K.loans))
         }
 
-        // Clients
         if (!readCache(K.clients)) {
           promises.push(fetchWithTimeout('/api/clients', { timeoutMs: 12000 }).then(r => r.ok ? r.json() : null))
           keys.push('clients')
@@ -237,18 +236,15 @@ export default function DashboardPage() {
           setClients(readCache(K.clients))
         }
 
-        // Group Loans
         if (!readCache(K.groupLoans)) {
           promises.push(fetchWithTimeout('/api/loans-groups', { timeoutMs: 12000 }).then(r => r.ok ? r.json() : null))
           keys.push('groupLoans')
         } else {
           const gl = readCache(K.groupLoans)
           setGroupLoans(gl)
-          // Reconstruir mapa si existe en cache
           const map = readCache(K.loanGroupMap)
           if (map) setLoanGroupMap(map)
           else {
-             // Si falta el mapa pero tenemos grupos, reconstruirlo
              const newMap: Record<string, { groupName: string }> = {};
              for (const g of gl || []) {
                const name = g.group?.nombre || 'Grupo';
@@ -261,7 +257,6 @@ export default function DashboardPage() {
           }
         }
 
-        // Payments
         if (!readCache(K.paymentsAgg)) {
            promises.push(fetchWithTimeout('/api/payments', { timeoutMs: 12000, cache: 'no-store' as any }).then(r => r.ok ? r.json() : null))
            keys.push('payments')
@@ -269,7 +264,6 @@ export default function DashboardPage() {
            setPaymentsAgg(readCache(K.paymentsAgg))
         }
 
-        // Advisors (Solo admin/asesor)
         if (['admin', 'asesor'].includes(role)) {
           if (!readCache(K.advisors)) {
             promises.push(fetchWithTimeout('/api/advisors', { timeoutMs: 12000 }).then(r => r.ok ? r.json() : null))
@@ -279,7 +273,6 @@ export default function DashboardPage() {
           }
         }
 
-        // Ejecutar llamadas faltantes
         if (promises.length > 0) {
           const results = await Promise.all(promises)
           
@@ -379,7 +372,6 @@ export default function DashboardPage() {
           setSelectedLoanId(newSelected);
           if (newSelected) writeCache(K.selectedLoanId, newSelected)
         }
-        // Seleccionar el primer préstamo activo si no hay ninguno seleccionado
         if (!selectedLoanId && activeLoans[0]?.id) {
           setSelectedLoanId(activeLoans[0].id);
         }
@@ -418,9 +410,6 @@ export default function DashboardPage() {
           <p className="text-muted-foreground">No se pudieron cargar tus datos. Intenta nuevamente.</p>
           <Button variant="outline" onClick={() => {
             inFlightRef.current = false
-            // Reintentar cargando
-            const evt = new Event('retry-load')
-            // Simplemente forzar re-montaje
             window.location.reload()
           }}>Reintentar</Button>
         </div>
@@ -534,15 +523,21 @@ const formatCurrency = (amount: number) => {
   })() : { totalRepayable: 0, paidRecovered: 0 }
 
 
-
+  // FUNCIÓN DE SCROLL ROBUSTA (ScrollIntoView)
   const handleAdvisorCardClick = (view: 'all'|'active'|'aldia'|'mora'|'pending'|'paid'|'asesores_stats') => {
     setAdvisorSelectedView(view)
     writeCache(K.advisorSelectedView, view)
-    const el = contentAnchorRef.current
-    if (el) {
-      const y = el.getBoundingClientRect().top + window.scrollY - 12
-      window.scrollTo({ top: y, behavior: 'smooth' })
-    }
+    
+    // Le damos un pequeño respiro para que React renderice el cambio de estado (filtros)
+    // y luego ejecutamos el scroll sobre la referencia.
+    setTimeout(() => {
+        if (resultsSectionRef.current) {
+            resultsSectionRef.current.scrollIntoView({ 
+                behavior: 'smooth',
+                block: 'start' // Alinea el elemento al inicio del área visible
+            });
+        }
+    }, 150);
   }
 
   return (
@@ -584,7 +579,8 @@ const formatCurrency = (amount: number) => {
         )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+      {/* GRILLA DE CARDS: 2 COLUMNAS EN MÓVIL */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-4">
         {userData.role === 'asesor' || userData.role === 'admin' ? (
           <>
             <StatsCard
@@ -596,9 +592,9 @@ const formatCurrency = (amount: number) => {
               className="ring-1 ring-transparent hover:ring-primary/20"
             />
             <StatsCard
-              title="Préstamos Activos"
+              title="Activos"
               value={activeLoans}
-              description="Préstamos en curso"
+              description="En curso"
               icon={TrendingUp}
               onClick={() => handleAdvisorCardClick('active')}
               className="ring-1 ring-transparent hover:ring-primary/20"
@@ -606,7 +602,7 @@ const formatCurrency = (amount: number) => {
             <StatsCard
               title="Al día"
               value={(loans || []).filter((l: any) => !(l as any).hasOverdue).length}
-              description="Sin cuotas vencidas"
+              description="Sin mora"
               icon={TrendingUp}
               onClick={() => handleAdvisorCardClick('aldia')}
               className="ring-1 ring-transparent hover:ring-primary/20"
@@ -614,7 +610,7 @@ const formatCurrency = (amount: number) => {
             <StatsCard
               title="Con mora"
               value={(loans || []).filter((l: any) => (l as any).hasOverdue).length}
-              description="Con cuotas vencidas"
+              description="Vencidos"
               icon={TrendingUp}
               onClick={() => handleAdvisorCardClick('mora')}
               className="ring-1 ring-transparent hover:ring-primary/20"
@@ -622,7 +618,7 @@ const formatCurrency = (amount: number) => {
             <StatsCard
               title="Pendientes"
               value={pendingLoans}
-              description="Aún sin activar"
+              description="Sin activar"
               icon={TrendingUp}
               onClick={() => handleAdvisorCardClick('pending')}
               className="ring-1 ring-transparent hover:ring-primary/20"
@@ -630,32 +626,32 @@ const formatCurrency = (amount: number) => {
             <StatsCard
               title="Pagados"
               value={paidLoans}
-              description="Préstamos finalizados"
+              description="Finalizados"
               icon={TrendingUp}
               onClick={() => handleAdvisorCardClick('paid')}
               className="ring-1 ring-transparent hover:ring-primary/20"
             />
             {userData.role === 'admin' && (
               <StatsCard
-                title="Estadísticas de asesores"
+                title="Asesores"
                 value={Array.from(new Set((clients || []).map((c: any) => String(c.advisor_id)).filter(Boolean))).length}
-                description="Progreso global de cuotas"
+                description="Estadísticas"
                 icon={TrendingUp}
                 onClick={() => handleAdvisorCardClick('asesores_stats')}
-                className="ring-1 ring-transparent hover:ring-primary/20"
+                className="ring-1 ring-transparent hover:ring-primary/20 col-span-2 lg:col-span-1" 
               />
             )}
           </>
         ) : (
           <StatsCard
-            title="Total en Préstamos"
+            title="Total Préstamos"
             value={formatCurrency(totalLoanAmount)}
-            description="Monto total prestado"
+            description="Monto total"
             icon={QuetzalIcon}
           />
         )}
         {userData.role === 'cliente' && (
-          <StatsCard title="Préstamos Activos" value={activeLoans} description="Préstamos en curso" icon={TrendingUp} />
+          <StatsCard title="Activos" value={activeLoans} description="En curso" icon={TrendingUp} />
         )}
         
       </div>
@@ -722,9 +718,13 @@ const formatCurrency = (amount: number) => {
         </div>
       )}
 
-
-
-      <div ref={contentAnchorRef} />
+      {/* ANCLA DEL SCROLL CON REF Y MARGEN SUPERIOR */}
+      <div 
+        ref={resultsSectionRef} 
+        className="scroll-mt-28" // scroll-mt evita que el header tape el contenido
+        style={{ scrollMarginTop: '120px' }} // Refuerzo por si Tailwind no carga
+      />
+      
       <div className="mb-6">
         {userData.role === 'cliente' ? (
           <Tabs value={selectedLoanId || ''} onValueChange={(v) => { setSelectedLoanId(v); writeCache(K.selectedLoanId, v) }} className="w-full">

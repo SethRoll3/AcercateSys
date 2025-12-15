@@ -22,15 +22,18 @@ export function StatsCard({ title, value, description, icon: Icon, trend, onClic
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
     >
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
-        <Icon className="h-4 w-4 text-muted-foreground" />
+      {/* Ajustado el padding (p-3 en mobile) y el margen inferior */}
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 p-3 sm:p-5">
+        {/* Texto más pequeño en mobile (text-[10px]) para que quepa en 2 columnas */}
+        <CardTitle className="text-[10px] sm:text-sm font-medium text-muted-foreground truncate pr-1">{title}</CardTitle>
+        <Icon className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground shrink-0" />
       </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold text-foreground">{value}</div>
-        {description && <p className="text-xs text-muted-foreground mt-1">{description}</p>}
+      <CardContent className="p-3 pt-0 sm:p-5 sm:pt-0 pb-3 sm:pb-4">
+        {/* Valor más ajustado en tamaño */}
+        <div className="text-lg sm:text-2xl font-bold text-foreground truncate">{value}</div>
+        {description && <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 sm:mt-1 truncate">{description}</p>}
         {trend && (
-          <p className={`text-xs mt-1 ${trend.isPositive ? "text-green-500" : "text-red-500"}`}>
+          <p className={`text-[10px] sm:text-xs mt-1 ${trend.isPositive ? "text-green-500" : "text-red-500"}`}>
             {trend.isPositive ? "+" : "-"}
             {Math.abs(trend.value)}% desde el mes pasado
           </p>
