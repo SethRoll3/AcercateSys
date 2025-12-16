@@ -294,7 +294,6 @@ export default function LoanDetailPage() {
               <div className="flex justify-between items-center">
                 <h3 className="text-xl font-semibold text-foreground">Plan de Pagos</h3>
                 <div className="flex items-center gap-2">
-                  {role === 'cliente' && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -304,7 +303,6 @@ export default function LoanDetailPage() {
                     >
                       Registrar Pago
                     </Button>
-                  )}
                   {role === 'admin' && (
                     <Button 
                       variant="outline" 
