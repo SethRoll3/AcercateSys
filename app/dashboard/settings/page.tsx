@@ -114,9 +114,10 @@ export default function SettingsPage() {
              setLoading(false)
           }
 
-          if (!cachedSystem) {
-             const res = await fetch('/api/settings/system')
-             if (res.ok) {
+          ;(async () => {
+            try {
+              const res = await fetch('/api/settings/system')
+              if (res.ok) {
                 const data = await res.json()
                 if (data) {
                   const newForm = {
@@ -132,66 +133,72 @@ export default function SettingsPage() {
                   setForm(newForm)
                   writeCache(K.system, newForm)
                 }
-             }
-          }
-          
-          if (!cachedTemplates) {
-            const tRes = await fetch('/api/settings/templates')
-            if (tRes.ok) {
-              const tData = await tRes.json()
-              const arr = Array.isArray(tData) ? tData : []
-              setTemplates(arr)
-              writeCache(K.templates, arr)
-            }
-          }
+              }
+            } catch {}
+            try {
+              const tRes = await fetch('/api/settings/templates')
+              if (tRes.ok) {
+                const tData = await tRes.json()
+                const arr = Array.isArray(tData) ? tData : []
+                setTemplates(arr)
+                writeCache(K.templates, arr)
+              }
+            } catch {}
+          })()
         } else if (role === 'cliente') {
           const cachedProfile = readCache(K.profile)
           if (cachedProfile) {
             setProfile(cachedProfile)
             setProfileLoading(false)
             setLoading(false)
-          } else {
-            const pRes = await fetch('/api/profile', { credentials: 'include' as any })
-            if (pRes.ok) {
-              const pData = await pRes.json()
-              const c = pData.client || {}
-              const u = pData.user || {}
-              const newProfile = {
-                first_name: c.first_name || '',
-                last_name: c.last_name || '',
-                email: u.email || c.email || '',
-                address: c.address || '',
-                phone: c.phone || '',
-                phone_country_code: c.phone_country_code || '+502',
-                emergency_phone: c.emergency_phone || '',
-                full_name: u.full_name || '',
-              }
-              setProfile(newProfile)
-              writeCache(K.profile, newProfile)
-            }
           }
+          ;(async () => {
+            try {
+              const pRes = await fetch('/api/profile', { credentials: 'include' as any })
+              if (pRes.ok) {
+                const pData = await pRes.json()
+                const c = pData.client || {}
+                const u = pData.user || {}
+                const newProfile = {
+                  first_name: c.first_name || '',
+                  last_name: c.last_name || '',
+                  email: u.email || c.email || '',
+                  address: c.address || '',
+                  phone: c.phone || '',
+                  phone_country_code: c.phone_country_code || '+502',
+                  emergency_phone: c.emergency_phone || '',
+                  full_name: u.full_name || '',
+                }
+                setProfile(newProfile)
+                writeCache(K.profile, newProfile)
+              }
+            } catch {}
+          })()
         } else if (role === 'asesor') {
           const cachedAdvisor = readCache(K.advisor)
           if (cachedAdvisor) {
             setAdvisor(cachedAdvisor)
             setAdvisorForm({ email: cachedAdvisor.email, full_name: cachedAdvisor.full_name, password: "" })
             setLoading(false)
-          } else {
-            const pRes = await fetch('/api/profile', { credentials: 'include' as any })
-            if (pRes.ok) {
-              const pData = await pRes.json()
-              const u = pData.user || {}
-              const me: MeUser = {
-                id: u.id || '',
-                email: u.email || '',
-                full_name: u.full_name || '',
-                role: u.role || 'asesor',
-              }
-              setAdvisor(me)
-              setAdvisorForm({ email: me.email, full_name: me.full_name, password: "" })
-              writeCache(K.advisor, me)
-            }
           }
+          ;(async () => {
+            try {
+              const pRes = await fetch('/api/profile', { credentials: 'include' as any })
+              if (pRes.ok) {
+                const pData = await pRes.json()
+                const u = pData.user || {}
+                const me: MeUser = {
+                  id: u.id || '',
+                  email: u.email || '',
+                  full_name: u.full_name || '',
+                  role: u.role || 'asesor',
+                }
+                setAdvisor(me)
+                setAdvisorForm({ email: me.email, full_name: me.full_name, password: "" })
+                writeCache(K.advisor, me)
+              }
+            } catch {}
+          })()
         }
       } catch (e) {
         toast.error('Error cargando configuraciones')
@@ -201,6 +208,14 @@ export default function SettingsPage() {
       }
     }
     load()
+    const onFocus = () => { load() }
+    const onVisibility = () => { if (document.visibilityState === 'visible') load() }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [role])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {

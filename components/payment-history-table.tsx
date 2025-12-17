@@ -119,7 +119,15 @@ export function PaymentHistoryTable({ payments, onDownloadReceipt, onPaymentUpda
                       break
                   }
 
-                  return <Badge variant="outline" className={colorClass}>{label}</Badge>
+                  const isFull = String(payment.notes || '').startsWith('[FULL_PAYMENT]')
+                  return (
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className={colorClass}>{label}</Badge>
+                      {isFull && (
+                        <Badge variant="outline" className="bg-blue-500/10 text-blue-400 border-blue-500/20">Pago completo</Badge>
+                      )}
+                    </div>
+                  )
                 })()}
               </TableCell>
               <TableCell className="text-muted-foreground">

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient, createAdminClient } from "@/lib/supabase/server"
 import { stableJsonStringify, buildCacheHeaders, latestUpdatedAt, isNotModified } from "@/lib/http-cache"
 
 export async function POST(request: Request) {
@@ -16,18 +16,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const data = await request.json()
-    const { 
-      paymentScheduleId, 
-      amount, 
-      paymentDate, 
-      paymentMethod, 
-      notes, 
-      status = "pagado",
-      confirmationStatus = "pendiente",
-      receiptImageUrl = null,
-      has_been_edited
-    } = data
+  const data = await request.json()
+  const { 
+    paymentScheduleId, 
+    amount, 
+    paymentDate, 
+    paymentMethod, 
+    notes, 
+    status = "pagado",
+    confirmationStatus = "pendiente",
+    receiptImageUrl = null,
+    has_been_edited,
+    isFull,
+    fullScheduleIds
+  } = data
 
     // Validate required fields
     if (!paymentScheduleId || !amount || !paymentDate || !paymentMethod) {
@@ -37,21 +39,21 @@ export async function POST(request: Request) {
     // Get payment schedule info to get loan_id and current payment data
 
     // Get payment schedule info to get loan_id and current payment data
-    const { data: scheduleData, error: scheduleError } = await supabase
-      .from("payment_schedule")
-      .select("loan_id, amount, paid_amount, mora, admin_fees, status")
-      .eq("id", paymentScheduleId)
-      .single()
+  const { data: scheduleData, error: scheduleError } = await supabase
+    .from("payment_schedule")
+    .select("loan_id, amount, paid_amount, mora, admin_fees, status")
+    .eq("id", paymentScheduleId)
+    .single()
 
     if (scheduleError || !scheduleData) {
       return NextResponse.json({ error: "Payment schedule not found" }, { status: 404 })
     }
 
     // Calculate amounts with proper rounding
-    const newPaymentAmount = Math.round(Number.parseFloat(amount) * 100) / 100
-    const currentPaidAmount = Math.round((Number(scheduleData.paid_amount) || 0) * 100) / 100
-    const totalPaidAmount = Math.round((currentPaidAmount + newPaymentAmount) * 100) / 100
-    const scheduledAmount = Math.round((Number(scheduleData.amount) + (Number(scheduleData.mora) || 0)) * 100) / 100
+  const newPaymentAmount = Math.round(Number.parseFloat(amount) * 100) / 100
+  const currentPaidAmount = Math.round((Number(scheduleData.paid_amount) || 0) * 100) / 100
+  const totalPaidAmount = Math.round((currentPaidAmount + newPaymentAmount) * 100) / 100
+  const scheduledAmount = Math.round((Number(scheduleData.amount) + (Number(scheduleData.mora) || 0) + (Number(scheduleData.admin_fees) || 0)) * 100) / 100
 
     // Only validate that payment amount is positive and not excessively large
     if (newPaymentAmount <= 0) {
@@ -61,10 +63,12 @@ export async function POST(request: Request) {
     }
 
     // Allow overpayment but warn if it's significantly more than the scheduled amount
-    if (totalPaidAmount > scheduledAmount * 1.5) {
-      return NextResponse.json({ 
-        error: `El monto del pago parece excesivo. Monto programado: ${scheduledAmount}, Total a pagar: ${totalPaidAmount}` 
-      }, { status: 400 })
+    if (!isFull) {
+      if (totalPaidAmount > scheduledAmount * 1.5) {
+        return NextResponse.json({ 
+          error: `El monto del pago parece excesivo. Monto programado: ${scheduledAmount}, Total a pagar: ${totalPaidAmount}` 
+        }, { status: 400 })
+      }
     }
 
     // Generate receipt number
@@ -72,32 +76,80 @@ export async function POST(request: Request) {
     const receiptNumber = `REC-${String((count || 0) + 1).padStart(6, "0")}`
 
     // Insert payment
-    const { error: paymentError, data: newPayment } = await supabase
-      .from("payments")
-      .insert({
-        loan_id: scheduleData.loan_id,
-        schedule_id: paymentScheduleId,
-        amount: totalPaidAmount,
-        payment_date: paymentDate,
-        payment_method: paymentMethod,
-        notes: notes,
-        receipt_number: receiptNumber, // Incluir el número de recibo generado
-        confirmation_status: "pending_confirmation",
-        has_been_edited: has_been_edited ? true : false,
-      })
-      .select()
-      .single()
+  let insertAmount = totalPaidAmount
+  if (isFull && Array.isArray(fullScheduleIds) && fullScheduleIds.length > 0) {
+    const admin = await createAdminClient()
+    const { data: targets } = await admin
+      .from("payment_schedule")
+      .select("id, amount, mora, paid_amount, loan_id, status")
+      .in("id", fullScheduleIds)
+      .eq("loan_id", scheduleData.loan_id)
+    const sum = (targets || []).reduce((acc: number, s: any) => {
+      const schedAmt = Math.round((Number(s.amount || 0) + Number(s.mora || 0)) * 100) / 100
+      const paid = Math.round((Number(s.paid_amount || 0)) * 100) / 100
+      const remaining = Math.max(0, schedAmt - paid)
+      return acc + remaining
+    }, 0)
+    insertAmount = Math.round(sum * 100) / 100
+  }
+
+  const { error: paymentError, data: newPayment } = await supabase
+    .from("payments")
+    .insert({
+      loan_id: scheduleData.loan_id,
+      schedule_id: paymentScheduleId,
+      amount: insertAmount,
+      payment_date: paymentDate,
+      payment_method: paymentMethod,
+      notes: notes,
+      receipt_number: receiptNumber, // Incluir el número de recibo generado
+      confirmation_status: "pending_confirmation",
+      has_been_edited: has_been_edited ? true : false,
+    })
+    .select()
+    .single()
 
     if (paymentError) {
       console.error("Error creating payment:", paymentError)
       return NextResponse.json({ error: "Error al crear el pago" }, { status: 500 })
     }
 
+    // Insert log for payment creation
+    const adminClient = await createAdminClient()
+    await adminClient.from("logs").insert({
+      actor_user_id: user.id,
+      action_type: "CREATE",
+      entity_name: "payment",
+      entity_id: newPayment.id,
+      action_at: new Date().toISOString(),
+      details: {
+        message: `Se creó un nuevo pago con recibo ${newPayment.receipt_number} para el préstamo ${scheduleData.loan_id}`,
+        payment_id: newPayment.id,
+        loan_id: scheduleData.loan_id,
+        receipt_number: newPayment.receipt_number,
+        amount: newPayment.amount,
+      },
+    })
+
     // Actualizar el estado y el monto pagado en el cronograma de pagos
     // Requerimiento: SIEMPRE pasa a "pending_confirmation" al registrar el pago.
     const newStatus = "pending_confirmation"
     // Usar cliente admin para evitar bloqueos de RLS cuando el usuario es cliente
-    const admin = await createClient({ admin: true })
+  const admin = await createAdminClient()
+  if (isFull && Array.isArray(fullScheduleIds) && fullScheduleIds.length > 0) {
+    const { data: targets } = await admin
+      .from("payment_schedule")
+      .select("id, amount, mora")
+      .in("id", fullScheduleIds)
+    const updates = (targets || []).map((t: any) => ({
+      id: t.id,
+      status: newStatus,
+      paid_amount: Math.round((Number(t.amount || 0) + Number(t.mora || 0)) * 100) / 100,
+    }))
+    for (const up of updates) {
+      await admin.from("payment_schedule").update({ status: up.status, paid_amount: up.paid_amount }).eq("id", up.id)
+    }
+  } else {
     const { error: scheduleUpdateError } = await admin
       .from("payment_schedule")
       .update({
@@ -105,14 +157,14 @@ export async function POST(request: Request) {
         paid_amount: totalPaidAmount,
       })
       .eq("id", paymentScheduleId)
-
     if (scheduleUpdateError) {
       console.error("Error updating schedule:", scheduleUpdateError)
-      // No devolver el error al cliente, pero registrarlo
-      // El pago ya fue creado, por lo que la operación principal fue exitosa
     }
+  }
 
-    return NextResponse.json(newPayment)
+  // No devolver el error si ocurre durante updates adicionales
+
+  return NextResponse.json(newPayment)
   } catch (error) {
     console.error("Error in POST /api/payments:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

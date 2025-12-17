@@ -73,6 +73,33 @@ export async function PATCH(
       return NextResponse.json({ error: "Failed to update fees" }, { status: 500 })
     }
 
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      let actorId = null
+      if (user) {
+        const { data: userData } = await serviceSupabase.from("users").select("id").eq("auth_id", user.id).single()
+        actorId = userData?.id
+      }
+
+      await serviceSupabase.from("logs").insert({
+        actor_user_id: actorId,
+        action_type: "UPDATE",
+        entity_name: "payment_schedule",
+        entity_id: updated.id,
+        action_at: new Date().toISOString(),
+        details: {
+          message: `Actualizó mora/gastos administrativos para la cuota ${updated.payment_number} del préstamo ${updated.loan_id}`,
+          schedule_id: updated.id,
+          loan_id: updated.loan_id,
+          payment_number: updated.payment_number,
+          mora_updated_to: parsedMora,
+          admin_fees_updated_to: parsedAdminFees,
+        }
+      })
+    } catch (logError) {
+      console.error("Error creating log for payment schedule update:", logError)
+    }
+
     return NextResponse.json({
       id: updated.id,
       loanId: updated.loan_id,

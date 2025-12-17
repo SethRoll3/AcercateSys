@@ -229,6 +229,25 @@ export async function POST(req: NextRequest) {
 
     user = fullUser
 
+    // Log the creation
+    try {
+      await admin.from("logs").insert({
+        actor_user_id: caller.id,
+        action_type: "CREATE",
+        entity_name: "users",
+        entity_id: user.id,
+        action_at: new Date().toISOString(),
+        details: {
+          message: `Creó el usuario ${user.full_name} (${user.email}) con rol ${user.role}`,
+          user_id: user.id,
+          user_email: user.email,
+          user_role: user.role,
+        },
+      })
+    } catch (logErr) {
+      console.error("Error creating log for user creation:", logErr)
+    }
+
     return NextResponse.json(user)
   } catch (error) {
     return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
@@ -327,6 +346,24 @@ export async function PUT(req: NextRequest) {
       }
     }
 
+    // Log the update
+    try {
+      await admin.from("logs").insert({
+        actor_user_id: caller.id,
+        action_type: "UPDATE",
+        entity_name: "users",
+        entity_id: id,
+        action_at: new Date().toISOString(),
+        details: {
+          message: `Actualizó el usuario con ID ${id}`,
+          previous_email: previousEmail,
+          new_email: newEmail,
+          updated_fields: Object.keys(rest)
+        },
+      })
+    } catch (logErr) {
+      console.error("Error creating log for user update:", logErr)
+    }
     return NextResponse.json(updated?.[0] ?? { id, email: newEmail, full_name: rest.full_name ?? currentRow.full_name, role: rest.role ?? currentRow.role })
   } catch (error) {
     console.error('Error en PUT /api/users:', error)
@@ -364,6 +401,29 @@ export async function DELETE(req: NextRequest) {
 
     if (inactivateError) {
       return NextResponse.json({ error: inactivateError.message }, { status: 500 })
+    }
+
+    // Log the inactivation
+    try {
+      const regular = await createClient()
+      const { data: { user: caller }, error: authError } = await regular.auth.getUser()
+      let actorId = caller?.id
+
+      await admin.from("logs").insert({
+        actor_user_id: actorId,
+        action_type: "DELETE",
+        entity_name: "users",
+        entity_id: id,
+        action_at: new Date().toISOString(),
+        details: {
+          message: `Usuario inactivado: ${userRow.email} (ID: ${id})`,
+          user_id: id,
+          user_email: userRow.email,
+          cascade_client: cascadeClient
+        },
+      })
+    } catch (logErr) {
+      console.error("Error creating log for user inactivation:", logErr)
     }
 
     // Opcional: cascada al cliente y sus préstamos activos/pendientes

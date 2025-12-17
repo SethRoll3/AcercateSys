@@ -69,7 +69,6 @@ export default function GroupLoanDetailPage() {
       setGroupName(cachedData.groupName)
       setItems(cachedData.items)
       setIsLoading(false)
-      return
     }
 
     const fetchAll = async () => {
@@ -124,7 +123,11 @@ export default function GroupLoanDetailPage() {
       }
     }
     fetchAll()
-  }, [params.id])
+    const onFocus = () => { fetchAll() }
+    const onVisibility = () => { if (document.visibilityState === 'visible') fetchAll() }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisibility)
+    }, [params.id])
 
   const groupTotal = useMemo(() => {
     return items.reduce((sum, it) => sum + (Number(it.loan?.amount) || 0), 0)

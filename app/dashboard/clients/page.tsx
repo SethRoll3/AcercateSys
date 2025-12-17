@@ -145,10 +145,9 @@ export default function ClientsPage() {
     if (cachedClients) {
       setClients(cachedClients)
       setIsLoading(false)
-    } else {
-      setIsLoading(true)
-      fetchClients()
     }
+    setIsLoading(true)
+    fetchClients()
 
     const cachedEmails = readCache(K.userEmails)
     if (cachedEmails) {
@@ -169,6 +168,14 @@ export default function ClientsPage() {
     }
     
     fetchCurrentUser()
+    const onFocus = () => { fetchClients(); fetchExistingUserEmails() }
+    const onVisibility = () => { if (document.visibilityState === 'visible') { fetchClients(); fetchExistingUserEmails() } }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [])
 
   const handleEditClick = (client: Client) => {

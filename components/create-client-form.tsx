@@ -80,7 +80,7 @@ export function CreateClientForm({ onClientAdded, isOpen, onClose }: CreateClien
             const { data: advisorsData, error } = await supabase
               .from('users')
               .select('id, email, full_name, role')
-              .eq('role', 'asesor')
+              .in('role', ['asesor', 'admin'])
               .order('full_name')
 
             if (error) {
@@ -262,23 +262,28 @@ export function CreateClientForm({ onClientAdded, isOpen, onClose }: CreateClien
                 className="bg-background/50 text-muted-foreground"
               />
             ) : role === 'admin' ? (
-              <Select
-                value={formData.advisor_id}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, advisor_id: value })
-                }
-              >
-                <SelectTrigger className="bg-background/50">
-                  <SelectValue placeholder="Seleccione un asesor *" />
-                </SelectTrigger>
-                <SelectContent>
-                  {advisors.map((advisor) => (
-                    <SelectItem key={advisor.id} value={advisor.id}>
-                      {advisor.full_name} ({advisor.email})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="space-y-1">
+                <Select
+                  value={formData.advisor_id}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, advisor_id: value })
+                  }
+                >
+                  <SelectTrigger className="bg-background/50">
+                    <SelectValue placeholder="Seleccione un asesor *" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {advisors.map((advisor) => (
+                      <SelectItem key={advisor.id} value={advisor.id}>
+                        {advisor.full_name} ({advisor.email}){advisor.role === 'admin' ? ' - Administrador' : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {advisors.find(a => a.id === formData.advisor_id)?.role === 'admin' ? (
+                  <p className="text-xs text-muted-foreground">Está seleccionando un usuario con rol administrador como asesor</p>
+                ) : null}
+              </div>
             ) : (
               <Input
                 value="Sin permisos para asignar asesor"

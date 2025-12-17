@@ -71,6 +71,7 @@ export function translateStatus(status: string | null | undefined): string {
     'paid': 'Pagado',
     'pending': 'Pendiente',
     'pending-confirmation': 'Pendiente de confirmación',
+    'pending_confirmation': 'Pendiente de confirmación',
     'inactive': 'Inactivo',
     'active': 'Activo',
     'rejected': 'Rechazado',

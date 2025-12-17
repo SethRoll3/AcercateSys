@@ -78,10 +78,9 @@ export function GroupsTable({ searchTerm, onEditGroup, onDeleteGroup }: GroupsTa
     if (cachedGroups) {
       setGroups(cachedGroups)
       setIsLoading(false)
-    } else {
-      setIsLoading(true)
-      fetchGroups()
     }
+    setIsLoading(true)
+    fetchGroups()
     
     const fetchCurrentUser = async () => {
       try {
@@ -94,6 +93,14 @@ export function GroupsTable({ searchTerm, onEditGroup, onDeleteGroup }: GroupsTa
     }
 
     fetchCurrentUser()
+    const onFocus = () => { fetchGroups() }
+    const onVisibility = () => { if (document.visibilityState === 'visible') fetchGroups() }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [])
 
   const filteredGroups = groups.filter(group => {

@@ -6,7 +6,7 @@ import Image from "next/image"
 import { createClient } from "@/lib/supabase/client"
 import { useRole } from "@/contexts/role-context"
 import type { Loan, PaymentSchedule, Payment, Boleta, Client } from "@/lib/types"
-import { formatYMDGT } from "@/lib/utils"
+import { formatYMDGT, translateStatus } from "@/lib/utils"
 
 import { LoadingSpinner } from "@/components/loading-spinner"
 import { Button } from "@/components/ui/button"
@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Separator } from "@/components/ui/separator"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
 import { 
   ArrowLeft, 
   Banknote, 
@@ -61,6 +62,16 @@ export default function ReviewPage() {
   const [submittingAction, setSubmittingAction] = useState<'approving' | 'rejecting' | null>(null);
   const [showRejectDialog, setShowRejectDialog] = useState(false)
   const [rejectionText, setRejectionText] = useState('')
+  const [fullInfo, setFullInfo] = useState<{ isFull: boolean; start?: number; end?: number; total?: number; extra?: string } | null>(null)
+
+  const writeCache = (key: string, data: any) => {
+    try {
+      sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }))
+    } catch {}
+  }
+  const K = {
+    loanDetails: 'loanDetails:',
+  }
 
 
   useEffect(() => {
@@ -110,6 +121,41 @@ export default function ReviewPage() {
         const currentPayment = paymentData[0]
         console.log("Current Payment:", currentPayment); // DEBUG
         setPayment(currentPayment)
+
+        try {
+          const raw = String(currentPayment?.notes || '')
+          if (raw.startsWith('[FULL_PAYMENT]')) {
+            let scheduleIds: string[] = []
+            let total: number | undefined = undefined
+            let extra = ''
+            const l = raw.indexOf('{')
+            const r = raw.lastIndexOf('}')
+            if (l !== -1 && r !== -1 && r > l) {
+              try {
+                const obj = JSON.parse(raw.substring(l, r + 1))
+                if (Array.isArray(obj?.scheduleIds)) scheduleIds = obj.scheduleIds
+                if (obj?.total !== undefined) total = Number(obj.total)
+              } catch {}
+              extra = raw.substring(r + 1).trim()
+            }
+            let start = scheduleData.payment_number
+            let end = scheduleData.payment_number
+            if (scheduleIds.length > 0) {
+              const { data: rows } = await supabase
+                .from('payment_schedule')
+                .select('id, payment_number')
+                .in('id', scheduleIds)
+              const nums = (rows || []).map((row: any) => Number(row.payment_number || 0)).filter((n) => Number.isFinite(n) && n > 0)
+              if (nums.length > 0) {
+                start = Math.min(...nums)
+                end = Math.max(...nums)
+              }
+            }
+            setFullInfo({ isFull: true, start, end, total: total ?? Number(currentPayment.amount || 0), extra })
+          } else {
+            setFullInfo({ isFull: false })
+          }
+        } catch {}
 
         // 3. Fetch all boletas linked to this schedule
         const { data: cuotaBoletas, error: cuotaBoletasError } = await supabase
@@ -163,11 +209,23 @@ export default function ReviewPage() {
         } else {
           toast.success('Pago rechazado');
         }
+        if (data?.loanFinalized) {
+          toast.success('Préstamo finalizado')
+        }
 
         if (data.notificationError) {
           toast.warning(`Advertencia: ${data.notificationError}`);
         }
 
+        try {
+          if (loan?.id) {
+            const detailsRes = await fetch(`/api/loans/${loan.id}/details`, { credentials: 'include' as any })
+            if (detailsRes.ok) {
+              const fresh = await detailsRes.json()
+              writeCache(K.loanDetails + loan.id, fresh)
+            }
+          }
+        } catch {}
         router.push(`/dashboard/loans/${loan?.id}`);
       } else {
         const errorData = await response.json();
@@ -308,14 +366,37 @@ export default function ReviewPage() {
               {/* Payment Details */}
               <Card className="bg-card/50 backdrop-blur-sm">
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2"><Banknote className="h-5 w-5" />Detalles del Pago</CardTitle>
+                  <CardTitle className="flex items-center gap-2">
+                    <Banknote className="h-5 w-5" />
+                    Detalles del Pago
+                    {fullInfo?.isFull && (
+                      <Badge variant="outline" className="ml-auto">Pago Completo</Badge>
+                    )}
+                  </CardTitle>
                 </CardHeader>
                 <CardContent className="grid gap-4 md:grid-cols-2">
                   <DetailItem icon={Banknote} label="Monto Pagado" value={new Intl.NumberFormat("es-GT", { style: "currency", currency: "GTQ" }).format(payment.amount)} />
                   <DetailItem icon={CalendarDays} label="Fecha de Pago" value={formatYMDGT(payment.payment_date || "")} />
                   <DetailItem icon={Hash} label="No. de Recibo" value={payment.receipt_number} />
                   <DetailItem icon={Info} label="Método de Pago" value={payment.payment_method} />
-                  {payment.notes && <div className="md:col-span-2"><DetailItem icon={MessageSquare} label="Notas" value={payment.notes} /></div>}
+                  {(payment.notes || fullInfo?.isFull) && (
+                    <div className="md:col-span-2">
+                      <DetailItem
+                        icon={MessageSquare}
+                        label="Notas"
+                        value={
+                          fullInfo?.isFull
+                            ? (
+                              <span>
+                                Pago de préstamo completo: cuotas #{fullInfo?.start} a #{fullInfo?.end} del préstamo {loan.loan_number} perteneciente a {loan.client.first_name} {loan.client.last_name}. Monto total: {new Intl.NumberFormat("es-GT", { style: "currency", currency: "GTQ" }).format(Number(fullInfo?.total || payment.amount || 0))}
+                                {fullInfo?.extra ? <span> — Notas adicionales: {fullInfo.extra}</span> : null}
+                              </span>
+                            )
+                            : payment.notes
+                        }
+                      />
+                    </div>
+                  )}
                   {payment.rejection_reason && <div className="md:col-span-2"><DetailItem icon={Info} label="Motivo del Rechazo" value={<span className="text-destructive">{payment.rejection_reason}</span>} /></div>}
                 </CardContent>
               </Card>
@@ -393,13 +474,26 @@ export default function ReviewPage() {
                 </div>
               </div>
               <Separator />
-               <div>
-                <h3 className="font-semibold">Cuota Actual</h3>
-                <div className="text-sm text-muted-foreground space-y-1 mt-2">
-                  <p><strong>No:</strong> {schedule.payment_number}</p>
-                  <p><strong>Monto:</strong> {new Intl.NumberFormat("es-GT", { style: "currency", currency: "GTQ" }).format(schedule.amount)}</p>
-                   <p><strong>Estado:</strong> <span className="font-bold">{schedule.status}</span></p>
-                </div>
+              <div>
+                {fullInfo?.isFull ? (
+                  <div>
+                    <h3 className="font-semibold">Pago Completo</h3>
+                    <div className="text-sm text-muted-foreground space-y-1 mt-2">
+                      <p><strong>Cuotas:</strong> #{fullInfo?.start}–#{fullInfo?.end}</p>
+                      <p><strong>Monto:</strong> {new Intl.NumberFormat("es-GT", { style: "currency", currency: "GTQ" }).format(Number(fullInfo?.total || payment?.amount || 0))}</p>
+                      <p><strong>Estado:</strong> <span className="font-bold">{translateStatus(schedule.status)}</span></p>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <h3 className="font-semibold">Cuota Actual</h3>
+                    <div className="text-sm text-muted-foreground space-y-1 mt-2">
+                      <p><strong>No:</strong> {schedule.payment_number}</p>
+                      <p><strong>Monto:</strong> {new Intl.NumberFormat("es-GT", { style: "currency", currency: "GTQ" }).format(Number(schedule.amount || 0) + Number(schedule.mora || 0))}</p>
+                      <p><strong>Estado:</strong> <span className="font-bold">{translateStatus(schedule.status)}</span></p>
+                    </div>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

@@ -67,8 +67,17 @@ export default function UsersPage() {
     if (cachedUsers) {
       setUsers(cachedUsers)
       setIsLoading(false)
-    } else {
-      fetchUsers()
+    }
+    fetchUsers()
+    const handleRevalidate = () => fetchUsers()
+    window.addEventListener('focus', handleRevalidate)
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') handleRevalidate()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('focus', handleRevalidate)
+      document.removeEventListener('visibilitychange', onVisibility)
     }
   }, [])
 

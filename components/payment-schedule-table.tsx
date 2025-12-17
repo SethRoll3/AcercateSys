@@ -146,7 +146,7 @@ export function PaymentScheduleTable({ schedule, onPaymentClick, onReviewClick, 
 
   return (
     <div className="rounded-lg border border-border/50 bg-card/50 backdrop-blur-sm overflow-hidden relative">
-      {loan && loan.status !== 'active' && (
+      {loan && loan.status !== 'active' && loan.status !== 'paid' && (
         <div className="px-4 pt-4 text-sm text-destructive">
           Este préstamo no está activo. No se permiten pagos.
         </div>
@@ -195,25 +195,7 @@ export function PaymentScheduleTable({ schedule, onPaymentClick, onReviewClick, 
                   <TableCell className="space-x-2">
                     {onPaymentClick && item.status === "pending" && (
                       <>
-                        {loan?.status === 'active' ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => onPaymentClick(item.id)}
-                            className="bg-transparent"
-                          >
-                            Registrar Pago
-                          </Button>
-                        ) : (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled
-                            className="bg-transparent"
-                          >
-                            Bloqueado
-                          </Button>
-                        )}
+                        
                       </>
                     )}
                     {(role === 'admin' || role === 'asesor') && item.status !== 'paid' && (

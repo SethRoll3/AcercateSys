@@ -89,6 +89,24 @@ export async function PATCH(req: NextRequest) {
     })
     if (authError) return NextResponse.json({ error: authError.message }, { status: 500 })
 
+    // Log the profile update
+    try {
+      await admin.from("logs").insert({
+        actor_user_id: user.id,
+        action_type: "UPDATE",
+        entity_name: "profile",
+        entity_id: me.id,
+        action_at: new Date().toISOString(),
+        details: {
+          message: `Perfil de usuario ${me.email} actualizado.`,
+          user_id: me.id,
+          updated_fields: Object.keys(updates)
+        },
+      })
+    } catch (logErr) {
+      console.error("Error creating log for profile update:", logErr)
+    }
+
     return NextResponse.json({ ok: true })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Internal server error' }, { status: 500 })

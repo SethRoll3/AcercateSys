@@ -14,6 +14,7 @@ export default function PaymentPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const scheduleId = searchParams.get("scheduleId")
+  const isFull = searchParams.get("full") === "true"
 
   const [scheduleItem, setScheduleItem] = useState<PaymentSchedule | null>(null)
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null)
@@ -25,6 +26,17 @@ export default function PaymentPage() {
   const [loanStatus, setLoanStatus] = useState<string | null>(null)
   const [loanNumber, setLoanNumber] = useState<string>("")
   const [clientName, setClientName] = useState<string>("")
+  const [fullAmount, setFullAmount] = useState<number | null>(null)
+  const [fullScheduleIds, setFullScheduleIds] = useState<string[]>([])
+
+  const writeCache = (key: string, data: any) => {
+    try {
+      sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }))
+    } catch {}
+  }
+  const K = {
+    loanDetails: 'loanDetails:',
+  }
 
   const fetchWithTimeout = async (input: RequestInfo, init: RequestInit & { timeoutMs?: number } = {}) => {
     const { timeoutMs = 12000, ...rest } = init
@@ -90,6 +102,26 @@ export default function PaymentPage() {
           const name = ((c?.first_name || c?.firstName || "") + " " + (c?.last_name || c?.lastName || "")).trim()
           setClientName(name)
 
+          if (isFull && item) {
+            const startNum = item.payment_number || (item as any).paymentNumber
+            const targets = (data.schedule || []).filter((s: any) => {
+              const status = String(s.status || '').toLowerCase()
+              const num = s.payment_number || s.paymentNumber
+              return status !== 'paid' && num >= startNum
+            })
+            const ids = targets.map((s: any) => s.id)
+            const sum = targets.reduce((acc: number, s: any) => {
+              const total = Number(s.amount || 0) + Number(s.mora || 0)
+              const paid = Number(s.paid_amount || s.paidAmount || 0)
+              return acc + Math.max(0, total - paid)
+            }, 0)
+            setFullScheduleIds(ids)
+            setFullAmount(Math.round(sum * 100) / 100)
+          } else {
+            setFullScheduleIds([])
+            setFullAmount(null)
+          }
+
           const payments: Payment[] = (data.payments || [])
           const current = payments.find(
             (p: Payment) => p.scheduleId === scheduleId && (p.confirmationStatus === 'pending_confirmation' || p.confirmationStatus === 'rechazado')
@@ -129,7 +161,16 @@ export default function PaymentPage() {
   }, [params.id, scheduleId])
 
   const handlePaymentSuccess = () => {
-    router.push(`/dashboard/loans/${params.id}`)
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/loans/${params.id}/details`, { credentials: 'include' as any })
+        if (res.ok) {
+          const data = await res.json()
+          writeCache(K.loanDetails + String(params.id), data)
+        }
+      } catch {}
+      router.push(`/dashboard/loans/${params.id}`)
+    })()
   }
 
   const handleCancel = () => {
@@ -209,7 +250,7 @@ export default function PaymentPage() {
           <div className="rounded-md border bg-muted/30 p-4 mb-4">
             <div className="text-sm text-muted-foreground">Registrando pago</div>
             <div className="text-foreground font-semibold">
-              {clientName ? `${clientName} — ` : ""}Préstamo {loanNumber || String(params.id)} • Cuota #{scheduleItem?.payment_number}
+              {clientName ? `${clientName} — ` : ""}Préstamo {loanNumber || String(params.id)} • {isFull ? "Pago completo" : `Cuota #${scheduleItem?.payment_number}`}
             </div>
           </div>
           <PaymentForm
@@ -219,6 +260,9 @@ export default function PaymentPage() {
             initialBoletas={editingBoletas}
             onPaymentSuccess={handlePaymentSuccess}
             onCancel={handleCancel}
+            fullMode={isFull}
+            fullAmount={fullAmount ?? undefined}
+            fullScheduleIds={fullScheduleIds}
           />
         </div>
       </main>

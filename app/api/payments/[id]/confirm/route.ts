@@ -10,6 +10,7 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
+    let loanFinalized = false
     const { id } = await params;
     console.log(`[PAYMENT_CONFIRM_API] Received request for payment ID: ${id}`);
     const supabase = await createClient();
@@ -146,6 +147,19 @@ export async function PATCH(
 
     // 9. Update the payment schedule status
     if (action === "aprobar") {
+      let fullScheduleIds: string[] = []
+      const notesText = String(payment.notes || updatedPayment.notes || "")
+      if (notesText.startsWith("[FULL_PAYMENT]")) {
+        const l = notesText.indexOf("{")
+        const r = notesText.lastIndexOf("}")
+        if (l !== -1 && r !== -1 && r > l) {
+          try {
+            const obj = JSON.parse(notesText.substring(l, r + 1))
+            const arr = Array.isArray(obj?.scheduleIds) ? obj.scheduleIds : []
+            fullScheduleIds = arr.filter((x: any) => typeof x === "string")
+          } catch {}
+        }
+      }
       const { data: scheduleData, error: scheduleError } =
         await serviceSupabase
           .from("payment_schedule")
@@ -177,6 +191,23 @@ export async function PATCH(
           })
           .eq("id", payment.schedule_id);
 
+        if (fullScheduleIds.length > 0) {
+          const { data: targets } = await serviceSupabase
+            .from("payment_schedule")
+            .select("id, amount, mora, admin_fees")
+            .in("id", fullScheduleIds)
+          for (const t of targets || []) {
+            const schedAmt = Number(t.amount || 0) + (Number(t.mora || 0) || 0) + (Number(t.admin_fees || 0) || 0)
+            await serviceSupabase
+              .from("payment_schedule")
+              .update({
+                status: "paid",
+                paid_amount: Math.round(schedAmt * 100) / 100,
+              })
+              .eq("id", t.id)
+          }
+        }
+
         // After approving and updating the schedule, if all schedules of the loan are paid, mark loan as paid
         const { data: schedules } = await serviceSupabase
           .from('payment_schedule')
@@ -188,6 +219,7 @@ export async function PATCH(
             .from('loans')
             .update({ status: 'paid' })
             .eq('id', updatedPayment.loan_id)
+          loanFinalized = true
         }
       }
     } else if (action === "rechazar") {
@@ -330,6 +362,20 @@ export async function PATCH(
           action_url: actionUrl,
           meta_json: { loan_id: updatedPayment.loan_id, schedule_id: updatedPayment.schedule_id },
         })
+        if (loanFinalized) {
+          rows.push({
+            recipient_email: clientEmail,
+            recipient_role: 'cliente',
+            title: 'Préstamo finalizado',
+            body: `Tu préstamo ha sido pagado por completo. ¡Gracias por tu cumplimiento!`,
+            type: 'loan_finalized',
+            status: 'unread',
+            related_entity_type: 'loan',
+            related_entity_id: updatedPayment.loan_id,
+            action_url: actionUrl,
+            meta_json: { loan_id: updatedPayment.loan_id },
+          })
+        }
       }
 
       if (userData.role === 'asesor') {
@@ -358,6 +404,7 @@ export async function PATCH(
       message: `Payment ${action === "aprobar" ? "aprobado" : "rechazado"} successfully`,
       payment: transformedPayment,
       notificationError,
+      loanFinalized,
     });
   } catch (error) {
     console.error("Error updating payment confirmation:", error);

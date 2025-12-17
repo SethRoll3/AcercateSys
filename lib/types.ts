@@ -84,6 +84,8 @@ export interface PaymentSchedule {
   createdAt: string
 }
 
+export type PaymentConfirmationStatus = 'pendiente' | 'confirmado' | 'rechazado'
+
 export interface Payment {
   id: string
   loanId: string

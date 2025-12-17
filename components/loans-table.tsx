@@ -93,7 +93,7 @@ export function LoansTable({ loans, userRole, onLoanUpdated, groupMap }: LoansTa
                     <Eye className="h-4 w-4" />
                     Ver
                   </Button>
-                  {isAdmin && onLoanUpdated && <EditLoanDialog loan={loan} onLoanUpdated={onLoanUpdated} />}
+                  {isAdmin && onLoanUpdated && loan.status?.toLowerCase() !== "paid" && <EditLoanDialog loan={loan} onLoanUpdated={onLoanUpdated} />}
                   {isAdmin && loan.status === "pending" && onLoanUpdated && (
                     <ActivateLoanDialog loan={loan} onActivated={onLoanUpdated} trigger={
                       <Button variant="outline" size="sm" className="gap-2">Activar</Button>

@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
           try {
             const { data: loanRow } = await admin
               .from('loans')
-              .select('id, loan_number, client:clients(id, first_name, last_name, email, advisor:users!advisor_id(email))')
+              .select('id, loan_number, client:clients(id, first_name, last_name, email, advisor:users!advisor_id(email, role))')
               .eq('id', loan.id)
               .limit(1)
               .single()
@@ -75,6 +75,7 @@ export async function POST(req: NextRequest) {
             const advisorObj: any = Array.isArray(advisorRaw) ? advisorRaw[0] : advisorRaw
             const clientEmail: string | null = clientObj?.email ?? null
             const advisorEmail: string | null = advisorObj?.email ?? null
+            const advisorRole: string | null = advisorObj?.role ?? null
             const loanNumber: string | null = (loanRow as any)?.loan_number ?? null
             const actionUrl = `/dashboard/loans/${loan.id}`
 
@@ -97,7 +98,7 @@ export async function POST(req: NextRequest) {
               if (advisorEmail) {
                 rows.push({
                   recipient_email: advisorEmail,
-                  recipient_role: 'asesor',
+                  recipient_role: advisorRole || 'asesor',
                   title: 'Cliente con mora',
                   body: `El cliente ${clientObj?.first_name || ''} ${clientObj?.last_name || ''} tiene mora en la cuota ${next.payment_number} del préstamo ${loanNumber || loan.id}.`,
                   type: 'advisor_overdue_alert',
