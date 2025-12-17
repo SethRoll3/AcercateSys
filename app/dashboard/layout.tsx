@@ -52,7 +52,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         if (cached && cached.id) {
           setUserRole(cached.role)
           setUserEmail(cached.email)
-          return
         }
 
         // Si no hay cache, intentar recuperar con Supabase
@@ -83,6 +82,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     };
 
     fetchUserData();
+    const onFocus = () => { fetchUserData() }
+    const onVisibility = () => { if (document.visibilityState === 'visible') fetchUserData() }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [fetchWithTimeout, router]);
 
   return (

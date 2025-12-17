@@ -122,6 +122,125 @@ export default function DashboardPage() {
     } catch {}
   }, [])
 
+  const revalidateAll = useCallback(async () => {
+    if (inFlightRef.current) return
+    inFlightRef.current = true
+    setIsLoading(true)
+    try {
+      const supabase = createClient()
+      const u = await getUserWithRetry()
+      setUser(u)
+      if (u) writeCache(K.user, u)
+      let currentUserData = readCache(K.userData)
+      if (!currentUserData || !currentUserData.id) {
+        if (u) {
+          const { data: profile } = await supabase
+            .from('users')
+            .select('*')
+            .eq('auth_id', u.id)
+            .maybeSingle()
+          if (profile) {
+            currentUserData = profile
+            setUserData(profile)
+            writeCache(K.userData, profile)
+            setUserDataError(null)
+          }
+        }
+      } else {
+        setUserData(currentUserData)
+        setUserDataError(null)
+      }
+      if (!currentUserData && !u) {
+        window.location.href = '/auth/login'
+        return
+      }
+      const role = currentUserData?.role
+      const promises: Promise<any>[] = []
+      const keys: string[] = []
+      promises.push(fetchWithTimeout('/api/loans', { timeoutMs: 12000 }).then(r => r.ok ? r.json() : null))
+      keys.push('loans')
+      promises.push(fetchWithTimeout('/api/clients', { timeoutMs: 12000 }).then(r => r.ok ? r.json() : null))
+      keys.push('clients')
+      promises.push(fetchWithTimeout('/api/loans-groups', { timeoutMs: 12000 }).then(r => r.ok ? r.json() : null))
+      keys.push('groupLoans')
+      promises.push(fetchWithTimeout('/api/payments', { timeoutMs: 12000, cache: 'no-store' as any }).then(r => r.ok ? r.json() : null))
+      keys.push('payments')
+      if (['admin', 'asesor'].includes(role)) {
+        promises.push(fetchWithTimeout('/api/advisors', { timeoutMs: 12000 }).then(r => r.ok ? r.json() : null))
+        keys.push('advisors')
+      }
+      const results = await Promise.all(promises)
+      results.forEach((data, index) => {
+        const key = keys[index]
+        if (key === 'loans') {
+          if (data) {
+            setLoans(data)
+            writeCache(K.loans, data)
+            setLoansError(null)
+          } else {
+            setLoansError('No se pudieron cargar los préstamos')
+          }
+        }
+        if (key === 'clients') {
+          if (data) {
+            setClients(data)
+            writeCache(K.clients, data)
+          }
+        }
+        if (key === 'groupLoans') {
+          if (data) {
+            setGroupLoans(data)
+            writeCache(K.groupLoans, data)
+            const map: Record<string, { groupName: string }> = {}
+            for (const g of data) {
+              const name = g.group?.nombre || 'Grupo'
+              for (const item of g.loans || []) {
+                if (item.loan_id) map[item.loan_id] = { groupName: name }
+              }
+            }
+            setLoanGroupMap(map)
+            writeCache(K.loanGroupMap, map)
+            setGroupsError(null)
+          } else {
+            setGroupsError('No se pudieron cargar los préstamos por grupo')
+          }
+        }
+        if (key === 'payments') {
+          if (data) {
+            const agg: Record<string, number> = {}
+            const confirmedByLoan: Record<string, Set<string>> = {}
+            for (const p of data) {
+              const status = String(p.confirmationStatus || p.confirmation_status || '').toLowerCase()
+              if (status !== 'confirmado' && status !== 'aprobado') continue
+              const k = String(p.loanId || p.loan_id)
+              const amt = Number(p.amount || 0)
+              if (!k) continue
+              agg[k] = (agg[k] || 0) + amt
+              const sid = String(p.scheduleId || p.schedule_id || '')
+              if (sid) (confirmedByLoan[k] ||= new Set()).add(sid)
+            }
+            setPaymentsAgg(agg)
+            writeCache(K.paymentsAgg, agg)
+            const counts: Record<string, number> = {}
+            for (const [k, set] of Object.entries(confirmedByLoan)) counts[k] = set.size
+            setPaymentsConfirmedCounts(counts)
+          }
+        }
+        if (key === 'advisors') {
+          if (data) {
+            setAdvisors(data)
+            writeCache(K.advisors, data)
+          }
+        }
+      })
+    } catch (e) {
+      console.error('Dashboard revalidation error:', e)
+    } finally {
+      setIsLoading(false)
+      inFlightRef.current = false
+    }
+  }, [])
+
   const inFlightRef = useRef(false)
   const abortControllersRef = useRef<AbortController[]>([])
   const fetchWithTimeout = async (input: RequestInfo, init: RequestInit & { timeoutMs?: number } = {}) => {
@@ -182,178 +301,7 @@ export default function DashboardPage() {
       if (typeof asv === 'string') setAdvisorSelectedView(asv as any)
       if (udc) setIsLoading(false)
     } catch {}
-    if (inFlightRef.current) return
-    inFlightRef.current = true
-    const fetchData = async () => {
-      setIsLoading(true);
-      try {
-        const supabase = createClient();
-        const user = await getUserWithRetry()
-        setUser(user);
-        if (user) writeCache(K.user, user)
-
-        let currentUserData = readCache(K.userData)
-        if (!currentUserData || !currentUserData.id) {
-          if (user) {
-            const { data: profile } = await supabase
-              .from('users')
-              .select('*')
-              .eq('auth_id', user.id)
-              .maybeSingle()
-            if (profile) {
-              currentUserData = profile
-              setUserData(profile)
-              writeCache(K.userData, profile)
-              setUserDataError(null)
-            }
-          }
-        } else {
-          setUserData(currentUserData)
-          setUserDataError(null)
-        }
-
-        if (!currentUserData && !user) {
-          window.location.href = '/auth/login'
-          return
-        }
-
-        const role = currentUserData?.role
-
-        const promises: Promise<any>[] = []
-        const keys: string[] = []
-
-        if (!readCache(K.loans)) {
-          promises.push(fetchWithTimeout('/api/loans', { timeoutMs: 12000 }).then(r => r.ok ? r.json() : null))
-          keys.push('loans')
-        } else {
-          setLoans(readCache(K.loans))
-        }
-
-        if (!readCache(K.clients)) {
-          promises.push(fetchWithTimeout('/api/clients', { timeoutMs: 12000 }).then(r => r.ok ? r.json() : null))
-          keys.push('clients')
-        } else {
-          setClients(readCache(K.clients))
-        }
-
-        if (!readCache(K.groupLoans)) {
-          promises.push(fetchWithTimeout('/api/loans-groups', { timeoutMs: 12000 }).then(r => r.ok ? r.json() : null))
-          keys.push('groupLoans')
-        } else {
-          const gl = readCache(K.groupLoans)
-          setGroupLoans(gl)
-          const map = readCache(K.loanGroupMap)
-          if (map) setLoanGroupMap(map)
-          else {
-             const newMap: Record<string, { groupName: string }> = {};
-             for (const g of gl || []) {
-               const name = g.group?.nombre || 'Grupo';
-               for (const item of g.loans || []) {
-                 if (item.loan_id) newMap[item.loan_id] = { groupName: name };
-               }
-             }
-             setLoanGroupMap(newMap)
-             writeCache(K.loanGroupMap, newMap)
-          }
-        }
-
-        if (!readCache(K.paymentsAgg)) {
-           promises.push(fetchWithTimeout('/api/payments', { timeoutMs: 12000, cache: 'no-store' as any }).then(r => r.ok ? r.json() : null))
-           keys.push('payments')
-        } else {
-           setPaymentsAgg(readCache(K.paymentsAgg))
-        }
-
-        if (['admin', 'asesor'].includes(role)) {
-          if (!readCache(K.advisors)) {
-            promises.push(fetchWithTimeout('/api/advisors', { timeoutMs: 12000 }).then(r => r.ok ? r.json() : null))
-            keys.push('advisors')
-          } else {
-            setAdvisors(readCache(K.advisors))
-          }
-        }
-
-        if (promises.length > 0) {
-          const results = await Promise.all(promises)
-          
-          results.forEach((data, index) => {
-            const key = keys[index]
-            
-            if (key === 'loans') {
-              if (data) {
-                setLoans(data)
-                writeCache(K.loans, data)
-                setLoansError(null)
-              } else {
-                setLoansError('No se pudieron cargar los préstamos')
-              }
-            }
-            
-            if (key === 'clients') {
-              if (data) {
-                setClients(data)
-                writeCache(K.clients, data)
-              }
-            }
-
-            if (key === 'groupLoans') {
-              if (data) {
-                setGroupLoans(data)
-                writeCache(K.groupLoans, data)
-                const map: Record<string, { groupName: string }> = {};
-                for (const g of data) {
-                  const name = g.group?.nombre || 'Grupo';
-                  for (const item of g.loans || []) {
-                    if (item.loan_id) map[item.loan_id] = { groupName: name };
-                  }
-                }
-                setLoanGroupMap(map)
-                writeCache(K.loanGroupMap, map)
-                setGroupsError(null)
-              } else {
-                setGroupsError('No se pudieron cargar los préstamos por grupo')
-              }
-            }
-
-            if (key === 'payments') {
-               if (data) {
-                  const agg: Record<string, number> = {};
-                  const confirmedByLoan: Record<string, Set<string>> = {}
-                  for (const p of data) {
-                    const status = String(p.confirmationStatus || p.confirmation_status || '').toLowerCase()
-                    if (status !== 'confirmado' && status !== 'aprobado') continue
-                    const k = String(p.loanId || p.loan_id)
-                    const amt = Number(p.amount || 0)
-                    if (!k) continue
-                    agg[k] = (agg[k] || 0) + amt
-                    const sid = String(p.scheduleId || p.schedule_id || '')
-                    if (sid) (confirmedByLoan[k] ||= new Set()).add(sid)
-                  }
-                  setPaymentsAgg(agg)
-                  writeCache(K.paymentsAgg, agg)
-                  const counts: Record<string, number> = {}
-                  for (const [k, set] of Object.entries(confirmedByLoan)) counts[k] = set.size
-                  setPaymentsConfirmedCounts(counts)
-               }
-            }
-
-            if (key === 'advisors') {
-               if (data) {
-                 setAdvisors(data)
-                 writeCache(K.advisors, data)
-               }
-            }
-          })
-        }
-
-      } catch (e) {
-        console.error("Dashboard load error:", e)
-      } finally {
-        setIsLoading(false);
-        inFlightRef.current = false
-      }
-    }
-    fetchData();
+    revalidateAll()
     return () => {
       const arr = abortControllersRef.current.splice(0)
       for (const c of arr) {
@@ -361,7 +309,24 @@ export default function DashboardPage() {
       }
       inFlightRef.current = false
     }
-  }, [])
+  }, [revalidateAll])
+
+  useEffect(() => {
+    const onFocus = () => {
+      revalidateAll().catch(() => {})
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        revalidateAll().catch(() => {})
+      }
+    }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [revalidateAll])
 
   useEffect(() => {
     if (userData?.role === 'cliente' && loans.length > 0) {
@@ -941,8 +906,13 @@ const formatCurrency = (amount: number) => {
                                 for (const c of (clients || [])) {
                                   const aid = String(c.advisor_id || '')
                                   if (!aid) continue
+                                  const ref = (advisors || []).find((u: any) => String(u.id) === aid || String(u.auth_id) === aid)
                                   if (!byAdvisor[aid]) {
-                                    byAdvisor[aid] = { id: aid, email: String(c.advisor_email || ''), name: '', clients: [] }
+                                    byAdvisor[aid] = { id: aid, email: String((ref && ref.email) || c.advisor_email || ''), name: String((ref && ref.full_name) || ''), clients: [] }
+                                  } else {
+                                    const entry = byAdvisor[aid]
+                                    if (!entry.email) entry.email = String((ref && ref.email) || c.advisor_email || '')
+                                    if (!entry.name) entry.name = String((ref && ref.full_name) || '')
                                   }
                                   byAdvisor[aid].clients.push(c)
                                 }

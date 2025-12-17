@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { stableJsonStringify, buildCacheHeaders, latestUpdatedAt, isNotModified } from "@/lib/http-cache";
 
@@ -33,6 +33,29 @@ export async function POST(request: Request) {
 
   if (clientsError) {
     return NextResponse.json({ error: clientsError.message }, { status: 500 });
+  }
+
+  // Log the group creation
+  try {
+    const admin = await createAdminClient();
+    const { data: { user: caller } } = await supabase.auth.getUser();
+    let actorId = caller?.id;
+
+    await admin.from("logs").insert({
+      actor_user_id: actorId,
+      action_type: "CREATE",
+      entity_name: "grupos",
+      entity_id: group.id,
+      action_at: new Date().toISOString(),
+      details: {
+        message: `Creó el grupo "${name}" con ${clients.length} clientes.`,
+        group_id: group.id,
+        group_name: name,
+        client_count: clients.length,
+      },
+    });
+  } catch (logErr) {
+    console.error("Error creating log for group creation:", logErr);
   }
 
   return NextResponse.json(group);

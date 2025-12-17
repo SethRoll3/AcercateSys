@@ -111,7 +111,6 @@ export default function LoanDetailPage() {
       setRemainingBalance(cachedData.remainingBalance)
       setIsLoading(false)
       inFlightRef.current = false
-      return
     }
 
     const hardTimeout = setTimeout(() => {
@@ -160,10 +159,30 @@ export default function LoanDetailPage() {
       }
     }
     run()
+    const revalidate = async () => {
+      try {
+        const res = await fetchWithTimeout(`/api/loans/${params.id}/details`, { credentials: 'include' as any, timeoutMs: 8000 })
+        if (res.ok) {
+          const data = await res.json()
+          setLoan(data.loan)
+          setSchedule(data.schedule)
+          setPayments(data.payments)
+          setTotalPaid(data.totalPaid)
+          setRemainingBalance(data.remainingBalance)
+          writeCache(K.loanDetails + params.id, data)
+        }
+      } catch {}
+    }
+    const onFocus = () => { revalidate() }
+    const onVisibility = () => { if (document.visibilityState === 'visible') revalidate() }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisibility)
     return () => {
       abortRef.current?.abort()
       inFlightRef.current = false
       subscription?.unsubscribe()
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisibility)
     }
   }, [params.id])
 
@@ -177,6 +196,16 @@ export default function LoanDetailPage() {
     if (next?.id) {
       router.push(`/dashboard/loans/${params.id}/payment?scheduleId=${next.id}`)
     }
+  }
+
+  const handleFullPaymentClick = () => {
+    const remaining = (schedule || []).filter((s: any) => s.status !== 'paid')
+    const next = remaining[0]
+    if (loan?.status !== 'active') return
+    if (!next?.id) return
+    const allRemainingPending = remaining.length > 0 && remaining.every((s: any) => String(s.status) === 'pending_confirmation')
+    if (String(next.status) === 'pending_confirmation' || allRemainingPending) return
+    router.push(`/dashboard/loans/${params.id}/payment?scheduleId=${next.id}&full=true`)
   }
 
   const handleReviewClick = (scheduleId: string) => {
@@ -294,19 +323,42 @@ export default function LoanDetailPage() {
               <div className="flex justify-between items-center">
                 <h3 className="text-xl font-semibold text-foreground">Plan de Pagos</h3>
                 <div className="flex items-center gap-2">
+                  {loan?.status === 'active' && (schedule || []).some((s: any) => s.status !== 'paid') && (() => {
+                    const remaining = (schedule || []).filter((s: any) => s.status !== 'paid')
+                    const nextSchedule = remaining[0]
+                    const allRemainingPending = remaining.length > 0 && remaining.every((s: any) => String(s.status) === 'pending_confirmation')
+                    const hideFull = !nextSchedule || String(nextSchedule.status) === 'pending_confirmation' || allRemainingPending
+                    if (hideFull) return null
+                    return (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleFullPaymentClick}
+                        className="bg-transparent mr-2"
+                      >
+                        Pagar por completo
+                      </Button>
+                    )
+                  })()}
+                  {loan?.status === 'active' && (schedule || []).some((s: any) => s.status !== 'paid') && (() => {
+                    const nextSchedule = (schedule || []).find((s: any) => s.status !== 'paid')
+                    const nextHasPending = !!(nextSchedule && (payments || []).some((p: any) => p.scheduleId === nextSchedule.id && String((p as any).confirmationStatus || (p as any).confirmation_status || '') === 'pending_confirmation'))
+                    const nextButtonLabel = nextHasPending ? 'Editar Pago' : 'Registrar Pago'
+                    return (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleRegisterNextPayment}
+                        className="bg-transparent"
+                      >
+                        {nextButtonLabel}
+                      </Button>
+                    )
+                  })()}
+                  {(role === 'admin' || role === 'asesor') && loan?.status === 'pending' && (
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={handleRegisterNextPayment}
-                      disabled={loan?.status !== 'active' || !(schedule || []).some((s) => s.status !== 'paid')}
-                      className="bg-transparent"
-                    >
-                      Registrar Pago
-                    </Button>
-                  {role === 'admin' && (
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
                       onClick={() => setConfirmRegenerateOpen(true)}
                     >
                       Regenerar Plan de Pagos
@@ -318,6 +370,7 @@ export default function LoanDetailPage() {
                 schedule={schedule} 
                 loan={loan}
                 payments={payments}
+                onPaymentClick={handlePaymentClick}
                 onReviewClick={handleReviewClick}
                 onScheduleUpdate={handleScheduleUpdate}
                 loading={isRegenerating}

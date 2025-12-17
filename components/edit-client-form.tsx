@@ -69,7 +69,7 @@ export function EditClientForm({ client, onClose, onClientUpdated, onSuccess }: 
             const { data: advisorsData, error } = await supabase
               .from('users')
               .select('id, email, full_name, role')
-              .eq('role', 'asesor')
+              .in('role', ['asesor', 'admin'])
               .order('full_name')
 
             if (error) {
@@ -218,36 +218,41 @@ export function EditClientForm({ client, onClose, onClientUpdated, onSuccess }: 
               currentUserId === client.advisor_id 
                 ? "Auto-asignado (Usted)" 
                 : client.advisor_id 
-                  ? `Asignado a: ${advisors.find(a => a.id === client.advisor_id)?.full_name || 'Asesor desconocido'}`
+                  ? `Asignado a: ${advisors.find(a => a.id === client.advisor_id)?.full_name || 'Asesor desconocido'}${advisors.find(a => a.id === client.advisor_id)?.role === 'admin' ? ' (Administrador)' : ''}`
                   : "Sin asesor asignado"
             }
             disabled
             className="bg-background/50 text-muted-foreground"
           />
         ) : role === 'admin' ? (
-          <Select
-            value={formData.advisor_id}
-            onValueChange={(value) =>
-              setFormData({ ...formData, advisor_id: value })
-            }
-          >
-            <SelectTrigger className="bg-background/50">
-              <SelectValue placeholder="Seleccione un asesor (opcional)" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">Sin asesor asignado</SelectItem>
-              {advisors.map((advisor) => (
-                <SelectItem key={advisor.id} value={advisor.id}>
-                  {advisor.full_name} ({advisor.email})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="space-y-1">
+            <Select
+              value={formData.advisor_id}
+              onValueChange={(value) =>
+                setFormData({ ...formData, advisor_id: value })
+              }
+            >
+              <SelectTrigger className="bg-background/50">
+                <SelectValue placeholder="Seleccione un asesor (opcional)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Sin asesor asignado</SelectItem>
+                {advisors.map((advisor) => (
+                  <SelectItem key={advisor.id} value={advisor.id}>
+                    {advisor.full_name} ({advisor.email}){advisor.role === 'admin' ? ' - Administrador' : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {advisors.find(a => a.id === formData.advisor_id)?.role === 'admin' ? (
+              <p className="text-xs text-muted-foreground">Está seleccionando un usuario con rol administrador como asesor</p>
+            ) : null}
+          </div>
         ) : (
           <Input
             value={
               client.advisor_id 
-                ? `Asesor asignado: ${advisors.find(a => a.id === client.advisor_id)?.full_name || 'Asesor desconocido'}`
+                ? `Asesor asignado: ${advisors.find(a => a.id === client.advisor_id)?.full_name || 'Asesor desconocido'}${advisors.find(a => a.id === client.advisor_id)?.role === 'admin' ? ' (Administrador)' : ''}`
                 : "Sin asesor asignado"
             }
             disabled

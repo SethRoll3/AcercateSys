@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
 
     const { data: schedules } = await admin
       .from('payment_schedule')
-      .select(`*, loan:loans(*, client:clients(*, advisor:users!advisor_id(email)))`)
+      .select(`*, loan:loans(*, client:clients(*, advisor:users!advisor_id(email, role)))`)
       .in('status', ['pending','overdue'])
 
     const results: any[] = []
@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
               recipient_email: clientObj.email,
               recipient_role: 'cliente',
               title: 'Recordatorio de pago',
-              body: `Tu pago vence el ${new Date(dueDate).toLocaleDateString('es-GT')}. Monto pendiente ${new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(pendingIn)}.`,
+              body: `Tu pago vence el ${new Date(dueDate).toLocaleDateString('es-GT')}. Monto pendiente ${new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(pendingIn)}. `,
               type: typeIn,
               status: 'unread',
               related_entity_type: 'schedule',
@@ -116,12 +116,29 @@ export async function POST(req: NextRequest) {
               action_url: actionUrl,
               meta_json: { loan_id: loan?.id, schedule_id: s.id, due_date: s.due_date, pending: pendingIn },
             })
+
+            // Log the notification creation
+            await admin.from("logs").insert({
+              actor_user_id: "system", // Notifications are system-generated
+              action_type: "CREATE",
+              entity_name: "notification",
+              entity_id: s.id, // Link to schedule ID as the entity
+              action_at: new Date().toISOString(),
+              details: {
+                message: `Notificación de pago creada para el cliente ${clientObj.email} (Préstamo: ${loan?.loan_number}, Cuota: ${s.payment_number})`,
+                client_id: clientId,
+                loan_id: loan?.id,
+                schedule_id: s.id,
+                notification_type: typeIn,
+              },
+            })
           }
         }
 
         const diasMoraIn = Math.max(0, daysBetween(today, dueDate))
         if (diasMoraIn > 0 && advisorObj?.email) {
-          const orFilterAdvisor = `recipient_email.eq.${advisorObj.email},recipient_role.eq.asesor`
+          const advisorRole = String(advisorObj?.role || 'asesor')
+          const orFilterAdvisor = `recipient_email.eq.${advisorObj.email},recipient_role.eq.${advisorRole}`
           const { data: existingAdvisor } = await admin
             .from('notifications')
             .select('id')
@@ -133,7 +150,7 @@ export async function POST(req: NextRequest) {
           if (!Array.isArray(existingAdvisor) || existingAdvisor.length === 0) {
             await admin.from('notifications').insert({
               recipient_email: advisorObj.email,
-              recipient_role: 'asesor',
+              recipient_role: advisorRole,
               title: diasMoraIn === 1 ? 'Cliente en mora' : 'Cliente continúa en mora',
               body: `El cliente ${clientObj?.first_name || ''} ${clientObj?.last_name || ''} tiene ${diasMoraIn} día(s) de mora en la cuota ${s.payment_number}.`,
               type: 'advisor_overdue_alert',

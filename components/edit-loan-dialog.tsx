@@ -38,7 +38,8 @@ export function EditLoanDialog({ loan, onLoanUpdated }: EditLoanDialogProps) {
     interestRate: loan.interestRate.toString(),
     amount: loan.amount.toString(),
     term_months: loan.termMonths.toString(),
-    frequency: 'mensual' as 'mensual' | 'quincenal',
+    frequency: (loan.paymentFrequency || 'mensual') as 'mensual' | 'quincenal',
+    startDate: loan.startDate ? new Date(loan.startDate).toISOString().split('T')[0] : '',
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -50,6 +51,7 @@ export function EditLoanDialog({ loan, onLoanUpdated }: EditLoanDialogProps) {
       amount: parseFloat(formData.amount),
       term_months: parseInt(formData.term_months, 10),
       frequency: formData.frequency,
+      startDate: formData.startDate,
     }
 
     try {
@@ -109,6 +111,14 @@ export function EditLoanDialog({ loan, onLoanUpdated }: EditLoanDialogProps) {
           </div>
 
           <div className="space-y-2">
+            <Label htmlFor="startDate" className="text-foreground">Fecha de Inicio</Label>
+            <Input id="startDate" type="date" value={formData.startDate} onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} required className="bg-background/50" />
+            <div className="text-xs text-muted-foreground">
+              La primera cuota será {formData.frequency === 'quincenal' ? 'una quincena' : 'un mes'} después de la fecha de inicio.
+            </div>
+          </div>
+
+          <div className="space-y-2">
             <Label className="text-foreground">Frecuencia de pago</Label>
             <Tabs value={formData.frequency} onValueChange={(v) => setFormData({ ...formData, frequency: v as 'mensual' | 'quincenal' })}>
               <TabsList className="grid grid-cols-2 w-full">
@@ -116,6 +126,10 @@ export function EditLoanDialog({ loan, onLoanUpdated }: EditLoanDialogProps) {
                 <TabsTrigger value="quincenal">Quincenal</TabsTrigger>
               </TabsList>
             </Tabs>
+          </div>
+
+          <div className="rounded-md bg-yellow-500/10 p-3 text-sm text-yellow-500 border border-yellow-500/20">
+            Nota: Si edita algún campo tendrá que ir a regenerar el plan de pagos manualmente desde el detalle del préstamo.
           </div>
 
           <div className="flex justify-end gap-2 pt-6">

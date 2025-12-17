@@ -110,7 +110,7 @@ export async function POST(request: Request) {
 
       const { data: loanRow } = await serviceSupabase
         .from('loans')
-        .select(`id, client:clients(id, first_name, last_name, email, advisor:users!advisor_id(email))`)
+        .select(`id, client:clients(id, first_name, last_name, email, advisor:users!advisor_id(email, role))`)
         .eq('id', loanId)
         .limit(1)
         .single()
@@ -119,6 +119,7 @@ export async function POST(request: Request) {
       const client = Array.isArray(rawClient) ? rawClient[0] : rawClient
       const rawAdvisor = client?.advisor as any
       const advisorEmail: string | null = Array.isArray(rawAdvisor) ? (rawAdvisor[0]?.email ?? null) : (rawAdvisor?.email ?? null)
+      const advisorRole: string | null = Array.isArray(rawAdvisor) ? (rawAdvisor[0]?.role ?? null) : (rawAdvisor?.role ?? null)
       const actionUrl = `/dashboard/loans/${loanId}`
       const fmt = new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' })
       const amountText = fmt.format(Number(newPayment.amount) || 0)
@@ -127,7 +128,7 @@ export async function POST(request: Request) {
       if (advisorEmail) {
         rows.push({
           recipient_email: advisorEmail,
-          recipient_role: 'asesor',
+          recipient_role: advisorRole || 'asesor',
           title: 'Nuevo pago registrado',
           body: `El cliente ${client?.first_name || ''} ${client?.last_name || ''} registró un pago de ${amountText}. Recibo ${newPayment.receipt_number || '-'}.`,
           type: 'client_payment_registered',

@@ -73,6 +73,29 @@ export async function PUT(request: Request, context: { params: { id: string } })
     return NextResponse.json({ error: clientsError.message }, { status: 500 });
   }
 
+  // Log the group update
+  try {
+    const admin = createAdminClient();
+    const { data: { user: caller } } = await supabase.auth.getUser();
+    let actorId = caller?.id;
+
+    await admin.from("logs").insert({
+      actor_user_id: actorId,
+      action_type: "UPDATE",
+      entity_name: "grupos",
+      entity_id: id,
+      action_at: new Date().toISOString(),
+      details: {
+        message: `Actualizó el grupo "${name}" con ${clients.length} clientes.`,
+        group_id: id,
+        group_name: name,
+        client_count: clients.length,
+      },
+    });
+  } catch (logErr) {
+    console.error("Error creating log for group update:", logErr);
+  }
+
   return NextResponse.json(group);
 }
 
@@ -129,6 +152,32 @@ export async function DELETE(request: Request, context: { params: { id: string }
       return NextResponse.json({ error: delSchedulesErr.message }, { status: 500 })
     }
 
+    // Log the deletion of payment schedules
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      let actorId = null
+      if (user) {
+        const { data: userData } = await admin.from("users").select("id").eq("auth_id", user.id).single()
+        actorId = userData?.id
+      }
+
+      await admin.from("logs").insert({
+        actor_user_id: actorId,
+        action_type: "DELETE",
+        entity_name: "payment_schedule",
+        entity_id: id, // Link to group ID as the entity
+        action_at: new Date().toISOString(),
+        details: {
+          message: `Eliminó ${scheduleIds.length} planes de pago asociados a los préstamos del grupo ${id}`,
+          group_id: id,
+          loan_ids: loanIds,
+          deleted_schedule_count: scheduleIds.length,
+        }
+      })
+    } catch (logError) {
+      console.error("Error creating log for payment schedule deletion on group delete:", logError)
+    }
+
     const { error: delLoansErr } = await admin
       .from('loans')
       .delete()
@@ -165,6 +214,26 @@ export async function DELETE(request: Request, context: { params: { id: string }
 
   if (deleteGroupError) {
     return NextResponse.json({ error: deleteGroupError.message }, { status: 500 });
+  }
+
+  // Log the group deletion
+  try {
+    const { data: { user: caller } } = await supabase.auth.getUser();
+    let actorId = caller?.id;
+
+    await admin.from("logs").insert({
+      actor_user_id: actorId,
+      action_type: "DELETE",
+      entity_name: "grupos",
+      entity_id: id,
+      action_at: new Date().toISOString(),
+      details: {
+        message: `Eliminó el grupo con ID: ${id}`,
+        group_id: id,
+      },
+    });
+  } catch (logErr) {
+    console.error("Error creating log for group deletion:", logErr);
   }
 
   return NextResponse.json({ message: "Group deleted successfully" });

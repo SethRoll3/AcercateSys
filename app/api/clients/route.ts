@@ -203,6 +203,31 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: clientError.message }, { status: 500 })
     }
 
+    // Log the deletion (inactivation)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      let actorId = null
+      if (user) {
+        const { data: userData } = await admin.from("users").select("id").eq("auth_id", user.id).single()
+        actorId = userData?.id
+      }
+
+      await admin.from("logs").insert({
+        actor_user_id: actorId,
+        action_type: "DELETE", // Logical delete (inactivation)
+        entity_name: "clients",
+        entity_id: id,
+        action_at: new Date().toISOString(),
+        details: {
+          message: `Cliente ${clientRow?.email || id} inactivado.`,
+          client_id: id,
+          client_email: clientRow?.email,
+        },
+      })
+    } catch (logErr) {
+      console.error("Error creating log for client inactivation:", logErr)
+    }
+
     // 2. Update active/pending loans to inactive
     const { error: loansError } = await supabase
       .from('loans')

@@ -64,16 +64,20 @@ export function LoanInfoCard({ loan, totalPaid, remainingBalance, schedule }: Lo
     const progressRatio = paidQuotas / totalQuotas
     let variant: "default" | "secondary" | "destructive" | "outline" = "outline"
     let label = "Iniciando"
-    let className = "bg-red-100 text-red-800" // Soft red
+    let className = "bg-red-100 text-red-800"
 
-    if (progressRatio > 0.75) {
+    if (progressRatio === 1) {
+      variant = "default"
+      label = "Finalizado"
+      className = "bg-green-100 text-green-800"
+    } else if (progressRatio > 0.75) {
       variant = "default"
       label = "Casi Finalizado"
-      className = "bg-green-100 text-green-800" // Green
+      className = "bg-green-100 text-green-800"
     } else if (progressRatio > 0.25) {
       variant = "secondary"
       label = "A Medio Camino"
-      className = "bg-yellow-100 text-yellow-800" // Yellow
+      className = "bg-yellow-100 text-yellow-800"
     }
 
     return <Badge variant={variant} className={className}>{label}</Badge>

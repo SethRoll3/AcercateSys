@@ -416,9 +416,10 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { interestRate, status, frequency } = body
+    const { interestRate, status, frequency, startDate } = body
     const updates: any = { ...body }
     delete updates.frequency
+    delete updates.startDate
 
     // Recalcular monto por cuota
     const totalAmountNum = updates.amount != null ? parseFloat(updates.amount) : undefined
@@ -447,6 +448,8 @@ export async function PATCH(request: NextRequest) {
         ...updates,
         interest_rate: interestRate != null ? Number.parseFloat(interestRate) : undefined,
         monthly_payment: Math.round(installmentTotal * 100) / 100,
+        payment_frequency: frequency,
+        start_date: startDate,
         updated_at: new Date().toISOString(),
       })
       .eq("id", id)
@@ -473,127 +476,8 @@ export async function PATCH(request: NextRequest) {
       updatedAt: updatedLoan.updated_at,
     }
 
-    // Regenerar cronograma si se proporcionó frecuencia o cambiaron monto/tasa/plazo
-    if (frequency || updates.amount != null || updates.term_months != null || interestRate != null) {
-      try {
-        const supabaseAdmin = await createAdminClient()
-        // Eliminar cronograma anterior
-        await supabaseAdmin.from('payment_schedule').delete().eq('loan_id', id)
-
-        const n = Number(transformedLoan.termMonths)
-        const totalAmount = Number(transformedLoan.amount)
-        const monthlyRate = Number(transformedLoan.interestRate) / 100
-        const adminFeesPerInstallment = 20
-        const round2 = (num: number) => Math.round(num * 100) / 100
-        const capitalPerMonth = round2(totalAmount / n)
-        const interestPerMonth = round2(totalAmount * monthlyRate)
-
-        const parseYMD = (ymd: string) => {
-          const m = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/.exec(String(ymd))
-          if (!m) return new Date(ymd)
-          const y = Number(m[1]); const mo = Number(m[2]) - 1; const d = Number(m[3])
-          return new Date(Date.UTC(y, mo, d, 12, 0, 0))
-        }
-        const formatGTYMD = (date: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guatemala' }).format(date)
-        const addMonths = (ymd: string, months: number) => {
-          const dt = parseYMD(ymd)
-          const copy = new Date(dt.getTime())
-          copy.setUTCMonth(copy.getUTCMonth() + months)
-          return formatGTYMD(copy)
-        }
-        const addDays = (ymd: string, days: number) => {
-          const dt = parseYMD(ymd)
-          const copy = new Date(dt.getTime())
-          copy.setUTCDate(copy.getUTCDate() + days)
-          return formatGTYMD(copy)
-        }
-
-        const startYmd = transformedLoan.startDate
-        const entries: any[] = []
-        if (freq === 'mensual') {
-          for (let i = 0; i < n; i++) {
-            const dueYmd = addMonths(startYmd, i + 1)
-            entries.push({
-              loan_id: id,
-              payment_number: i + 1,
-              due_date: dueYmd,
-              amount: round2(capitalPerMonth + interestPerMonth),
-              principal: capitalPerMonth,
-              interest: interestPerMonth,
-              admin_fees: adminFeesPerInstallment,
-              status: 'pending',
-            })
-          }
-        } else {
-          for (let i = 0; i < n; i++) {
-            const dueYmd = addDays(startYmd, (i + 1) * 15)
-            entries.push({
-              loan_id: id,
-              payment_number: i + 1,
-              due_date: dueYmd,
-              amount: round2(capitalPerMonth + (interestPerMonth / 2)),
-              principal: capitalPerMonth,
-              interest: round2(interestPerMonth / 2),
-              admin_fees: adminFeesPerInstallment,
-              status: 'pending',
-            })
-          }
-        }
-        const { data: insertedSchedule, error: insErr } = await supabaseAdmin
-          .from('payment_schedule')
-          .insert(entries)
-          .select('id')
-
-        if (insErr) {
-          console.error('Error recreando cronograma en PATCH:', insErr)
-        } else if (insertedSchedule && insertedSchedule.length > 0) {
-          // Group logs for regenerated schedule
-          try {
-             const scheduleIds = insertedSchedule.map((s) => s.id)
-             
-             // Delete individual logs created by trigger
-             await supabaseAdmin
-               .from("logs")
-               .delete()
-               .eq("entity_name", "payment_schedule")
-               .in("entity_id", scheduleIds)
-               .eq("action_type", "CREATE")
-       
-             // Get current user for the log (we already have 'user' from earlier in the function)
-             let actorId = null
-             if (user) {
-               const { data: userData } = await supabaseAdmin.from("users").select("id").eq("auth_id", user.id).single()
-               actorId = userData?.id
-             }
-       
-             // Insert summary log
-             await supabaseAdmin.from("logs").insert({
-               actor_user_id: actorId,
-               action_type: "UPDATE", // It's an update to the loan's schedule
-               entity_name: "loans", // Associate with the loan
-               entity_id: id,
-               action_at: new Date().toISOString(),
-               details: {
-                 message: `Regeneró el plan de pagos para el préstamo ${transformedLoan.loanNumber} (${entries.length} cuotas)`,
-                 loan_id: id,
-                 loan_number: transformedLoan.loanNumber,
-                 count: entries.length,
-                 changes: {
-                   amount: updates.amount,
-                   term: updates.term_months,
-                   rate: interestRate,
-                   frequency: frequency
-                 }
-               }
-             })
-          } catch (logErr) {
-            console.error("Error grouping logs in PATCH:", logErr)
-          }
-        }
-      } catch (e) {
-        console.error('Fallo al regenerar cronograma en PATCH:', e)
-      }
-    }
+    // Removed automatic schedule regeneration as requested.
+    // User must manually regenerate the schedule from the UI.
 
     return NextResponse.json(transformedLoan)
   } catch (error) {

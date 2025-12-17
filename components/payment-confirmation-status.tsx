@@ -81,7 +81,11 @@ export function PaymentConfirmationStatus({
         throw new Error(error.error || 'Error al confirmar el pago')
       }
 
+      const data = await response.json()
       toast.success('Pago confirmado exitosamente')
+      if (data?.loanFinalized) {
+        toast.success('Préstamo finalizado')
+      }
       onStatusChange?.()
     } catch (error) {
       console.error('Error confirming payment:', error)
