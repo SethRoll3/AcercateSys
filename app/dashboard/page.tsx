@@ -75,7 +75,7 @@ export default function DashboardPage() {
   const [advisorClientsView, setAdvisorClientsView] = useState<{ id: string, name: string, email: string } | null>(null)
   const [calcOpen, setCalcOpen] = useState(false)
   
-  // REFERENCIA PARA EL SCROLL (LA SOLUCIÓN)
+  // REFERENCIA PARA EL SCROLL 
   const resultsSectionRef = useRef<HTMLDivElement>(null)
 
   const fetchLoans = useCallback(async () => {
@@ -815,9 +815,9 @@ const formatCurrency = (amount: number) => {
                     (() => {
                       const clientAdvisor: Record<string, string> = {}
                       for (const c of (clients || [])) { if (c?.id) clientAdvisor[String(c.id)] = String(c.advisor_id || '') }
-                      const activeAdvisorLoans = (loans || []).filter((l: any) => l.status === 'active' && clientAdvisor[String(l.clientId)])
-                      const paidCount = activeAdvisorLoans.reduce((s: number, l: any) => s + Number((l as any).progressPaid || 0), 0)
-                      const totalCount = activeAdvisorLoans.reduce((s: number, l: any) => s + Number((l as any).progressTotal || 0), 0)
+                      const advisorLoans = (loans || []).filter((l: any) => (l.status === 'active' || l.status === 'paid') && clientAdvisor[String(l.clientId)])
+                      const paidCount = advisorLoans.reduce((s: number, l: any) => s + Number((l as any).progressPaid || 0), 0)
+                      const totalCount = advisorLoans.reduce((s: number, l: any) => s + Number((l as any).progressTotal || 0), 0)
                       const data = [
                         { name: 'Pagadas', value: paidCount },
                         { name: 'Restantes', value: Math.max(0, totalCount - paidCount) }
@@ -827,8 +827,8 @@ const formatCurrency = (amount: number) => {
                         const freq = String(l?.paymentFrequency || '')
                         return freq === 'quincenal' ? months * 2 : months
                       }
-                      const totalRepayableMoney = activeAdvisorLoans.reduce((s: number, l: any) => s + Number(l?.monthlyPayment || 0) * installments(l), 0)
-                      const paidRecoveredMoney = activeAdvisorLoans.reduce((s: number, l: any) => {
+                      const totalRepayableMoney = advisorLoans.reduce((s: number, l: any) => s + Number(l?.monthlyPayment || 0) * installments(l), 0)
+                      const paidRecoveredMoney = advisorLoans.reduce((s: number, l: any) => {
                         const k = String(l?.id)
                         return s + Number(paymentsAgg[k] || 0)
                       }, 0)
@@ -935,9 +935,9 @@ const formatCurrency = (amount: number) => {
                                       {(target.clients || []).map((c: any, i: number) => {
                                         const clientId = String(c.id)
                                         const clientName = `${String(c.first_name || '')} ${String(c.last_name || '')}`.trim() || String(c.email || 'Cliente')
-                                        const activeLoans = (loans || []).filter((l: any) => l.status === 'active' && String((l?.client || {}).id) === clientId)
-                                        const totalInstallments = activeLoans.reduce((s: number, l: any) => s + Number((l as any).progressTotal || 0), 0)
-                                        const confirmedInstallments = activeLoans.reduce((s: number, l: any) => s + Number(paymentsConfirmedCounts[String(l.id)] || 0), 0)
+                                        const selectedLoans = (loans || []).filter((l: any) => (l.status === 'active' || l.status === 'paid') && String((l?.client || {}).id) === clientId)
+                                        const totalInstallments = selectedLoans.reduce((s: number, l: any) => s + Number((l as any).progressTotal || 0), 0)
+                                        const confirmedInstallments = selectedLoans.reduce((s: number, l: any) => s + Number((l as any).progressPaid || 0), 0)
                                         const clientLoans = (loans || []).filter((l: any) => String((l?.client || {}).id) === clientId)
                                         return (
                                           <Card key={i} className="border-border/50 bg-card/50 backdrop-blur-sm">
@@ -957,7 +957,7 @@ const formatCurrency = (amount: number) => {
                                                 {clientLoans.length === 0 ? (
                                                   <div className="text-xs text-muted-foreground">Sin préstamos</div>
                                                 ) : clientLoans.map((l: any, j: number) => {
-                                                  const lp = Number(paymentsConfirmedCounts[String(l.id)] || 0)
+                                                  const lp = Number((l as any).progressPaid || 0)
                                                   const lt = Number((l as any).progressTotal || 0)
                                                   const ln = String((l as any).loanNumber || (l as any).loan_number || l.id)
                                                   const st = String((l as any).status || '')
