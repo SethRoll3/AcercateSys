@@ -21,8 +21,8 @@ export async function GET(request: Request) {
   const admin = await createAdminClient()
   const { data: clientAdvisorRows } = await admin
     .from('clients')
-    .select('advisor_id, advisor_email')
-    .not('advisor_id', 'is', null)
+    .select('*')
+  console.log("clientAdvisorRows:", clientAdvisorRows)
   const advisorIds = Array.from(new Set((clientAdvisorRows || []).map((r: any) => String(r.advisor_id || '')).filter(Boolean)))
   const { data: advisorsById, error: byIdError } = advisorIds.length
     ? await admin
