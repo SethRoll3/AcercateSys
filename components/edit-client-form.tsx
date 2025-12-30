@@ -47,6 +47,7 @@ export function EditClientForm({ client, onClose, onClientUpdated, onSuccess }: 
     phone_country_code: client.phone_country_code || '+502',
     emergency_phone: client.emergency_phone || '',
     advisor_id: client.advisor_id || 'none',
+    gender: client.gender || '',
   })
   
   const { role, permissions } = useRole()
@@ -97,6 +98,11 @@ export function EditClientForm({ client, onClose, onClientUpdated, onSuccess }: 
         ...formData,
         advisor_id: formData.advisor_id === 'none' ? '' : formData.advisor_id,
         id: client.id
+      }
+      if (!submitData.gender) {
+        setIsLoading(false)
+        toast.error('Seleccione el género del cliente')
+        return
       }
 
       const response = await fetch('/api/clients', {
@@ -154,6 +160,23 @@ export function EditClientForm({ client, onClose, onClientUpdated, onSuccess }: 
             className="bg-background/50"
           />
         </div>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="gender" className="text-foreground">
+          Género
+        </Label>
+        <Select
+          value={formData.gender}
+          onValueChange={(value) => setFormData({ ...formData, gender: value })}
+        >
+          <SelectTrigger className="bg-background/50">
+            <SelectValue placeholder="Seleccione género *" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="hombre">Masculino</SelectItem>
+            <SelectItem value="mujer">Femenino</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
       <div className="space-y-2">
         <Label htmlFor="email" className="text-foreground">

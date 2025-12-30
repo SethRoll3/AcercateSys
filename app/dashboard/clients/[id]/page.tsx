@@ -23,6 +23,7 @@ interface Client {
   address: string | null
   phone: string | null
   emergency_phone: string | null
+  gender?: string | null
   advisor_id?: string
   advisor_email?: string | null
   advisor_name?: string | null
@@ -64,7 +65,7 @@ export default function ClientDetailPage() {
 
         const { data: row, error } = await supabase
           .from('clients')
-          .select('id, first_name, last_name, email, address, phone, phone_country_code, emergency_phone, advisor_id, group_id, status')
+          .select('id, first_name, last_name, email, address, phone, phone_country_code, emergency_phone, advisor_id, group_id, status, gender')
           .eq('id', id)
           .single()
 
@@ -118,6 +119,7 @@ export default function ClientDetailPage() {
           phone: row.phone,
           phone_country_code: row.phone_country_code,
           emergency_phone: row.emergency_phone,
+          gender: row.gender ?? null,
           advisor_id: row.advisor_id,
           advisor_email: advisorEmail,
           advisor_name: advisorName,
@@ -256,6 +258,14 @@ export default function ClientDetailPage() {
                     Ver usuario
                   </Button>
                 )}
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">Género</span>
+                <span>
+                  {client.gender
+                    ? (client.gender === 'hombre' ? 'Masculino' : 'Femenino')
+                    : 'No especificado'}
+                </span>
               </div>
               <div className="flex items-center gap-2 text-sm">
                 <Phone className="h-4 w-4 text-muted-foreground" />
