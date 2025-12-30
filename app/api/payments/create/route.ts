@@ -31,25 +31,40 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Loan is not active" }, { status: 409 })
   }
 
-    // Generate receipt number
     const { count } = await supabase.from("payments").select("*", { count: "exact", head: true })
+    const receiptPrefix = `REC-${String((count || 0) + 1).padStart(6, "0")}`
+    const randomSegment = Math.random().toString(36).slice(2, 8).toUpperCase()
+    let receiptNumber = `${receiptPrefix}-${randomSegment}`
 
-    const receiptNumber = `REC-${String((count || 0) + 1).padStart(6, "0")}`
-
-    // Insert payment
-  const { data: newPayment, error: paymentError } = await supabase
-      .from("payments")
-      .insert({
-        loan_id: loanId,
-        schedule_id: scheduleId,
-        amount: Number.parseFloat(amount),
-        payment_date: paymentDate,
-        receipt_number: receiptNumber,
-        payment_method: paymentMethod,
-        notes: notes || null,
-      })
-      .select()
-      .single()
+  let newPayment: any = null
+  let paymentError: any = null
+  {
+    let attempts = 0
+    while (attempts < 3) {
+      const { data, error } = await supabase
+        .from("payments")
+        .insert({
+          loan_id: loanId,
+          schedule_id: scheduleId,
+          amount: Number.parseFloat(amount),
+          payment_date: paymentDate,
+          receipt_number: receiptNumber,
+          payment_method: paymentMethod,
+          notes: notes || null,
+        })
+        .select()
+        .single()
+      if (error && (error as any)?.code === '23505') {
+        const altSegment = Math.random().toString(36).slice(2, 8).toUpperCase()
+        receiptNumber = `${receiptPrefix}-${altSegment}`
+        attempts++
+        continue
+      }
+      newPayment = data
+      paymentError = error
+      break
+    }
+  }
 
     if (paymentError) {
       console.error("[v0] Error creating payment:", paymentError)
