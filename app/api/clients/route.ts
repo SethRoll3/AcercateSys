@@ -39,10 +39,13 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { first_name, last_name, email, phone, phone_country_code, emergency_phone, address, advisor_id } = body;
+    const { first_name, last_name, email, phone, phone_country_code, emergency_phone, address, advisor_id, gender } = body;
 
     if (!first_name || !last_name || !email || !phone) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
+    if (!gender || !['hombre','mujer'].includes(String(gender))) {
+      return NextResponse.json({ error: "Missing or invalid gender" }, { status: 400 });
     }
 
     const { data: newClient, error } = await admin
@@ -57,6 +60,7 @@ export async function POST(request: Request) {
           emergency_phone,
           address,
           advisor_id,
+          gender,
         },
       ])
       .select()
@@ -124,6 +128,13 @@ export async function PUT(request: Request) {
     // Sanitize updates
     if (updates.advisor_id === "") updates.advisor_id = null
     if (updates.group_id === "") updates.group_id = null
+    if (typeof updates.gender !== 'undefined' && updates.gender !== null) {
+      const g = String(updates.gender)
+      if (!['hombre','mujer'].includes(g)) {
+        return NextResponse.json({ error: "Invalid gender value" }, { status: 400 })
+      }
+      updates.gender = g
+    }
 
     // Get current client data for log comparison (optional, but good for details)
     const { data: currentClient } = await admin.from("clients").select("*").eq("id", id).single()

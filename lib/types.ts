@@ -50,6 +50,7 @@ export interface Client {
   email: string | null
   phone: string | null
   phone_country_code?: string | null
+  gender?: 'hombre' | 'mujer' | null
   createdAt: string
   updatedAt: string
   group_id?: string | null

@@ -53,6 +53,7 @@ export function CreateClientForm({ onClientAdded, isOpen, onClose }: CreateClien
     phone_country_code: '+502',
     emergency_phone: '',
     advisor_id: '',
+    gender: '',
   })
   
   const { role, permissions } = useRole()
@@ -109,6 +110,10 @@ export function CreateClientForm({ onClientAdded, isOpen, onClose }: CreateClien
       toast.error('Debe asignar un asesor al cliente')
       return
     }
+    if (!formData.gender) {
+      toast.error('Seleccione el género del cliente')
+      return
+    }
     
     setIsLoading(true)
 
@@ -136,6 +141,7 @@ export function CreateClientForm({ onClientAdded, isOpen, onClose }: CreateClien
           phone_country_code: '+502',
           emergency_phone: '',
           advisor_id: '',
+          gender: '',
         })
         onClientAdded()
         toast.success('Cliente creado con éxito')
@@ -197,6 +203,23 @@ export function CreateClientForm({ onClientAdded, isOpen, onClose }: CreateClien
                 className="bg-background/50"
               />
             </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="gender" className="text-foreground">
+              Género
+            </Label>
+            <Select
+              value={formData.gender}
+              onValueChange={(value) => setFormData({ ...formData, gender: value })}
+            >
+              <SelectTrigger className="bg-background/50">
+                <SelectValue placeholder="Seleccione género *" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="hombre">Masculino</SelectItem>
+                <SelectItem value="mujer">Femenino</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-2">
             <Label htmlFor="email" className="text-foreground">

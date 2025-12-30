@@ -9,6 +9,53 @@ import path from "path"
       const supabase = await createClient()
       const admin = await createAdminClient()
 
+      const generateEmptyExcel = async () => {
+        const workbook = new ExcelJS.Workbook()
+        const ws = workbook.addWorksheet('Cartera en Mora')
+        const blue = '2563EB'
+        const lightBlue = '3B82F6'
+        const publicDir = path.join(process.cwd(), 'public')
+        const logoCandidates = [
+          'logoCooperativaConTexto.jpg',
+          'logoCooperativa.jpg',
+          'logoCooperativaSinTexto.png',
+          'logoCooperativaSinTextoSinFondo.png',
+          'logoCooperativa.png',
+        ]
+        let logoImageId: number | null = null
+        for (const name of logoCandidates) {
+          const p = path.join(publicDir, name)
+          try {
+            const ext = path.extname(p).toLowerCase() === '.png' ? 'png' : 'jpeg'
+            logoImageId = workbook.addImage({ filename: p, extension: ext as 'png' | 'jpeg' })
+            break
+          } catch {}
+        }
+        ws.mergeCells('A1:M1')
+        ws.getCell('A1').value = 'Cartera en Mora'
+        ws.getCell('A1').font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } }
+        ws.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' }
+        ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: blue } }
+        if (logoImageId !== null) ws.addImage(logoImageId, { tl: { col: 0, row: 0 }, ext: { width: 120, height: 65 } })
+        ws.getRow(1).height = 60
+        ws.getCell('L3').value = `Generado el: ${new Date().toLocaleDateString('es-GT')}`
+        ws.addRow([])
+        ws.addRow([])
+        ws.mergeCells('A4:M4')
+        ws.getCell('A4').value = 'No hay cuotas/préstamos con mora'
+        ws.getCell('A4').alignment = { horizontal: 'center', vertical: 'middle' }
+        ws.getCell('A4').font = { bold: true }
+        ws.getCell('A4').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: lightBlue } }
+        ws.columns = [
+          { width: 12 }, { width: 28 }, { width: 18 }, { width: 16 }, { width: 10 }, { width: 16 }, { width: 14 }, { width: 16 }, { width: 14 }, { width: 14 }, { width: 12 }, { width: 14 }, { width: 16 },
+        ]
+        const buffer = await workbook.xlsx.writeBuffer()
+        const headers = new Headers()
+        headers.append('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        headers.append('Content-Disposition', `attachment; filename="Cooperativa_Cartera_Mora_${new Date().toISOString().slice(0,10)}.xlsx"`)
+        return new NextResponse(new Uint8Array(buffer), { headers })
+      }
+
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
@@ -19,22 +66,14 @@ import path from "path"
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
 
-      const { searchParams } = new URL(request.url)
-      const startDate = searchParams.get('startDate')
-      const endDate = searchParams.get('endDate')
+      const gtTodayYMD = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guatemala' }).format(new Date())
 
       let loanIdsForAdvisor: string[] = []
       if (me.role === 'asesor') {
         const { data: assignedClients } = await admin.from('clients').select('id').eq('advisor_id', me.id)
         const clientIds = (assignedClients || []).map((c: any) => String(c.id))
         if (!clientIds.length) {
-          const wb = new ExcelJS.Workbook()
-          wb.addWorksheet('Cartera en Mora')
-          const buf = await wb.xlsx.writeBuffer()
-          const headers = new Headers()
-          headers.append('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-          headers.append('Content-Disposition', `attachment; filename="Cooperativa_Cartera_Mora_${new Date().toISOString().slice(0,10)}.xlsx"`)
-          return new NextResponse(new Uint8Array(buf), { headers })
+          return await generateEmptyExcel()
         }
         const { data: advisorLoans } = await admin
           .from('loans')
@@ -42,28 +81,16 @@ import path from "path"
           .in('client_id', clientIds)
         loanIdsForAdvisor = (advisorLoans || []).map((l: any) => String(l.id))
         if (!loanIdsForAdvisor.length) {
-          const wb = new ExcelJS.Workbook()
-          wb.addWorksheet('Cartera en Mora')
-          const buf = await wb.xlsx.writeBuffer()
-          const headers = new Headers()
-          headers.append('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-          headers.append('Content-Disposition', `attachment; filename="Cooperativa_Cartera_Mora_${new Date().toISOString().slice(0,10)}.xlsx"`)
-          return new NextResponse(new Uint8Array(buf), { headers })
+          return await generateEmptyExcel()
         }
       }
 
       let scheduleQuery = admin
         .from('payment_schedule')
         .select('id, loan_id, payment_number, due_date, amount, principal, interest, mora, admin_fees, status')
-        .or('status.eq.overdue,mora.gt.0')
+        .eq('status', 'pending')
+        .lt('due_date', gtTodayYMD)
         .order('due_date', { ascending: true })
-
-      if (startDate) {
-        scheduleQuery = scheduleQuery.gte('due_date', startDate)
-      }
-      if (endDate) {
-        scheduleQuery = scheduleQuery.lte('due_date', endDate)
-      }
 
       if (me.role === 'asesor' && loanIdsForAdvisor.length) {
         scheduleQuery = scheduleQuery.in('loan_id', loanIdsForAdvisor)
@@ -74,13 +101,7 @@ import path from "path"
 
       const loanIds = Array.from(new Set((schedules || []).map((s: any) => String(s.loan_id)).filter(Boolean)))
       if (!loanIds.length) {
-        const wb = new ExcelJS.Workbook()
-        wb.addWorksheet('Cartera en Mora')
-        const buf = await wb.xlsx.writeBuffer()
-        const headers = new Headers()
-        headers.append('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-        headers.append('Content-Disposition', `attachment; filename="Cooperativa_Cartera_Mora_${new Date().toISOString().slice(0,10)}.xlsx"`)
-        return new NextResponse(new Uint8Array(buf), { headers })
+        return await generateEmptyExcel()
       }
 
       const { data: loans, error: loansError } = await admin
@@ -155,7 +176,7 @@ import path from "path"
       const currencyFmt = '"Q"#,##0.00'
       const dateFmt = 'dd/mm/yyyy'
 
-      const filteredSchedules = (schedules || []).filter((s: any) => Number(s.mora) > 0)
+      const filteredSchedules = (schedules || [])
       const individuals = filteredSchedules.filter((s: any) => !loanToGroup[String(s.loan_id)])
       const grouped = filteredSchedules.filter((s: any) => loanToGroup[String(s.loan_id)])
 
@@ -239,4 +260,3 @@ import path from "path"
       return NextResponse.json({ error: e?.message || 'Internal server error' }, { status: 500 })
     }
   }
-

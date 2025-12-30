@@ -29,6 +29,7 @@ export default function UserDetailPage() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [hasLinkedClient, setHasLinkedClient] = useState(false)
   const [linkedClientId, setLinkedClientId] = useState<string | null>(null)
+  const [linkedClientGender, setLinkedClientGender] = useState<string | null>(null)
 
   const fetchUser = async () => {
     try {
@@ -51,15 +52,17 @@ export default function UserDetailPage() {
       if (row?.email) {
         const { data: clientRows } = await supabase
           .from('clients')
-          .select('id')
+          .select('id, gender')
           .eq('email', row.email)
           .limit(1)
         const exists = Array.isArray(clientRows) && clientRows[0] ? true : false
         setHasLinkedClient(exists)
         setLinkedClientId(exists ? (clientRows as any)[0].id : null)
+        setLinkedClientGender(exists ? (clientRows as any)[0].gender ?? null : null)
       } else {
         setHasLinkedClient(false)
         setLinkedClientId(null)
+        setLinkedClientGender(null)
       }
     } catch (error) {
       console.error('Error fetching user:', error)
@@ -200,6 +203,16 @@ export default function UserDetailPage() {
             <div className="flex items-center gap-2 text-sm">
               <Shield className="h-4 w-4 text-muted-foreground" />
               <span>{getRoleDisplayName(user.role)}</span>
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Género</span>
+              <span>
+                {hasLinkedClient
+                  ? linkedClientGender
+                    ? (linkedClientGender === 'hombre' ? 'Masculino' : 'Femenino')
+                    : 'No especificado'
+                  : 'N/A'}
+              </span>
             </div>
             <div className="flex items-center gap-2 text-sm">
               <span className="text-muted-foreground">Estado</span>
