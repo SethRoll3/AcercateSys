@@ -71,9 +71,10 @@ export async function POST(request: Request) {
       }
     }
 
-    // Generate receipt number
     const { count } = await supabase.from("payments").select("*", { count: "exact", head: true })
-    const receiptNumber = `REC-${String((count || 0) + 1).padStart(6, "0")}`
+    const receiptPrefix = `REC-${String((count || 0) + 1).padStart(6, "0")}`
+    const randomSegment = Math.random().toString(36).slice(2, 8).toUpperCase()
+    let receiptNumber = `${receiptPrefix}-${randomSegment}`
 
     // Insert payment
   let insertAmount = totalPaidAmount
@@ -93,21 +94,37 @@ export async function POST(request: Request) {
     insertAmount = Math.round(sum * 100) / 100
   }
 
-  const { error: paymentError, data: newPayment } = await supabase
-    .from("payments")
-    .insert({
-      loan_id: scheduleData.loan_id,
-      schedule_id: paymentScheduleId,
-      amount: insertAmount,
-      payment_date: paymentDate,
-      payment_method: paymentMethod,
-      notes: notes,
-      receipt_number: receiptNumber, // Incluir el número de recibo generado
-      confirmation_status: "pending_confirmation",
-      has_been_edited: has_been_edited ? true : false,
-    })
-    .select()
-    .single()
+  let newPayment: any = null
+  let paymentError: any = null
+  {
+    let attempts = 0
+    while (attempts < 3) {
+      const { data, error } = await supabase
+        .from("payments")
+        .insert({
+          loan_id: scheduleData.loan_id,
+          schedule_id: paymentScheduleId,
+          amount: insertAmount,
+          payment_date: paymentDate,
+          payment_method: paymentMethod,
+          notes: notes,
+          receipt_number: receiptNumber,
+          confirmation_status: "pending_confirmation",
+          has_been_edited: has_been_edited ? true : false,
+        })
+        .select()
+        .single()
+      if (error && (error as any)?.code === '23505') {
+        const altSegment = Math.random().toString(36).slice(2, 8).toUpperCase()
+        receiptNumber = `${receiptPrefix}-${altSegment}`
+        attempts++
+        continue
+      }
+      newPayment = data
+      paymentError = error
+      break
+    }
+  }
 
     if (paymentError) {
       console.error("Error creating payment:", paymentError)
