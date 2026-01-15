@@ -244,26 +244,30 @@ export async function GET() {
       }
     }
 
-    const chart1 = await createChartImage(
-      'bar',
-      ['Prestado','Recuperado','Pendiente'],
-      [totalPrestado, totalRecuperado, saldoPendiente],
-      'Montos de cartera'
-    )
-    const chart1Arr = new Uint8Array(chart1)
-    const chart1Id = workbook.addImage({ buffer: chart1Arr.buffer, extension: 'png' })
     const topRow = Math.max(6, (resumenHeader.number || 6))
-    ws.addImage(chart1Id, { tl: { col: 8, row: topRow - 1 }, ext: { width: 400, height: 260 } })
+    try {
+      const chart1 = await createChartImage(
+        'bar',
+        ['Prestado','Recuperado','Pendiente'],
+        [totalPrestado, totalRecuperado, saldoPendiente],
+        'Montos de cartera'
+      )
+      const chart1Arr = new Uint8Array(chart1)
+      const chart1Id = workbook.addImage({ buffer: chart1Arr.buffer, extension: 'png' })
+      ws.addImage(chart1Id, { tl: { col: 8, row: topRow - 1 }, ext: { width: 400, height: 260 } })
+    } catch {}
 
-    const chart2 = await createChartImage(
-      'doughnut',
-      ['Mujeres','Hombres'],
-      [mujeres, hombres],
-      'Clientes por género'
-    )
-    const chart2Arr = new Uint8Array(chart2)
-    const chart2Id = workbook.addImage({ buffer: chart2Arr.buffer, extension: 'png' })
-    ws.addImage(chart2Id, { tl: { col: 8, row: topRow + 14 }, ext: { width: 320, height: 240 } })
+    try {
+      const chart2 = await createChartImage(
+        'doughnut',
+        ['Mujeres','Hombres'],
+        [mujeres, hombres],
+        'Clientes por género'
+      )
+      const chart2Arr = new Uint8Array(chart2)
+      const chart2Id = workbook.addImage({ buffer: chart2Arr.buffer, extension: 'png' })
+      ws.addImage(chart2Id, { tl: { col: 8, row: topRow + 14 }, ext: { width: 320, height: 240 } })
+    } catch {}
 
     ws.columns = [
       { width: 40 },
