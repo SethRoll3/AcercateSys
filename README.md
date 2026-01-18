@@ -117,17 +117,6 @@ Asegúrate de tener instalado lo siguiente:
 -   **Asesores**: Pueden crear y gestionar clientes y sus préstamos asociados.
 -   **Clientes**: Pueden ver el estado de sus propios préstamos y el historial de pagos.
 
-## Contribución
-
-Las contribuciones son bienvenidas. Por favor, sigue estos pasos:
-
-1.  Haz un fork del repositorio.
-2.  Crea una nueva rama (`git checkout -b feature/nueva-caracteristica`).
-3.  Realiza tus cambios y asegúrate de que el código pase las pruebas y el linter.
-4.  Haz commit de tus cambios (`git commit -am 'feat: Añadir nueva característica'`).
-5.  Sube tu rama (`git push origin feature/nueva-caracteristica`).
-6.  Abre un Pull Request.
-
 ## Licencia
 
 Este proyecto está bajo la Licencia MIT. Consulta el archivo `LICENSE` para más detalles.
