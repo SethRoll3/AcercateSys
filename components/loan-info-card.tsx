@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { Loan, PaymentSchedule } from "@/lib/types"
-import { Calendar, Percent, Clock, Download } from "lucide-react"
+import { Calendar, Percent, Clock, Download, Banknote } from "lucide-react"
 const QuetzalIcon = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
     <text x="12" y="16" textAnchor="middle" fontSize="16" fill="currentColor" fontWeight="bold">Q</text>
@@ -22,6 +22,10 @@ interface LoanInfoCardProps {
 
 export function LoanInfoCard({ loan, totalPaid, remainingBalance, schedule }: LoanInfoCardProps) {
   const [isExportOpen, setIsExportOpen] = useState(false)
+  
+  // Extract admin fees from the first schedule payment (assuming constant across schedule or at least representative)
+  const adminFees = schedule.length > 0 ? (schedule[0].admin_fees || 0) : 0
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("es-GT", {
       style: "currency",
@@ -109,7 +113,7 @@ export function LoanInfoCard({ loan, totalPaid, remainingBalance, schedule }: Lo
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2 text-muted-foreground text-sm">
               <QuetzalIcon className="h-4 w-4" />
@@ -124,6 +128,14 @@ export function LoanInfoCard({ loan, totalPaid, remainingBalance, schedule }: Lo
               <span>Tasa de Interés</span>
             </div>
             <p className="text-xl font-bold text-foreground">{loan.interestRate}%</p>
+          </div>
+
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-muted-foreground text-sm">
+              <Banknote className="h-4 w-4" />
+              <span>Gastos Admin.</span>
+            </div>
+            <p className="text-xl font-bold text-foreground">{formatCurrency(adminFees)}</p>
           </div>
 
           <div className="space-y-1">

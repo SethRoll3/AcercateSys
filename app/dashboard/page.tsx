@@ -53,6 +53,8 @@ const K = {
   advisors: 'dashboard:advisors'
 }
 
+import { AdvisorPerformanceCard } from "@/components/advisor-performance-card"
+
 export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState<any>(null)
@@ -397,10 +399,16 @@ export default function DashboardPage() {
   ) : loans;
 
   const totalLoanAmount = displayLoans.reduce((sum: any, loan: any) => sum + loan.amount, 0)
-  const activeLoans = displayLoans.filter((loan: any) => loan.status === "active").length
+  const activeLoansList = displayLoans.filter((loan: any) => loan.status === "active")
+  const activeLoans = activeLoansList.length
   const pendingLoans = displayLoans.filter((loan: any) => loan.status === 'pending').length
   const paidLoans = displayLoans.filter((loan: any) => loan.status === 'paid').length
   const totalClients = clients.length
+
+  const totalActiveCapital = activeLoansList.reduce((sum: number, loan: any) => {
+    const amount = Number(loan.amount || 0)
+    return sum + amount
+  }, 0)
 
 const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("es-GT", {
@@ -426,15 +434,14 @@ const formatCurrency = (amount: number) => {
     let filtered: any[] = []
     if (advisorSelectedView === 'all') {
       filtered = list
-    } else
-    if (advisorSelectedView === 'active') {
+    } else if (advisorSelectedView === 'active') {
       filtered = list.filter((l: any) => l.status === 'active')
     } else if (advisorSelectedView === 'pending') {
       filtered = list.filter((l: any) => l.status === 'pending')
     } else if (advisorSelectedView === 'paid') {
       filtered = list.filter((l: any) => l.status === 'paid')
     } else if (advisorSelectedView === 'aldia') {
-      filtered = list.filter((l: any) => !(l as any).hasOverdue)
+      filtered = list.filter((l: any) => l.status === 'active' && !(l as any).hasOverdue)
     } else if (advisorSelectedView === 'mora') {
       filtered = list.filter((l: any) => Boolean((l as any).hasOverdue))
     }
@@ -548,25 +555,31 @@ const formatCurrency = (amount: number) => {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-4">
         {userData.role === 'asesor' || userData.role === 'admin' ? (
           <>
-            <StatsCard
-              title="Todos"
-              value={(loans || []).length}
-              description="Todos los estados"
-              icon={TrendingUp}
-              onClick={() => handleAdvisorCardClick('all')}
-              className="ring-1 ring-transparent hover:ring-primary/20"
-            />
+            {userData.role === 'asesor' && (
+              <StatsCard
+                title="Todos"
+                value={(loans || []).length}
+                description="Todos los estados"
+                icon={TrendingUp}
+                onClick={() => handleAdvisorCardClick('all')}
+                className="ring-1 ring-transparent hover:ring-primary/20"
+              />
+            )}
             <StatsCard
               title="Activos"
               value={activeLoans}
-              description="En curso"
+              description={
+                <span>
+                  En curso · Capital: <span className="text-sm sm:text-base font-bold text-foreground ml-1">{formatCurrency(totalActiveCapital)}</span>
+                </span>
+              }
               icon={TrendingUp}
               onClick={() => handleAdvisorCardClick('active')}
               className="ring-1 ring-transparent hover:ring-primary/20"
             />
             <StatsCard
               title="Al día"
-              value={(loans || []).filter((l: any) => !(l as any).hasOverdue).length}
+              value={(loans || []).filter((l: any) => l.status === 'active' && !(l as any).hasOverdue).length}
               description="Sin mora"
               icon={TrendingUp}
               onClick={() => handleAdvisorCardClick('aldia')}
@@ -581,21 +594,23 @@ const formatCurrency = (amount: number) => {
               className="ring-1 ring-transparent hover:ring-primary/20"
             />
             <StatsCard
-              title="Pendientes"
+              title="Pendientes de autorizar"
               value={pendingLoans}
-              description="Sin activar"
+              description="Sin autorizar"
               icon={TrendingUp}
               onClick={() => handleAdvisorCardClick('pending')}
               className="ring-1 ring-transparent hover:ring-primary/20"
             />
-            <StatsCard
-              title="Pagados"
-              value={paidLoans}
-              description="Finalizados"
-              icon={TrendingUp}
-              onClick={() => handleAdvisorCardClick('paid')}
-              className="ring-1 ring-transparent hover:ring-primary/20"
-            />
+            {userData.role === 'asesor' && (
+              <StatsCard
+                title="Pagados"
+                value={paidLoans}
+                description="Finalizados"
+                icon={TrendingUp}
+                onClick={() => handleAdvisorCardClick('paid')}
+                className="ring-1 ring-transparent hover:ring-primary/20"
+              />
+            )}
             {userData.role === 'admin' && (
               <StatsCard
                 title="Asesores"
@@ -895,10 +910,10 @@ const formatCurrency = (amount: number) => {
                               </div>
                             </CardContent>
                           </Card>
-                          <div className="sm:col-span-2">
+                          <div className="sm:col-span-2 mt-6">
                             {(() => {
                               const advisorItems = (() => {
-                                const byAdvisor: Record<string, { id: string, email: string, name: string, clients: any[] }> = {}
+                                const byAdvisor: Record<string, { id: string, email: string, name: string, clients: any[], avatarUrl?: string }> = {}
                                 for (const a of advisors || []) {
                                   const id = String(a.id)
                                   byAdvisor[id] = { id, email: String(a.email || ''), name: String(a.full_name || ''), clients: [] }
@@ -918,6 +933,7 @@ const formatCurrency = (amount: number) => {
                                 }
                                 return Object.values(byAdvisor).filter(it => (it.clients || []).length > 0)
                               })()
+                              
                               if (advisorClientsView) {
                                 const target = advisorItems.find(it => it.id === advisorClientsView.id) || { id: advisorClientsView.id, name: advisorClientsView.name, email: advisorClientsView.email, clients: [] }
                                 const titleName = advisorClientsView.name || target.name || advisorClientsView.email || 'Asesor'
@@ -929,7 +945,7 @@ const formatCurrency = (amount: number) => {
                                         <div className="text-sm text-muted-foreground">Clientes del asesor</div>
                                         <div className="text-lg font-semibold text-foreground">{titleName} · {titleEmail}</div>
                                       </div>
-                                      <Button variant="outline" size="sm" onClick={() => setAdvisorClientsView(null)}>Volver a tabla</Button>
+                                      <Button variant="outline" size="sm" onClick={() => setAdvisorClientsView(null)}>Volver a tarjetas</Button>
                                     </div>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                       {(target.clients || []).map((c: any, i: number) => {
@@ -951,7 +967,7 @@ const formatCurrency = (amount: number) => {
                                                   <div className="text-sm font-semibold text-foreground">{confirmedInstallments}/{totalInstallments}</div>
                                                   <div className="text-[11px] text-muted-foreground">cuotas confirmadas</div>
                                                 </div>
-                                                <Button variant="ghost" size="sm" className="shrink-0" onClick={() => { if (clientId) window.location.href = `/dashboard/clients/${clientId}` }}>Ver detalles cliente</Button>
+                                                <Button variant="ghost" size="sm" className="shrink-0" onClick={() => { if (clientId) window.location.href = `/dashboard/clients/${clientId}` }}>Ver detalles</Button>
                                               </div>
                                               <div className="mt-3 space-y-2">
                                                 {clientLoans.length === 0 ? (
@@ -966,12 +982,12 @@ const formatCurrency = (amount: number) => {
                                                     <div key={j} className="rounded-md border border-border/50 p-2 text-xs flex items-center justify-between gap-2">
                                                       <div className="min-w-0">
                                                         <div className="flex items-center gap-2">
-                                                          <span className="text-foreground truncate">Préstamo #{ln}</span>
-                                                          <span className={`px-2 py-0.5 rounded ${stClass}`}>{st || '—'}</span>
+                                                          <span className="text-foreground truncate">#{ln}</span>
+                                                          <span className={`px-2 py-0.5 rounded ${stClass}`}>{st}</span>
                                                         </div>
-                                                        <div className="text-[11px] text-muted-foreground">{lp}/{lt} cuotas confirmadas</div>
+                                                        <div className="text-[11px] text-muted-foreground">{lp}/{lt} pagadas</div>
                                                       </div>
-                                                      <Button variant="ghost" size="sm" className="shrink-0" onClick={() => { const lid = String(l.id); if (lid) window.location.href = `/dashboard/loans/${lid}` }}>Ver detalles préstamo</Button>
+                                                      <Button variant="ghost" size="sm" className="shrink-0 h-6 text-xs" onClick={() => { const lid = String(l.id); if (lid) window.location.href = `/dashboard/loans/${lid}` }}>Ver</Button>
                                                     </div>
                                                   )
                                                 })}
@@ -984,30 +1000,67 @@ const formatCurrency = (amount: number) => {
                                   </div>
                                 )
                               }
+
                               return (
-                                <div className="rounded-lg border border-border/50 bg-card/50 backdrop-blur-sm overflow-hidden mt-4">
-                                  <Table>
-                                    <TableHeader>
-                                      <TableRow className="hover:bg-transparent border-border/50">
-                                        <TableHead className="text-muted-foreground">Asesor</TableHead>
-                                        <TableHead className="text-muted-foreground">Correo</TableHead>
-                                        <TableHead className="text-muted-foreground">Clientes asignados</TableHead>
-                                        <TableHead className="text-muted-foreground">Detalle</TableHead>
-                                      </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                      {advisorItems.map((a, idx) => (
-                                        <TableRow key={idx} className="border-border/50">
-                                          <TableCell className="text-foreground">{a.name || a.email || 'Asesor'}</TableCell>
-                                          <TableCell className="text-foreground">{a.email || '-'}</TableCell>
-                                          <TableCell className="text-foreground">{(a.clients || []).length}</TableCell>
-                                          <TableCell>
-                                            <Button variant="ghost" size="sm" onClick={() => setAdvisorClientsView({ id: a.id, name: a.name, email: a.email })}>Ver desglose</Button>
-                                          </TableCell>
-                                        </TableRow>
-                                      ))}
-                                    </TableBody>
-                                  </Table>
+                                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mt-4">
+                                  {advisorItems.map((advisor) => {
+                                    const clientIds = new Set(advisor.clients.map((c: any) => String(c.id)))
+                                    const advisorLoans = (loans || []).filter((l: any) => {
+                                        const cid = String((l?.client || {}).id || l.clientId || '')
+                                        return clientIds.has(cid)
+                                    })
+                                    
+                                    const totalPortfolio = advisorLoans.reduce((sum: number, l: any) => sum + Number(l.amount || 0), 0)
+                                    
+                                    const recoveredAmount = advisorLoans.reduce((sum: number, l: any) => {
+                                      const k = String(l.id)
+                                      return sum + Number(paymentsAgg[k] || 0)
+                                    }, 0)
+                                    
+                                    const installments = (l: any) => {
+                                      const months = Number(l?.termMonths || 0)
+                                      const freq = String(l?.paymentFrequency || '')
+                                      return freq === 'quincenal' ? months * 2 : months
+                                    }
+                                    const totalRepayable = advisorLoans.reduce((s: number, l: any) => s + Number(l?.monthlyPayment || 0) * installments(l), 0)
+                                    const outstandingBalance = Math.max(0, totalRepayable - recoveredAmount)
+                                    
+                                    const activeLoansCount = advisorLoans.filter((l: any) => l.status === 'active').length
+                                    const moraLoansCount = advisorLoans.filter((l: any) => Boolean((l as any).hasOverdue)).length
+                                    const moraAmount = advisorLoans.filter((l: any) => Boolean((l as any).hasOverdue)).reduce((sum: number, l: any) => sum + Number(l.amount || 0), 0)
+                                    
+                                    const paidLoansCount = advisorLoans.filter((l: any) => l.status === 'paid').length
+                                    const totalLoansCount = advisorLoans.length
+                                    
+                                    const portfolioHealth = [
+                                      { name: 'Al día', value: activeLoansCount - moraLoansCount, color: '#22c55e' },
+                                      { name: 'En mora', value: moraLoansCount, color: '#ef4444' },
+                                      { name: 'Pagados', value: paidLoansCount, color: '#3b82f6' },
+                                    ].filter(d => d.value > 0)
+                                    
+                                    const recoveryProgress = totalRepayable > 0 ? (recoveredAmount / totalRepayable) * 100 : 0
+                                    
+                                    const stats = {
+                                      totalPortfolio,
+                                      recoveredAmount,
+                                      outstandingBalance,
+                                      activeLoansCount,
+                                      moraLoansCount,
+                                      moraAmount,
+                                      clientsCount: advisor.clients.length,
+                                      portfolioHealth,
+                                      recoveryProgress
+                                    }
+                                    
+                                    return (
+                                      <AdvisorPerformanceCard
+                                        key={advisor.id}
+                                        advisor={advisor}
+                                        stats={stats}
+                                        onViewDetails={() => setAdvisorClientsView({ id: advisor.id, name: advisor.name, email: advisor.email })}
+                                      />
+                                    )
+                                  })}
                                 </div>
                               )
                             })()}

@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 interface StatsCardProps {
   title: string
   value: string | number
-  description?: string
+  description?: React.ReactNode
   icon: React.ComponentType<{ className?: string }>
   trend?: {
     value: number
@@ -31,7 +31,7 @@ export function StatsCard({ title, value, description, icon: Icon, trend, onClic
       <CardContent className="p-3 pt-0 sm:p-5 sm:pt-0 pb-3 sm:pb-4">
         {/* Valor más ajustado en tamaño */}
         <div className="text-lg sm:text-2xl font-bold text-foreground truncate">{value}</div>
-        {description && <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 sm:mt-1 truncate">{description}</p>}
+        {description && <div className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 sm:mt-1 truncate">{description}</div>}
         {trend && (
           <p className={`text-[10px] sm:text-xs mt-1 ${trend.isPositive ? "text-green-500" : "text-red-500"}`}>
             {trend.isPositive ? "+" : "-"}

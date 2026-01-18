@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
-import puppeteer from "puppeteer"
-import type { Browser } from "puppeteer"
+import puppeteer from "puppeteer-core"
+import chromium from "@sparticuz/chromium"
 import path from "path"
 import { promises as fs } from "fs"
 
 export async function GET(_req: Request, { params }: { params: Promise<{ groupId: string }> }) {
-  let browser: Browser | null = null
+  let browser: any = null
   try {
     const supabase = await createClient()
     const admin = await createAdminClient()
@@ -137,7 +137,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ groupId
       ${bodySections}
     </body></html>`
 
-    browser = await puppeteer.launch({ headless: true })
+    if (process.env.NODE_ENV === "production") {
+      browser = await puppeteer.launch({
+        args: (chromium as any).args,
+        defaultViewport: (chromium as any).defaultViewport,
+        executablePath: await (chromium as any).executablePath(),
+        headless: (chromium as any).headless,
+      })
+    } else {
+      const { default: puppeteerLocal } = await import("puppeteer")
+      browser = await puppeteerLocal.launch({ headless: true })
+    }
+
     const page = await browser.newPage()
     await page.setContent(html, { waitUntil: 'networkidle0' })
     const pdf = await page.pdf({ format: 'A4', printBackground: true, margin: { top: '12mm', right: '10mm', bottom: '12mm', left: '10mm' } })
