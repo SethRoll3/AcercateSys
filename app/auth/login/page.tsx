@@ -227,18 +227,6 @@ export default function LoginPage() {
               </Button>
             </div>
           </form>
-
-          <div className="pt-4 text-center text-sm text-muted-foreground">
-            <p>¿Necesitas probar el sistema?</p>
-            <button
-              type="button"
-              onClick={() => quickLogin("admin@cooperativa.com", "admin123")}
-              className="font-medium text-cyan-600 dark:text-cyan-400 hover:underline transition-colors mt-1 focus:outline-none focus:ring-2 focus:ring-cyan-500 rounded px-2 py-1"
-            >
-              Usar cuenta de Admin Demo
-            </button>
-          </div>
-
         </div>
       </div>
     </div>

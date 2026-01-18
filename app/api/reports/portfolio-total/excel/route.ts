@@ -51,7 +51,7 @@ export async function GET() {
     // Outstanding debt and quotas info from schedules
     let schedulesQuery = admin
       .from('payment_schedule')
-      .select('loan_id, amount, admin_fees, mora, paid_amount, status, due_date')
+      .select('loan_id, amount, principal, interest, admin_fees, mora, paid_amount, status, due_date')
       .in('loan_id', loanIds)
     const { data: schedules, error: schedulesError } = await schedulesQuery
     if (schedulesError) return NextResponse.json({ error: schedulesError.message }, { status: 500 })
@@ -65,8 +65,86 @@ export async function GET() {
     const todayGT = parseYMD(gtTodayYMD)
 
     // Aggregations
-    const totalPrestado = (loans || []).reduce((sum: number, l: any) => sum + Number(l.amount || 0), 0)
-    const totalRecuperado = (payments || []).reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0)
+    const activeLoansList = (loans || []).filter((l: any) => l.status === 'active')
+    const activeLoanIds = new Set(activeLoansList.map((l: any) => l.id))
+
+    // 1. Total Prestado: Suma SOLO el monto (principal) de los préstamos ACTIVOS
+    const totalPrestado = activeLoansList.reduce((sum: number, l: any) => sum + Number(l.amount || 0), 0)
+
+    // Calculate Capital Recuperado, Interest Stats for ACTIVE loans
+    let totalCapitalRecuperado = 0
+    let totalInteresesEsperados = 0
+    let totalInteresesRecuperados = 0
+
+    // Global counters (keep including all loans for counts, as requested/implied by "Pagados" presence)
+    let cuotasTotales = 0
+    let cuotasPagadas = 0
+    let cuotasPendientes = 0
+    let cuotasEnMora = 0
+    let saldoPendiente = 0 // Will be recalculated based on user formula for display, but let's track scheduled debt too if needed
+
+    for (const s of (schedules || [])) {
+      const loanId = String((s as any).loan_id)
+      const isActive = activeLoanIds.has(loanId)
+
+      // Schedule values
+      // Note: 'amount' usually implies total or principal depending on usage, but we selected 'principal' and 'interest' explicitly.
+      // Fallback to 0 if null.
+      const principal = Number((s as any).principal || 0)
+      const interest = Number((s as any).interest || 0)
+      const adminFees = Number((s as any).admin_fees || 0)
+      const mora = Number((s as any).mora || 0)
+      const paidAmt = Number((s as any).paid_amount || 0)
+
+      // Logic for counters (apply to all or active? User focused on monetary amounts being active only)
+      // Let's keep counters for ALL loans to be consistent with "Total loans" count which includes paid.
+      // But monetary sums for the top section are strictly Active per request.
+      
+      cuotasTotales++
+      const st = String((s as any).status || '')
+      if (st === 'paid') cuotasPagadas++
+      else {
+        cuotasPendientes++
+        const dueStr = String((s as any).due_date || '')
+        if (dueStr) {
+          const dueDate = parseYMD(dueStr.slice(0, 10))
+          if (todayGT.getTime() > dueDate.getTime()) cuotasEnMora++
+        }
+      }
+
+      if (isActive) {
+        totalInteresesEsperados += interest
+        
+        // Calculate split paid amount
+        // Priority: Mora -> Fees -> Interest -> Principal
+        let remainingPaid = paidAmt
+        
+        // 1. Mora
+        const moraPaid = Math.min(remainingPaid, mora)
+        remainingPaid -= moraPaid
+        
+        // 2. Admin Fees
+        const feesPaid = Math.min(remainingPaid, adminFees)
+        remainingPaid -= feesPaid
+        
+        // 3. Interest
+        const interestPaid = Math.min(remainingPaid, interest)
+        remainingPaid -= interestPaid
+        totalInteresesRecuperados += interestPaid
+        
+        // 4. Principal
+        const principalPaid = Math.min(remainingPaid, principal)
+        // If the schedule is marked 'paid', we assume principal is fully paid even if math is slightly off due to rounding,
+        // but using paid_amount is safer for partials. 
+        // However, for 'paid' status, paid_amount should >= total due.
+        // Let's stick to the math derived from paid_amount.
+        totalCapitalRecuperado += principalPaid
+      }
+    }
+
+    // 2. Saldo Pendiente: Resta entre Total Prestado - Total Recuperado (Capital)
+    // "El saldo pendiente deberia ser la resta entre el total prestado - el total recuperado"
+    saldoPendiente = totalPrestado - totalCapitalRecuperado
 
     const clientsSet = new Set<string>()
     let mujeres = 0
@@ -86,36 +164,15 @@ export async function GET() {
     }
     const totalClientes = clientsSet.size
 
-    let cuotasTotales = 0
-    let cuotasPagadas = 0
-    let cuotasPendientes = 0
-    let cuotasEnMora = 0
-    let saldoPendiente = 0
-    for (const s of (schedules || [])) {
-      cuotasTotales++
-      const amount = Number((s as any).amount || 0)
-      const adminFees = Number((s as any).admin_fees || 0)
-      const mora = Number((s as any).mora || 0)
-      const paidAmt = Number((s as any).paid_amount || 0)
-      const debt = (amount + adminFees + mora) - paidAmt
-      if (debt > 0.01) saldoPendiente += debt
-      const st = String((s as any).status || '')
-      if (st === 'paid') cuotasPagadas++
-      else {
-        cuotasPendientes++
-        const dueStr = String((s as any).due_date || '')
-        if (dueStr) {
-          const dueDate = parseYMD(dueStr.slice(0, 10))
-          if (todayGT.getTime() > dueDate.getTime()) cuotasEnMora++
-        }
-      }
-    }
-
     const totalPrestamos = (loans || []).length
-    const activos = (loans || []).filter((l: any) => String(l.status) === 'active').length
+    const activos = activeLoansList.length
     const pagados = (loans || []).filter((l: any) => String(l.status) === 'paid').length
-    const ticketPromedio = totalPrestamos > 0 ? totalPrestado / totalPrestamos : 0
-    const recuperacionPct = totalPrestado > 0 ? totalRecuperado / totalPrestado : 0
+    
+    // Recalculate averages based on active portfolio or total? 
+    // Usually Ticket Promedio = Total Prestado / Total Prestamos. 
+    // Since Total Prestado is now Active Only, we should divide by Active Loans count.
+    const ticketPromedio = activos > 0 ? totalPrestado / activos : 0
+    const recuperacionPct = totalPrestado > 0 ? totalCapitalRecuperado / totalPrestado : 0
 
     // Generate Excel (style consistent with other reports)
     const workbook = new ExcelJS.Workbook()
@@ -163,9 +220,11 @@ export async function GET() {
     ws.addRow([])
 
     const resumenRows: Array<[string, number]> = [
-      ['Total prestado (principal)', totalPrestado],
-      ['Total recuperado (pagos aprobados)', totalRecuperado],
-      ['Saldo pendiente (deuda actual)', saldoPendiente],
+      ['Total prestado (principal activo)', totalPrestado],
+      ['Total recuperado (capital activo)', totalCapitalRecuperado],
+      ['Saldo pendiente (capital activo)', saldoPendiente],
+      ['Total intereses (programados activos)', totalInteresesEsperados],
+      ['Intereses recuperados (cobrados activos)', totalInteresesRecuperados],
       ['Total clientes', totalClientes],
       ['Mujeres', mujeres],
       ['Hombres', hombres],
@@ -181,7 +240,7 @@ export async function GET() {
       const [label, value] = resumenRows[i]
       const r = ws.addRow([label, value])
       r.getCell(1).font = { bold: true }
-      const isCurrency = i <= 2
+      const isCurrency = i <= 4
       if (isCurrency) r.getCell(2).numFmt = currencyFmt
       else r.getCell(2).numFmt = '#,##0'
     }
@@ -244,26 +303,30 @@ export async function GET() {
       }
     }
 
-    const chart1 = await createChartImage(
-      'bar',
-      ['Prestado','Recuperado','Pendiente'],
-      [totalPrestado, totalRecuperado, saldoPendiente],
-      'Montos de cartera'
-    )
-    const chart1Arr = new Uint8Array(chart1)
-    const chart1Id = workbook.addImage({ buffer: chart1Arr.buffer, extension: 'png' })
     const topRow = Math.max(6, (resumenHeader.number || 6))
-    ws.addImage(chart1Id, { tl: { col: 8, row: topRow - 1 }, ext: { width: 400, height: 260 } })
+    try {
+      const chart1 = await createChartImage(
+        'bar',
+        ['Prestado','Recuperado (Cap)','Pendiente'],
+        [totalPrestado, totalCapitalRecuperado, saldoPendiente],
+        'Montos de cartera'
+      )
+      const chart1Arr = new Uint8Array(chart1)
+      const chart1Id = workbook.addImage({ buffer: chart1Arr.buffer, extension: 'png' })
+      ws.addImage(chart1Id, { tl: { col: 8, row: topRow - 1 }, ext: { width: 400, height: 260 } })
+    } catch {}
 
-    const chart2 = await createChartImage(
-      'doughnut',
-      ['Mujeres','Hombres'],
-      [mujeres, hombres],
-      'Clientes por género'
-    )
-    const chart2Arr = new Uint8Array(chart2)
-    const chart2Id = workbook.addImage({ buffer: chart2Arr.buffer, extension: 'png' })
-    ws.addImage(chart2Id, { tl: { col: 8, row: topRow + 14 }, ext: { width: 320, height: 240 } })
+    try {
+      const chart2 = await createChartImage(
+        'doughnut',
+        ['Mujeres','Hombres'],
+        [mujeres, hombres],
+        'Clientes por género'
+      )
+      const chart2Arr = new Uint8Array(chart2)
+      const chart2Id = workbook.addImage({ buffer: chart2Arr.buffer, extension: 'png' })
+      ws.addImage(chart2Id, { tl: { col: 8, row: topRow + 14 }, ext: { width: 320, height: 240 } })
+    } catch {}
 
     ws.columns = [
       { width: 40 },
