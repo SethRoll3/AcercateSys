@@ -13,29 +13,69 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     const { data: loan, error: loanError } = await supabase.from("loans").select("*").eq("id", id).single()
     if (loanError || !loan) return NextResponse.json({ error: "Loan not found" }, { status: 404 })
-    if (loan.status === "active") return NextResponse.json({ message: "Loan already active" })
+    if (loan.status === "active") return NextResponse.json({ status: "active", message: "Loan already active" })
 
     const { data: schedule, error: scheduleError } = await supabase.from("payment_schedule").select("id").eq("loan_id", id)
     if (scheduleError) return NextResponse.json({ error: "Failed to verify schedule" }, { status: 500 })
     if (!schedule || schedule.length === 0) return NextResponse.json({ error: "Loan has no payment schedule" }, { status: 409 })
 
-    // Use admin client to bypass RLS and ensure system fields are updated
     const adminSupabase = await createAdminClient()
-    const { data: updated, error: updateError } = await adminSupabase
-      .from("loans")
-      .update({ 
-        status: "active", 
-        updated_at: new Date().toISOString(), 
-        activated_by_admin_id: me.id, 
-        activated_at: new Date().toISOString() 
-      })
-      .eq("id", id)
-      .select("*")
-      .single()
+    const { data: approvalsRaw, error: approvalsError } = await adminSupabase
+      .from("logs")
+      .select("actor_user_id")
+      .eq("entity_name", "loan_activation")
+      .eq("entity_id", id)
 
-    if (updateError) {
-      console.error("Error activating loan:", updateError)
-      return NextResponse.json({ error: "Failed to activate loan" }, { status: 500 })
+    if (approvalsError) {
+      return NextResponse.json({ error: "Failed to verify activation approvals" }, { status: 500 })
+    }
+
+    const approvalsSet = new Set(
+      (approvalsRaw || []).map((r: any) => r.actor_user_id).filter(Boolean)
+    )
+
+    if (approvalsSet.has(me.id)) {
+      return NextResponse.json({
+        status: "pending",
+        message: "Ya confirmaste esta activación",
+        approvals: { count: approvalsSet.size, required: 2, approvedByIds: Array.from(approvalsSet) },
+      }, { status: 409 })
+    }
+
+    await adminSupabase.from("logs").insert({
+      actor_user_id: me.id,
+      action_type: "APPROVE",
+      entity_name: "loan_activation",
+      entity_id: id,
+      action_at: new Date().toISOString(),
+      details: {
+        message: `Confirmó activación del préstamo ${loan.loan_number}`,
+        loan_id: id,
+        loan_number: loan.loan_number,
+      },
+    })
+
+    approvalsSet.add(me.id)
+    let updated: any = loan
+
+    if (approvalsSet.size >= 2) {
+      const { data: updatedRow, error: updateError } = await adminSupabase
+        .from("loans")
+        .update({ 
+          status: "active", 
+          updated_at: new Date().toISOString(), 
+          activated_by_admin_id: me.id, 
+          activated_at: new Date().toISOString() 
+        })
+        .eq("id", id)
+        .select("*")
+        .single()
+
+      if (updateError) {
+        console.error("Error activating loan:", updateError)
+        return NextResponse.json({ error: "Failed to activate loan" }, { status: 500 })
+      }
+      updated = updatedRow
     }
     
     const transformed = {
@@ -52,7 +92,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       createdAt: updated.created_at,
       updatedAt: updated.updated_at,
     }
-    return NextResponse.json(transformed)
+    return NextResponse.json({
+      ...transformed,
+      status: approvalsSet.size >= 2 ? "active" : "pending",
+      approvals: { count: approvalsSet.size, required: 2, approvedByIds: Array.from(approvalsSet) },
+    })
   } catch (e) {
     console.error("Activation error:", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

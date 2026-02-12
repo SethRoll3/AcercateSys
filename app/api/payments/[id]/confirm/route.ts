@@ -84,14 +84,8 @@ export async function PATCH(
     }
 
     // 5. Role-based access control
-    if (userData.role === "asesor") {
-      const clientAdvisorEmail = payment.loan?.client?.advisor?.email;
-      if (clientAdvisorEmail !== userData.email) {
-        return NextResponse.json(
-          { error: "You can only confirm payments for your assigned clients" },
-          { status: 403 }
-        );
-      }
+    if (userData.role !== "admin") {
+      return NextResponse.json({ error: "Solo administradores pueden aprobar o rechazar pagos" }, { status: 403 });
     }
 
     if (payment.loan?.status !== "active") {

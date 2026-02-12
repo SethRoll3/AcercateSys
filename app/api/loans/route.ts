@@ -344,18 +344,28 @@ export async function GET(request: NextRequest) {
 
       // Attach schedule to the loan data
       ;(data as any).schedule = schedule || []
-      const responseData = transformLoan(data)
+      const moraTotal = (Array.isArray((data as any).schedule) ? (data as any).schedule : []).reduce((sum: number, s: any) => {
+        const status = String(s?.status || '')
+        const dueStr = String(s?.due_date || '')
+        const moraVal = Number(s?.mora || 0)
+        if (!dueStr || status === 'paid') return sum
+        const dueDate = new Date(dueStr)
+        if (Number.isNaN(dueDate.getTime())) return sum
+        if (dueDate < new Date()) return sum + moraVal
+        return sum
+      }, 0)
+      const responseData = { ...transformLoan(data), moraTotal }
       return NextResponse.json(responseData, { headers: { 'Cache-Control': 'no-store' } })
     }
 
     // For multiple loans, enrich with schedule aggregates
     if (Array.isArray(data)) {
       const loanIds = (data || []).map((l: any) => l.id).filter(Boolean)
-      let aggregates: Record<string, { total: number; paid: number; hasOverdue: boolean }> = {}
+      let aggregates: Record<string, { total: number; paid: number; hasOverdue: boolean; moraTotal: number }> = {}
       if (loanIds.length) {
         const { data: scheduleRows } = await supabase
           .from('payment_schedule')
-          .select('loan_id, status, due_date')
+          .select('loan_id, status, due_date, mora')
           .in('loan_id', loanIds)
         const byLoan: Record<string, any[]> = {}
         for (const s of (scheduleRows || [])) {
@@ -376,13 +386,20 @@ export async function GET(request: NextRequest) {
           const total = rows.length
           const paid = rows.filter(r => r.status === 'paid').length
           const hasOverdue = rows.some(r => r.status !== 'paid' && parseYMD(String(r.due_date)) < todayDate)
-          aggregates[String(id)] = { total, paid, hasOverdue }
+          const moraTotal = rows.reduce((sum: number, r: any) => {
+            const status = String(r?.status || '')
+            if (status === 'paid') return sum
+            const due = parseYMD(String(r?.due_date || ''))
+            if (due < todayDate) return sum + Number(r?.mora || 0)
+            return sum
+          }, 0)
+          aggregates[String(id)] = { total, paid, hasOverdue, moraTotal }
         }
       }
       const responseData = (data || []).map((loan: any) => {
         const t = transformLoan(loan)
-        const agg = aggregates[String(loan.id)] || { total: 0, paid: 0, hasOverdue: false }
-        return { ...t, progressPaid: agg.paid, progressTotal: agg.total, hasOverdue: agg.hasOverdue }
+        const agg = aggregates[String(loan.id)] || { total: 0, paid: 0, hasOverdue: false, moraTotal: 0 }
+        return { ...t, progressPaid: agg.paid, progressTotal: agg.total, hasOverdue: agg.hasOverdue, moraTotal: agg.moraTotal }
       })
       return NextResponse.json(responseData, { headers: { 'Cache-Control': 'no-store' } })
     }

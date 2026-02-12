@@ -12,7 +12,7 @@ import { CreateLoanDialog } from "@/components/create-loan-dialog"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Users, TrendingUp, FileText, Download, Calculator } from "lucide-react"
+import { Users, TrendingUp, FileText, Download, Calculator, ArrowUpRight, ArrowDownRight, Wallet, AlertTriangle, CheckCircle2, Hourglass } from "lucide-react"
 import { LoanCalculatorModal } from "@/components/loan-calculator-modal"
 const QuetzalIcon = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
@@ -20,6 +20,8 @@ const QuetzalIcon = ({ className }: { className?: string }) => (
   </svg>
 )
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { Badge } from "@/components/ui/badge"
 
 const CACHE_TTL_MS = Number.MAX_SAFE_INTEGER
 const readCache = (key: string) => {
@@ -410,7 +412,15 @@ export default function DashboardPage() {
     return sum + amount
   }, 0)
 
-const formatCurrency = (amount: number) => {
+  const moraLoansList = activeLoansList.filter((loan: any) => Boolean((loan as any).hasOverdue))
+  const alDiaLoansList = activeLoansList.filter((loan: any) => !Boolean((loan as any).hasOverdue))
+  const moraAmountDisplay = moraLoansList.reduce((sum: number, loan: any) => sum + Number((loan as any).moraTotal || 0), 0)
+  const moraPctDisplay = totalActiveCapital > 0 ? (moraAmountDisplay / totalActiveCapital) : 0
+  const pendingPortfolioAmount = alDiaLoansList.reduce((sum: number, loan: any) => sum + Number(loan.amount || 0), 0)
+  const pendingPortfolioCount = alDiaLoansList.length
+  const pendingLoansAmount = displayLoans.filter((loan: any) => loan.status === 'pending').reduce((sum: number, loan: any) => sum + Number(loan.amount || 0), 0)
+
+  const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("es-GT", {
       style: "currency",
       currency: "GTQ",
@@ -418,6 +428,68 @@ const formatCurrency = (amount: number) => {
       maximumFractionDigits: 0,
     }).format(amount)
   }
+
+  const formatPct = (value: number) => {
+    if (!Number.isFinite(value)) return '0.0'
+    return value.toFixed(1)
+  }
+
+  const parseLoanDate = (loan: any) => {
+    const raw = (loan as any)?.createdAt ?? (loan as any)?.created_at
+    if (!raw) return null
+    const d = new Date(raw)
+    return Number.isNaN(d.getTime()) ? null : d
+  }
+
+  const calcTrendPct = (current: number, previous: number) => {
+    if (previous > 0) return ((current - previous) / previous) * 100
+    if (current > 0) return 100
+    return 0
+  }
+
+  const now = new Date()
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+  const startOfPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  const endOfPrevMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999)
+
+  const inRange = (d: Date | null, start: Date, end?: Date) => {
+    if (!d) return false
+    if (end) return d >= start && d <= end
+    return d >= start
+  }
+
+  const kpiLoansBase = (userData.role === 'admin' || userData.role === 'asesor') ? (loans || []) : []
+  const kpiActiveLoans = kpiLoansBase.filter((l: any) => l.status === 'active')
+  const kpiPendingLoans = kpiLoansBase.filter((l: any) => l.status === 'pending')
+  const kpiAlDiaLoans = kpiActiveLoans.filter((l: any) => !Boolean((l as any).hasOverdue))
+  const kpiMoraLoans = kpiActiveLoans.filter((l: any) => Boolean((l as any).hasOverdue))
+  const kpiActiveCapital = kpiActiveLoans.reduce((s: number, l: any) => s + Number(l.amount || 0), 0)
+  const kpiSaldoAlDia = kpiAlDiaLoans.reduce((s: number, l: any) => s + Number(l.amount || 0), 0)
+  const kpiMoraAmount = kpiMoraLoans.reduce((s: number, l: any) => s + Number((l as any).moraTotal || 0), 0)
+  const kpiMoraPct = kpiActiveCapital > 0 ? (kpiMoraAmount / kpiActiveCapital) : 0
+
+  const approvalsThisMonth = kpiLoansBase.filter((l: any) => {
+    const st = String(l.status || '')
+    if (st !== 'active' && st !== 'paid') return false
+    return inRange(parseLoanDate(l), startOfMonth)
+  })
+  const approvalsPrevMonth = kpiLoansBase.filter((l: any) => {
+    const st = String(l.status || '')
+    if (st !== 'active' && st !== 'paid') return false
+    return inRange(parseLoanDate(l), startOfPrevMonth, endOfPrevMonth)
+  })
+  const approvalsThisMonthCount = approvalsThisMonth.length
+  const approvalsPrevMonthCount = approvalsPrevMonth.length
+  const approvalsThisMonthAmount = approvalsThisMonth.reduce((s: number, l: any) => s + Number(l.amount || 0), 0)
+  const approvalsPrevMonthAmount = approvalsPrevMonth.reduce((s: number, l: any) => s + Number(l.amount || 0), 0)
+  const approvalsGrowthPct = calcTrendPct(approvalsThisMonthCount, approvalsPrevMonthCount)
+  const approvalsAmountGrowthPct = calcTrendPct(approvalsThisMonthAmount, approvalsPrevMonthAmount)
+
+  const moraPrevMonthAmount = kpiMoraLoans.filter((l: any) => inRange(parseLoanDate(l), startOfPrevMonth, endOfPrevMonth)).reduce((s: number, l: any) => s + Number((l as any).moraTotal || 0), 0)
+  const moraTrendPct = calcTrendPct(kpiMoraAmount, moraPrevMonthAmount)
+  const approvalsTrendUp = approvalsGrowthPct >= 0
+  const approvalsAmountTrendUp = approvalsAmountGrowthPct >= 0
+  const moraTrendUp = moraTrendPct >= 0
 
   const getProgressColor = (paid: number, total: number) => {
     if (total === 0) return '#e5e7eb';
@@ -551,6 +623,124 @@ const formatCurrency = (amount: number) => {
         )}
       </div>
 
+      {(userData.role === 'admin' || userData.role === 'asesor') && (
+        <div className="mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Card className="border-border/50 bg-card/60 backdrop-blur-sm hover:bg-card/80 transition-all duration-300 hover:-translate-y-0.5">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">Saldo al día</CardTitle>
+                    <Wallet className="h-4 w-4 text-emerald-500" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-foreground">{formatCurrency(kpiSaldoAlDia)}</div>
+                    <div className="text-xs text-muted-foreground mt-1">Capital activo sin mora</div>
+                  </CardContent>
+                </Card>
+              </TooltipTrigger>
+              <TooltipContent>Capital de préstamos activos que están al día</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Card className="border-border/50 bg-card/60 backdrop-blur-sm hover:bg-card/80 transition-all duration-300 hover:-translate-y-0.5">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">Cartera activa</CardTitle>
+                    <TrendingUp className="h-4 w-4 text-primary" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-foreground">{formatCurrency(kpiActiveCapital)}</div>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                      <Badge variant="secondary" className="h-5 px-2 text-[10px]">{kpiActiveLoans.length} préstamos</Badge>
+                      <span>Activos en curso</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TooltipTrigger>
+              <TooltipContent>Total de capital en préstamos activos</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Card className="border-border/50 bg-card/60 backdrop-blur-sm hover:bg-card/80 transition-all duration-300 hover:-translate-y-0.5">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">Mora actual</CardTitle>
+                    <AlertTriangle className="h-4 w-4 text-rose-500" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-foreground">{formatCurrency(kpiMoraAmount)}</div>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                      <Badge variant="destructive" className="h-5 px-2 text-[10px]">{kpiMoraLoans.length} préstamos</Badge>
+                      <span>{formatPct(kpiMoraPct * 100)}% de la cartera</span>
+                    </div>
+                    <div className={`text-[11px] mt-2 flex items-center gap-1 ${moraTrendUp ? 'text-rose-500' : 'text-emerald-500'}`}>
+                      {moraTrendUp ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                      {formatPct(Math.abs(moraTrendPct))}% vs mes anterior
+                    </div>
+                  </CardContent>
+                </Card>
+              </TooltipTrigger>
+              <TooltipContent>Monto total en mora y su porcentaje sobre la cartera activa</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Card className="border-border/50 bg-card/60 backdrop-blur-sm hover:bg-card/80 transition-all duration-300 hover:-translate-y-0.5">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">Aprobados del mes</CardTitle>
+                    <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-foreground">{approvalsThisMonthCount}</div>
+                    <div className="text-xs text-muted-foreground mt-1">{formatCurrency(approvalsThisMonthAmount)} en desembolsos</div>
+                  </CardContent>
+                </Card>
+              </TooltipTrigger>
+              <TooltipContent>Préstamos aprobados y activados en el mes actual</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Card className="border-border/50 bg-card/60 backdrop-blur-sm hover:bg-card/80 transition-all duration-300 hover:-translate-y-0.5">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">Crecimiento aprobaciones</CardTitle>
+                    <Users className="h-4 w-4 text-sky-500" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-foreground">{formatPct(Math.abs(approvalsGrowthPct))}%</div>
+                    <div className={`text-[11px] mt-2 flex items-center gap-1 ${approvalsTrendUp ? 'text-emerald-500' : 'text-rose-500'}`}>
+                      {approvalsTrendUp ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                      {approvalsTrendUp ? 'Sube' : 'Baja'} vs mes anterior
+                    </div>
+                  </CardContent>
+                </Card>
+              </TooltipTrigger>
+              <TooltipContent>Variación del número de préstamos aprobados respecto al mes anterior</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Card className="border-border/50 bg-card/60 backdrop-blur-sm hover:bg-card/80 transition-all duration-300 hover:-translate-y-0.5">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">Crecimiento en monto</CardTitle>
+                    <Wallet className="h-4 w-4 text-violet-500" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-foreground">{formatPct(Math.abs(approvalsAmountGrowthPct))}%</div>
+                    <div className={`text-[11px] mt-2 flex items-center gap-1 ${approvalsAmountTrendUp ? 'text-emerald-500' : 'text-rose-500'}`}>
+                      {approvalsAmountTrendUp ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                      {approvalsAmountTrendUp ? 'Sube' : 'Baja'} vs mes anterior
+                    </div>
+                  </CardContent>
+                </Card>
+              </TooltipTrigger>
+              <TooltipContent>Variación del total desembolsado respecto al mes anterior</TooltipContent>
+            </Tooltip>
+          </div>
+        </div>
+      )}
+
       {/* GRILLA DE CARDS: 2 COLUMNAS EN MÓVIL */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-4">
         {userData.role === 'asesor' || userData.role === 'admin' ? (
@@ -565,42 +755,86 @@ const formatCurrency = (amount: number) => {
                 className="ring-1 ring-transparent hover:ring-primary/20"
               />
             )}
-            <StatsCard
-              title="Activos"
-              value={activeLoans}
-              description={
-                <span>
-                  En curso · Capital: <span className="text-sm sm:text-base font-bold text-foreground ml-1">{formatCurrency(totalActiveCapital)}</span>
-                </span>
-              }
-              icon={TrendingUp}
-              onClick={() => handleAdvisorCardClick('active')}
-              className="ring-1 ring-transparent hover:ring-primary/20"
-            />
-            <StatsCard
-              title="Al día"
-              value={(loans || []).filter((l: any) => l.status === 'active' && !(l as any).hasOverdue).length}
-              description="Sin mora"
-              icon={TrendingUp}
-              onClick={() => handleAdvisorCardClick('aldia')}
-              className="ring-1 ring-transparent hover:ring-primary/20"
-            />
-            <StatsCard
-              title="Con mora"
-              value={(loans || []).filter((l: any) => (l as any).hasOverdue).length}
-              description="Vencidos"
-              icon={TrendingUp}
-              onClick={() => handleAdvisorCardClick('mora')}
-              className="ring-1 ring-transparent hover:ring-primary/20"
-            />
-            <StatsCard
-              title="Pendientes de autorizar"
-              value={pendingLoans}
-              description="Sin autorizar"
-              icon={TrendingUp}
-              onClick={() => handleAdvisorCardClick('pending')}
-              className="ring-1 ring-transparent hover:ring-primary/20"
-            />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div>
+                  <StatsCard
+                    title="Activos"
+                    value={formatCurrency(totalActiveCapital)}
+                    description={
+                      <span className="flex items-center gap-2">
+                        <Badge variant="secondary" className="h-5 px-2 text-[10px]">{activeLoans} préstamos</Badge>
+                        <span>En curso</span>
+                      </span>
+                    }
+                    icon={Wallet}
+                    onClick={() => handleAdvisorCardClick('active')}
+                    className="ring-1 ring-transparent hover:ring-primary/20"
+                  />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>Capital total en préstamos activos</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div>
+                  <StatsCard
+                    title="Al día"
+                    value={formatCurrency(pendingPortfolioAmount)}
+                    description={
+                      <span className="flex items-center gap-2">
+                        <Badge variant="secondary" className="h-5 px-2 text-[10px]">{pendingPortfolioCount}</Badge>
+                        <span>Sin mora</span>
+                      </span>
+                    }
+                    icon={CheckCircle2}
+                    onClick={() => handleAdvisorCardClick('aldia')}
+                    className="ring-1 ring-transparent hover:ring-primary/20"
+                  />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>Préstamos activos al día, sin cuotas vencidas</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div>
+                  <StatsCard
+                    title="Mora actual"
+                    value={formatCurrency(moraAmountDisplay)}
+                    description={
+                      <span className="flex items-center gap-2">
+                        <Badge variant="destructive" className="h-5 px-2 text-[10px]">{moraLoansList.length}</Badge>
+                        <span>{formatPct(moraPctDisplay * 100)}% cartera</span>
+                      </span>
+                    }
+                    icon={AlertTriangle}
+                    onClick={() => handleAdvisorCardClick('mora')}
+                    className="ring-1 ring-transparent hover:ring-primary/20"
+                  />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>Monto y proporción de cartera con mora</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div>
+                  <StatsCard
+                    title="Pendientes de autorizar"
+                    value={formatCurrency(pendingLoansAmount)}
+                    description={
+                      <span className="flex items-center gap-2">
+                        <Badge variant="outline" className="h-5 px-2 text-[10px]">{pendingLoans}</Badge>
+                        <span>Sin autorizar</span>
+                      </span>
+                    }
+                    icon={Hourglass}
+                    onClick={() => handleAdvisorCardClick('pending')}
+                    className="ring-1 ring-transparent hover:ring-primary/20"
+                  />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>Préstamos creados que aún no están autorizados</TooltipContent>
+            </Tooltip>
             {userData.role === 'asesor' && (
               <StatsCard
                 title="Pagados"

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { LoadingSpinner } from "@/components/loading-spinner"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
@@ -136,7 +136,7 @@ export default function LogsPage() {
     }
   }, [dateMode, selectedYear, selectedMonth, selectedWeek, selectedDay, rangeStart, rangeEnd])
 
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     try {
       const res = await fetch("/api/users")
       if (!res.ok) return
@@ -144,9 +144,9 @@ export default function LogsPage() {
       const rows = Array.isArray(data) ? data : []
       setUsers(rows.map((r: any) => ({ id: r.id, email: r.email, full_name: r.full_name ?? null })))
     } catch {}
-  }
+  }, [])
 
-  const loadData = async (p = page) => {
+  const loadData = useCallback(async (p = page) => {
     setLoading(true)
     try {
       const params = new URLSearchParams()
@@ -173,6 +173,88 @@ export default function LogsPage() {
     } catch {} finally {
       setLoading(false)
     }
+  }, [page, pageSize, order, actorId, actionType, entityName, calculatedDateRange])
+
+  const normalizeDetails = (details: any) => {
+    if (details === null || details === undefined) return null
+    if (typeof details === "string") {
+      const raw = details.trim()
+      if (!raw) return null
+      try {
+        return JSON.parse(raw)
+      } catch {
+        return details
+      }
+    }
+    return details
+  }
+
+  const truncateText = (value: string, max = 160) => {
+    if (value.length <= max) return value
+    return `${value.slice(0, max - 1)}…`
+  }
+
+  const formatDetailValue = (value: any, key?: string) => {
+    if (value === null || value === undefined || value === "") return "—"
+    if (Array.isArray(value)) {
+      if (key === "schedule_ids") return `${value.length} cuotas`
+      const joined = value.map((v) => String(v)).join(", ")
+      return truncateText(joined, 120)
+    }
+    if (typeof value === "object") {
+      return truncateText(JSON.stringify(value), 120)
+    }
+    return truncateText(String(value), 120)
+  }
+
+  const renderDetails = (row: LogRow) => {
+    const details = normalizeDetails(row.details)
+    if (!details) return "—"
+    if (Array.isArray(details)) {
+      return truncateText(details.map((v) => String(v)).join(", "))
+    }
+    if (typeof details === "string") {
+      return truncateText(details)
+    }
+
+    const message = details.message ? String(details.message) : ""
+    const entity = String(row.entity_name || "").toLowerCase()
+    const keysByEntity: Record<string, string[]> = {
+      notification: ["notification_type", "client_id", "loan_id", "schedule_id"],
+      notifications: ["notification_type", "client_id", "loan_id", "schedule_id"],
+      payment_schedule: ["loan_number", "count", "schedule_id", "schedule_ids", "loan_id"],
+      payments: ["receipt_number", "amount", "payment_id", "loan_id", "schedule_id"],
+      payment: ["receipt_number", "amount", "payment_id", "loan_id", "schedule_id"],
+    }
+
+    const labelMap: Record<string, string> = {
+      notification_type: "Tipo",
+      client_id: "Cliente",
+      loan_id: "Préstamo",
+      schedule_id: "Cuota",
+      schedule_ids: "Cuotas",
+      loan_number: "Préstamo",
+      count: "Cuotas",
+      receipt_number: "Recibo",
+      amount: "Monto",
+      payment_id: "Pago",
+    }
+
+    const rawKeys = keysByEntity[entity] || Object.keys(details).filter((k) => k !== "message")
+    const keys = Array.from(new Set(rawKeys)).slice(0, 4)
+
+    return (
+      <div className="space-y-1">
+        {message && <div className="text-foreground text-xs font-medium">{truncateText(message, 180)}</div>}
+        {keys.map((key) => (
+          <div key={key} className="text-muted-foreground text-xs">
+            <span className="text-foreground/80 font-medium">{labelMap[key] || key}:</span>{" "}
+            {formatDetailValue(details[key], key)}
+          </div>
+        ))}
+        {!message && keys.length === 0 && <div className="text-muted-foreground text-xs">—</div>}
+      </div>
+    )
   }
 
   const resetFilters = () => {
@@ -194,7 +276,7 @@ export default function LogsPage() {
     if (!isAdmin()) return
     loadUsers()
     loadData(1)
-  }, [isLoading])
+  }, [isLoading, isAdmin, loadUsers, loadData])
 
   if (isLoading || loading) {
     return (
@@ -393,9 +475,7 @@ export default function LogsPage() {
                 row.action_type === 'ACCESS' ? 'ACCESO' : 
                 row.action_type
               
-              const detailsMessage = row.details?.message 
-                ? row.details.message 
-                : JSON.stringify(row.details)
+              const detailsMessage = renderDetails(row)
 
               return (
                 <TableRow key={row.id}>
@@ -408,7 +488,7 @@ export default function LogsPage() {
                     'bg-gray-100 text-gray-800'
                   }`}>{actionLabel}</span></TableCell>
                   <TableCell>{row.entity_name}</TableCell>
-                  <TableCell className="max-w-[300px] text-xs text-muted-foreground break-words">
+                  <TableCell className="max-w-[420px] align-top break-words">
                     {detailsMessage}
                   </TableCell>
                 </TableRow>
