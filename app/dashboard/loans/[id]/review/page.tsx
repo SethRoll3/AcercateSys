@@ -299,7 +299,7 @@ export default function ReviewPage() {
             </p>
           </div>
         </div>
-        {(role === 'admin' || role === 'asesor') && payment && payment.confirmation_status === 'pending_confirmation' && (
+        {role === 'admin' && payment && payment.confirmation_status === 'pending_confirmation' && (
            <div className="flex gap-2 flex-shrink-0">
             <Button onClick={handleApprove} disabled={!!submittingAction}>
               {submittingAction === 'approving' ? 'Aprobando...' : 'Aprobar'}

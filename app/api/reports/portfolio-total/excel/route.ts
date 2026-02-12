@@ -146,6 +146,8 @@ export async function GET() {
     // "El saldo pendiente deberia ser la resta entre el total prestado - el total recuperado"
     saldoPendiente = totalPrestado - totalCapitalRecuperado
 
+    const totalInteresesPorPagar = Math.max(0, totalInteresesEsperados - totalInteresesRecuperados)
+
     const clientsSet = new Set<string>()
     let mujeres = 0
     let hombres = 0
@@ -223,7 +225,7 @@ export async function GET() {
       ['Total prestado (principal activo)', totalPrestado],
       ['Total recuperado (capital activo)', totalCapitalRecuperado],
       ['Saldo pendiente (capital activo)', saldoPendiente],
-      ['Total intereses (programados activos)', totalInteresesEsperados],
+      ['iintereses por pagar', totalInteresesPorPagar],
       ['Intereses recuperados (cobrados activos)', totalInteresesRecuperados],
       ['Total clientes', totalClientes],
       ['Mujeres', mujeres],

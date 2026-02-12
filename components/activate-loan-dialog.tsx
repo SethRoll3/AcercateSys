@@ -21,6 +21,7 @@ export function ActivateLoanDialog({ loan, onActivated, trigger }: ActivateLoanD
   const [schedule, setSchedule] = useState<PaymentSchedule[]>([])
   const [clientDetails, setClientDetails] = useState<any>(null)
   const [isFetchingDetails, setIsFetchingDetails] = useState(false)
+  const [activationApprovals, setActivationApprovals] = useState<any>({ count: 0, required: 2, approvedBy: [] })
   const [c1, setC1] = useState(false)
   const [c2, setC2] = useState(false)
   const [c3, setC3] = useState(false)
@@ -40,6 +41,7 @@ export function ActivateLoanDialog({ loan, onActivated, trigger }: ActivateLoanD
           const data = await res.json()
           setSchedule(data.schedule || [])
           setClientDetails(data.loan?.client || null)
+          setActivationApprovals(data.activationApprovals || { count: 0, required: 2, approvedBy: [] })
         }
       } catch {}
       finally {
@@ -53,7 +55,21 @@ export function ActivateLoanDialog({ loan, onActivated, trigger }: ActivateLoanD
       setIsLoading(true)
       const res = await fetch(`/api/loans/${loan.id}/activate`, { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include" as any })
       if (res.ok) {
-        toast.success("Préstamo activado")
+        const data = await res.json().catch(() => null)
+        if (data?.approvals) {
+          setActivationApprovals({
+            count: data.approvals.count ?? 0,
+            required: data.approvals.required ?? 2,
+            approvedBy: data.approvals.approvedBy || activationApprovals.approvedBy || [],
+            currentUserId: activationApprovals.currentUserId,
+          })
+        }
+        if (data?.status === "active") {
+          toast.success("Préstamo activado")
+        } else {
+          const remaining = Math.max(2 - Number(data?.approvals?.count || 0), 0)
+          toast.success(remaining > 0 ? `Confirmación registrada. Falta ${remaining}` : "Confirmación registrada")
+        }
         setOpen(false)
         onActivated()
       } else {
@@ -97,6 +113,13 @@ export function ActivateLoanDialog({ loan, onActivated, trigger }: ActivateLoanD
   }
 
   const totalBase = useMemo(() => schedule.reduce((a, b) => a + Number(b.principal || 0) + Number(b.interest || 0) + Number(b.admin_fees ?? 20), 0), [schedule])
+  const approvalsCount = activationApprovals?.count ?? 0
+  const approvalsRequired = activationApprovals?.required ?? 2
+  const approvalsRemaining = Math.max(approvalsRequired - approvalsCount, 0)
+  const hasApproved = activationApprovals?.currentUserId
+    ? (activationApprovals.approvedBy || []).some((u: any) => u?.id === activationApprovals.currentUserId)
+    : false
+  const isAlreadyActive = loan.status === "active"
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -208,6 +231,28 @@ export function ActivateLoanDialog({ loan, onActivated, trigger }: ActivateLoanD
 
           {step === 3 && (
             <div className="space-y-3">
+              <div className="rounded-lg border bg-card p-3 text-xs">
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span>Confirmaciones de activación</span>
+                  <span>{approvalsCount} de {approvalsRequired}</span>
+                </div>
+                <div className="mt-2 space-y-1">
+                  {(activationApprovals?.approvedBy || []).length > 0 ? (
+                    (activationApprovals.approvedBy || []).map((u: any) => (
+                      <div key={u.id} className="text-foreground">
+                        {u.full_name || u.email || u.id}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-muted-foreground">Sin confirmaciones</div>
+                  )}
+                </div>
+                {approvalsRemaining > 0 && (
+                  <div className="text-muted-foreground mt-2">
+                    Falta {approvalsRemaining} confirmación{approvalsRemaining === 1 ? "" : "es"}
+                  </div>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 <Checkbox id="c1" checked={c1} onCheckedChange={(v: any) => setC1(Boolean(v))} />
                 <Label htmlFor="c1">Confirmo datos del cliente</Label>
@@ -232,7 +277,9 @@ export function ActivateLoanDialog({ loan, onActivated, trigger }: ActivateLoanD
               {step < 3 ? (
                 <Button onClick={() => setStep((step as number + 1) as any)} disabled={isFetchingDetails}>Siguiente</Button>
               ) : (
-                <Button onClick={activate} disabled={!isReady || isLoading}>{isLoading ? "Activando..." : "Activar Préstamo"}</Button>
+                <Button onClick={activate} disabled={!isReady || isLoading || hasApproved || isAlreadyActive}>
+                  {isAlreadyActive ? "Préstamo Activo" : hasApproved ? "Confirmación registrada" : isLoading ? "Activando..." : "Activar Préstamo"}
+                </Button>
               )}
             </div>
           </div>

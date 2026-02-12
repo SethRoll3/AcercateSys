@@ -130,7 +130,7 @@ export async function GET(
     if (debug) console.log("[DEBUG] Loan found successfully:", loan.id)
 
     // Fetch payment schedule and history in parallel
-    const [scheduleResponse, paymentsResponse] = await Promise.all([
+    const [scheduleResponse, paymentsResponse, approvalsResponse] = await Promise.all([
       serviceSupabase
         .from("payment_schedule")
         .select("*")
@@ -142,10 +142,18 @@ export async function GET(
         .eq("loan_id", id)
         
         .order("created_at", { ascending: false })
+      ,
+      serviceSupabase
+        .from("logs")
+        .select("actor_user_id, action_at")
+        .eq("entity_name", "loan_activation")
+        .eq("entity_id", id)
+        .order("action_at", { ascending: true })
     ]);
 
     const { data: schedule, error: scheduleError } = scheduleResponse;
     const { data: payments, error: paymentsError } = paymentsResponse;
+    const { data: approvalsRows } = approvalsResponse;
 
     if (scheduleError && debug) {
       console.error("[v0] Error fetching schedule:", scheduleError)
@@ -153,6 +161,19 @@ export async function GET(
 
     if (paymentsError && debug) {
       console.error("[v0] Error fetching payments:", paymentsError)
+    }
+
+    const approvedByIds = Array.from(
+      new Set((approvalsRows || []).map((r: any) => r.actor_user_id).filter(Boolean))
+    )
+    let approvedBy: Array<{ id: string; email?: string | null; full_name?: string | null }> = []
+    if (approvedByIds.length > 0) {
+      const { data: approvalUsers } = await serviceSupabase
+        .from("users")
+        .select("id, email, full_name")
+        .in("id", approvedByIds)
+      const userMap = new Map((approvalUsers || []).map((u: any) => [u.id, u]))
+      approvedBy = approvedByIds.map((uid) => userMap.get(uid) || { id: uid })
     }
 
     // Collect schedule IDs from payments to fetch boletas
@@ -291,7 +312,13 @@ export async function GET(
       schedule: schedule || [],
       payments: transformedPayments,
       totalPaid,
-      remainingBalance
+      remainingBalance,
+      activationApprovals: {
+        count: approvedByIds.length,
+        required: 2,
+        approvedBy,
+        currentUserId: userData.id,
+      },
     })
   } catch (error) {
     console.error("[v0] Error in loan details API:", error)

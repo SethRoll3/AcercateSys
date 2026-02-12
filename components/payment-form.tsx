@@ -105,12 +105,17 @@ export function PaymentForm({ loanId, scheduleItem, onPaymentSuccess, onCancel, 
     ? Math.round(Number(fullAmount || 0) * 100) / 100
     : Math.round((editingMode ? totalAmount : (existingBoletas.length > 0 ? totalAmount : amount)) * 100) / 100
   
-  const isAmountMatch = Math.abs(totalAllBoletasAmount - validationAmount) < 0.01
-  const isPartialPayment = totalAllBoletasAmount > 0 && totalAllBoletasAmount < validationAmount
-  const isOverpayment = totalAllBoletasAmount > validationAmount
+  const difference = Math.round((totalAllBoletasAmount - validationAmount) * 100) / 100
+  const absDifference = Math.abs(difference)
+  const tolerance = 1
+  const isAmountMatch = absDifference < 0.01
+  const isWithinTolerance = absDifference <= tolerance
+  const isPartialPayment = totalAllBoletasAmount > 0 && difference < -0.01
+  const isOverpayment = difference > 0.01
+  const isPartialOutsideTolerance = isPartialPayment && !isWithinTolerance
   console.log("totalAllBoletasAmount:", totalAllBoletasAmount)
   console.log("validationAmount:", validationAmount)
-  const canSubmit = boletas.length > 0 && !isOverpayment && (!fullMode || isAmountMatch)
+  const canSubmit = boletas.length > 0 && isWithinTolerance
 
   const handleBoletasChange = (newBoletas: Boleta[], newTotalAmount: number) => {
     setBoletas(newBoletas)
@@ -121,7 +126,7 @@ export function PaymentForm({ loanId, scheduleItem, onPaymentSuccess, onCancel, 
     e.preventDefault()
     
     if (!canSubmit) {
-      toast.error("Debe agregar al menos una boleta y el monto no puede exceder la cuota")
+      toast.error("El monto debe estar dentro de ±Q1.00 respecto a la cuota")
       return
     }
 
@@ -131,14 +136,20 @@ export function PaymentForm({ loanId, scheduleItem, onPaymentSuccess, onCancel, 
       // Primero registrar el pago
       // Enviar has_been_edited solo si se trata de una edición (pending_confirmation o rechazado)
       const isEditing = scheduleItem.status === 'pending_confirmation' || scheduleItem.status === 'rejected'
+      const differenceNote = absDifference >= 0.01 && absDifference <= tolerance
+        ? `Diferencia de pago: ${difference > 0 ? '+' : '-'}Q${absDifference.toFixed(2)} (boletas Q${totalAllBoletasAmount.toFixed(2)} vs cuota Q${validationAmount.toFixed(2)})`
+        : null
+      const mergedNotes = differenceNote
+        ? `${differenceNote}${formData.notes ? ' ' + formData.notes : ''}`.trim()
+        : (formData.notes || null)
       const paymentPayload: any = {
         paymentScheduleId,
         amount: totalAllBoletasAmount,
         paymentDate: formData.paymentDate,
         paymentMethod: formData.paymentMethod,
         notes: fullMode
-          ? `[FULL_PAYMENT] ${JSON.stringify({ scheduleIds: fullScheduleIds, total: validationAmount })}${formData.notes ? ' ' + formData.notes : ''}`
-          : (formData.notes || null),
+          ? `[FULL_PAYMENT] ${JSON.stringify({ scheduleIds: fullScheduleIds, total: validationAmount })}${mergedNotes ? ' ' + mergedNotes : ''}`
+          : mergedNotes,
       }
       if (isEditing) {
         paymentPayload.has_been_edited = true
@@ -327,7 +338,16 @@ export function PaymentForm({ loanId, scheduleItem, onPaymentSuccess, onCancel, 
                 </Alert>
               )}
 
-              {isPartialPayment && (
+              {isWithinTolerance && !isAmountMatch && (
+                <Alert className="bg-blue-50 border-blue-200 mb-4">
+                  <AlertTriangle className="h-4 w-4 text-blue-600" />
+                  <AlertDescription className="text-blue-800">
+                    <strong>Diferencia aceptada:</strong> Se registrará una observación por Q {absDifference.toFixed(2)}.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {!isWithinTolerance && isPartialPayment && (
                 <Alert className="bg-orange-50 border-orange-200 mb-4">
                   <AlertTriangle className="h-4 w-4 text-orange-600" />
                   <AlertDescription className="text-orange-800">
@@ -337,7 +357,7 @@ export function PaymentForm({ loanId, scheduleItem, onPaymentSuccess, onCancel, 
                 </Alert>
               )}
 
-              {isOverpayment && (
+              {!isWithinTolerance && isOverpayment && (
                 <Alert className="bg-red-50 border-red-200 mb-4">
                   <AlertTriangle className="h-4 w-4 text-red-600" />
                   <AlertDescription className="text-red-800">
@@ -346,6 +366,11 @@ export function PaymentForm({ loanId, scheduleItem, onPaymentSuccess, onCancel, 
                   </AlertDescription>
                 </Alert>
               )}
+            </div>
+          )}
+          {boletas.length > 0 && (
+            <div className="text-xs text-muted-foreground mb-4">
+              Diferencia: {difference > 0 ? '+' : difference < 0 ? '-' : ''}Q {absDifference.toFixed(2)}
             </div>
           )}
 
@@ -357,12 +382,12 @@ export function PaymentForm({ loanId, scheduleItem, onPaymentSuccess, onCancel, 
             <Button 
               onClick={handleSubmit} 
               disabled={isLoading || !canSubmit}
-              className={isPartialPayment ? "bg-orange-600 hover:bg-orange-700" : ""}
+              className={isPartialOutsideTolerance ? "bg-orange-600 hover:bg-orange-700" : ""}
             >
               {isLoading ? (initialPayment ? "Guardando..." : "Registrando...") : 
                initialPayment ? "Guardar Cambios" : (
                  isAmountMatch ? (fullMode ? "Registrar Pago Completo" : "Registrar Pago Completo") :
-                 isPartialPayment ? "Registrar Pago Parcial" :
+                 isPartialOutsideTolerance ? "Registrar Pago Parcial" :
                  "Registrar Pago"
                )}
             </Button>
