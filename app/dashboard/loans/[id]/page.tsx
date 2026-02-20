@@ -137,6 +137,7 @@ export default function LoanDetailPage() {
         if (detailsRes.ok) {
           const data = await detailsRes.json()
           setLoan(data.loan)
+          console.log(loan)
           setSchedule(data.schedule)
           setPayments(data.payments)
           setTotalPaid(data.totalPaid)

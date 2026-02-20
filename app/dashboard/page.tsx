@@ -467,6 +467,11 @@ export default function DashboardPage() {
   const kpiSaldoAlDia = kpiAlDiaLoans.reduce((s: number, l: any) => s + Number(l.amount || 0), 0)
   const kpiMoraAmount = kpiMoraLoans.reduce((s: number, l: any) => s + Number((l as any).moraTotal || 0), 0)
   const kpiMoraPct = kpiActiveCapital > 0 ? (kpiMoraAmount / kpiActiveCapital) : 0
+  const kpiRecoveredAmount = kpiActiveLoans.reduce((s: number, l: any) => {
+    const k = String(l?.id || '')
+    return s + Number(paymentsAgg[k] || 0)
+  }, 0)
+  const kpiRecoveredPct = kpiActiveCapital > 0 ? (kpiRecoveredAmount / kpiActiveCapital) : 0
 
   const approvalsThisMonth = kpiLoansBase.filter((l: any) => {
     const st = String(l.status || '')
@@ -635,11 +640,11 @@ export default function DashboardPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold text-foreground">{formatCurrency(kpiSaldoAlDia)}</div>
-                    <div className="text-xs text-muted-foreground mt-1">Capital activo sin mora</div>
+                    <div className="text-xs text-muted-foreground mt-1">Activos al día (sin mora)</div>
                   </CardContent>
                 </Card>
               </TooltipTrigger>
-              <TooltipContent>Capital de préstamos activos que están al día</TooltipContent>
+              <TooltipContent>Solo activos sin mora (excluye los que están en mora)</TooltipContent>
             </Tooltip>
 
             <Tooltip>
@@ -653,12 +658,15 @@ export default function DashboardPage() {
                     <div className="text-2xl font-bold text-foreground">{formatCurrency(kpiActiveCapital)}</div>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
                       <Badge variant="secondary" className="h-5 px-2 text-[10px]">{kpiActiveLoans.length} préstamos</Badge>
-                      <span>Activos en curso</span>
+                      <span>Activos totales (con y sin mora)</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Recuperado: {formatCurrency(kpiRecoveredAmount)} · {formatPct(kpiRecoveredPct * 100)}%
                     </div>
                   </CardContent>
                 </Card>
               </TooltipTrigger>
-              <TooltipContent>Total de capital en préstamos activos</TooltipContent>
+              <TooltipContent>Total activos, incluye los que están al día y en mora</TooltipContent>
             </Tooltip>
 
             <Tooltip>
@@ -760,13 +768,8 @@ export default function DashboardPage() {
                 <div>
                   <StatsCard
                     title="Activos"
-                    value={formatCurrency(totalActiveCapital)}
-                    description={
-                      <span className="flex items-center gap-2">
-                        <Badge variant="secondary" className="h-5 px-2 text-[10px]">{activeLoans} préstamos</Badge>
-                        <span>En curso</span>
-                      </span>
-                    }
+                    value={activeLoans}
+                    description="Préstamos en curso"
                     icon={Wallet}
                     onClick={() => handleAdvisorCardClick('active')}
                     className="ring-1 ring-transparent hover:ring-primary/20"
@@ -780,13 +783,8 @@ export default function DashboardPage() {
                 <div>
                   <StatsCard
                     title="Al día"
-                    value={formatCurrency(pendingPortfolioAmount)}
-                    description={
-                      <span className="flex items-center gap-2">
-                        <Badge variant="secondary" className="h-5 px-2 text-[10px]">{pendingPortfolioCount}</Badge>
-                        <span>Sin mora</span>
-                      </span>
-                    }
+                    value={pendingPortfolioCount}
+                    description="Préstamos al día"
                     icon={CheckCircle2}
                     onClick={() => handleAdvisorCardClick('aldia')}
                     className="ring-1 ring-transparent hover:ring-primary/20"
@@ -800,13 +798,8 @@ export default function DashboardPage() {
                 <div>
                   <StatsCard
                     title="Mora actual"
-                    value={formatCurrency(moraAmountDisplay)}
-                    description={
-                      <span className="flex items-center gap-2">
-                        <Badge variant="destructive" className="h-5 px-2 text-[10px]">{moraLoansList.length}</Badge>
-                        <span>{formatPct(moraPctDisplay * 100)}% cartera</span>
-                      </span>
-                    }
+                    value={moraLoansList.length}
+                    description="Préstamos en mora"
                     icon={AlertTriangle}
                     onClick={() => handleAdvisorCardClick('mora')}
                     className="ring-1 ring-transparent hover:ring-primary/20"
@@ -821,12 +814,7 @@ export default function DashboardPage() {
                   <StatsCard
                     title="Pendientes de autorizar"
                     value={formatCurrency(pendingLoansAmount)}
-                    description={
-                      <span className="flex items-center gap-2">
-                        <Badge variant="outline" className="h-5 px-2 text-[10px]">{pendingLoans}</Badge>
-                        <span>Sin autorizar</span>
-                      </span>
-                    }
+                    description={`${pendingLoans} préstamos sin autorizar`}
                     icon={Hourglass}
                     onClick={() => handleAdvisorCardClick('pending')}
                     className="ring-1 ring-transparent hover:ring-primary/20"
