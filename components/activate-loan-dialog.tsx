@@ -74,7 +74,12 @@ export function ActivateLoanDialog({ loan, onActivated, trigger }: ActivateLoanD
         onActivated()
       } else {
         const txt = await res.text()
-        toast.error(txt || "No se pudo activar el préstamo")
+        let msg = txt
+        try {
+          const parsed = JSON.parse(txt)
+          msg = parsed?.error || txt
+        } catch {}
+        toast.error(msg || "No se pudo activar el préstamo")
       }
     } catch (e: any) {
       toast.error(e?.message || "Error al activar el préstamo")
