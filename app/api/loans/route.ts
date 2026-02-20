@@ -437,6 +437,7 @@ export async function PATCH(request: NextRequest) {
     const updates: any = { ...body }
     delete updates.frequency
     delete updates.startDate
+    delete updates.interestRate
 
     // Recalcular monto por cuota
     const totalAmountNum = updates.amount != null ? parseFloat(updates.amount) : undefined

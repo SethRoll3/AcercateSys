@@ -280,6 +280,7 @@ export async function GET(
       id: loan.id,
       clientId: loan.client_id,
       loanNumber: loan.loan_number,
+      paymentFrequency: (loan as any).payment_frequency,
       amount: Number(loan.amount),
       interestRate: Number(loan.interest_rate),
       termMonths: loan.term_months,

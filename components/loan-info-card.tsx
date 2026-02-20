@@ -143,7 +143,14 @@ export function LoanInfoCard({ loan, totalPaid, remainingBalance, schedule }: Lo
               <Clock className="h-4 w-4" />
               <span>Plazo</span>
             </div>
-            <p className="text-xl font-bold text-foreground">{loan.termMonths} meses</p>
+            {loan.paymentFrequency === 'quincenal' ? (
+              <>
+                <p className="text-xl font-bold text-foreground">{loan.termMonths} quincenas</p>
+                <p className="text-xs text-muted-foreground">{Math.ceil(loan.termMonths / 2)} meses</p>
+              </>
+            ) : (
+              <p className="text-xl font-bold text-foreground">{loan.termMonths} meses</p>
+            )}
           </div>
 
           <div className="space-y-1">
