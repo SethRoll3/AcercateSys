@@ -2,9 +2,26 @@ import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { stableJsonStringify, buildCacheHeaders, latestUpdatedAt, isNotModified, computeETag, formatHttpDate } from '@/lib/http-cache'
 
-// Function to generate a unique loan number
 async function generateSequentialLoanNumber() {
   const admin = await createAdminClient()
+  const { data } = await admin
+    .from('loans')
+    .select('loan_number, created_at')
+    .order('created_at', { ascending: false })
+    .limit(200)
+  let maxNumeric = 0
+  if (data && data.length) {
+    for (const row of data) {
+      const value = String(row.loan_number || '')
+      if (/^\d+$/.test(value)) {
+        const asNum = Number(value)
+        if (Number.isFinite(asNum) && asNum > maxNumeric) {
+          maxNumeric = asNum
+        }
+      }
+    }
+  }
+  if (maxNumeric > 0) return String(maxNumeric + 1)
   const { count } = await admin.from('loans').select('id', { count: 'exact', head: true })
   const next = (count ?? 0) + 1
   return String(next)
@@ -33,8 +50,6 @@ export async function POST(request: Request) {
     }
   }
 
-  const loanNumber = await generateSequentialLoanNumber()
-
   const totalAmountNum = parseFloat(loanData.amount)
   const termNum = parseInt(loanData.termMonths, 10)
   const rateMonthly = loanData.interestRate ? parseFloat(loanData.interestRate) : 0
@@ -46,26 +61,42 @@ export async function POST(request: Request) {
     ? capitalMes + (interesMes / 2) + aporteAdmin
     : capitalMes + interesMes + aporteAdmin
 
-  const { data: newLoan, error } = await supabase.from('loans').insert([
-    {
-      client_id: loanData.clientId,
-      loan_number: loanNumber,
-      payment_frequency: frequency,
-      amount: totalAmountNum,
-      interest_rate: rateMonthly,
-      term_months: termNum,
-      start_date: loanData.startDate,
-      end_date: loanData.endDate,
-      monthly_payment: Math.round(installmentTotal * 100) / 100,
-      status: loanData.status,
-    },
-  ]).select().single()
-
-  if (error) {
-    console.error('Error creating loan:', error)
+  let newLoan: any = null
+  let lastError: any = null
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const loanNumber = await generateSequentialLoanNumber()
+    const { data, error } = await supabase.from('loans').insert([
+      {
+        client_id: loanData.clientId,
+        loan_number: loanNumber,
+        payment_frequency: frequency,
+        amount: totalAmountNum,
+        interest_rate: rateMonthly,
+        term_months: termNum,
+        start_date: loanData.startDate,
+        end_date: loanData.endDate,
+        monthly_payment: Math.round(installmentTotal * 100) / 100,
+        status: loanData.status,
+      },
+    ]).select().single()
+    if (!error) {
+      newLoan = data
+      break
+    }
+    lastError = error
+    if (error.code !== '23505') {
+      console.error('Error creating loan:', error)
+      return NextResponse.json(
+        { message: error.message, code: error.code, details: error.details, hint: error.hint },
+        { status: 500 },
+      )
+    }
+  }
+  if (!newLoan) {
+    console.error('Error creating loan:', lastError)
     return NextResponse.json(
-      { message: error.message, code: error.code, details: error.details, hint: error.hint },
-      { status: 500 },
+      { message: lastError?.message || 'Duplicate loan number', code: lastError?.code, details: lastError?.details, hint: lastError?.hint },
+      { status: 409 },
     )
   }
 
