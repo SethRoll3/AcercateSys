@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server"
 import { createClient, createAdminClient } from "@/lib/supabase/server"
+import { translateStatus } from "@/lib/utils"
 import puppeteer from "puppeteer-core"
 import chromium from "@sparticuz/chromium"
 import path from "path"
 import { promises as fs } from "fs"
+
+export const maxDuration = 60; // This function can run for a maximum of 60 seconds
+export const dynamic = 'force-dynamic';
 
 export async function GET(_req: Request, { params }: { params: Promise<{ groupId: string }> }) {
   let browser: any = null

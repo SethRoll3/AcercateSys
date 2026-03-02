@@ -8,6 +8,8 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   
+  serverExternalPackages: ['puppeteer-core', '@sparticuz/chromium'],
+
   // AQUÍ EL CAMBIO IMPORTANTE: Activamos la optimización
   images: {
     // Quitamos unoptimized: true
