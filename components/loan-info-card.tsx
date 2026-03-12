@@ -22,9 +22,10 @@ interface LoanInfoCardProps {
 
 export function LoanInfoCard({ loan, totalPaid, remainingBalance, schedule }: LoanInfoCardProps) {
   const [isExportOpen, setIsExportOpen] = useState(false)
-  
-  // Extract admin fees from the first schedule payment (assuming constant across schedule or at least representative)
+
   const adminFees = schedule.length > 0 ? (schedule[0].admin_fees || 0) : 0
+  const firstScheduleAmount = schedule.length > 0 ? Number(schedule[0].amount || 0) : 0
+  const displayedMonthlyPayment = firstScheduleAmount > 0 ? firstScheduleAmount : Number(loan.monthlyPayment || 0)
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("es-GT", {
@@ -158,7 +159,7 @@ export function LoanInfoCard({ loan, totalPaid, remainingBalance, schedule }: Lo
               <Calendar className="h-4 w-4" />
               <span>Cuota Mensual</span>
             </div>
-            <p className="text-xl font-bold text-foreground">{formatCurrency(loan.monthlyPayment)}</p>
+            <p className="text-xl font-bold text-foreground">{formatCurrency(displayedMonthlyPayment)}</p>
           </div>
         </div>
 
