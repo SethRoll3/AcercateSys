@@ -152,6 +152,9 @@ importers:
       pg:
         specifier: ^8.16.3
         version: 8.16.3
+      puppeteer:
+        specifier: ^24.35.0
+        version: 24.37.5(typescript@5.9.3)
       puppeteer-core:
         specifier: ^24.35.0
         version: 24.35.0
@@ -225,9 +228,6 @@ importers:
       postcss:
         specifier: ^8.5
         version: 8.5.6
-      puppeteer:
-        specifier: ^24.35.0
-        version: 24.37.5(typescript@5.9.3)
       tailwindcss:
         specifier: ^4.1.9
         version: 4.1.17
