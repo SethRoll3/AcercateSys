@@ -24,8 +24,15 @@ export function LoanInfoCard({ loan, totalPaid, remainingBalance, schedule }: Lo
   const [isExportOpen, setIsExportOpen] = useState(false)
 
   const adminFees = schedule.length > 0 ? (schedule[0].admin_fees || 0) : 0
+  const firstScheduleBase = schedule.length > 0
+    ? Number(schedule[0].principal || 0) + Number(schedule[0].interest || 0) + Number(schedule[0].admin_fees ?? 20)
+    : 0
+    //console.log(firstScheduleBase)
   const firstScheduleAmount = schedule.length > 0 ? Number(schedule[0].amount || 0) : 0
-  const displayedMonthlyPayment = firstScheduleAmount > 0 ? firstScheduleAmount : Number(loan.monthlyPayment || 0)
+  const displayedMonthlyPayment = firstScheduleBase > 0
+    ? firstScheduleBase
+    : (firstScheduleAmount > 0 ? firstScheduleAmount : Number(loan.monthlyPayment || 0))
+    console.log(displayedMonthlyPayment)
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("es-GT", {
