@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { User, AuthChangeEvent, Session } from '@supabase/supabase-js'
 
 // Definición de roles del sistema
-export type UserRole = 'admin' | 'cliente' | 'asesor'
+export type UserRole = 'admin' | 'cliente' | 'asesor' | 'contador'
 
 // Definición de permisos por rol
 export interface RolePermissions {
@@ -26,20 +26,20 @@ export interface RolePermissions {
   canCreateLoans: boolean
   canEditLoans: boolean
   canDeleteLoans: boolean
-  
+
   // Gestión de pagos
   canViewAllPayments: boolean
   canProcessPayments: boolean
   canViewPaymentReports: boolean
-  
+
   // Gestión de usuarios
   canManageUsers: boolean
   canAssignAdvisors: boolean
-  
+
   // Reportes y análisis
   canViewFinancialReports: boolean
   canExportData: boolean
-  
+
   // Configuración del sistema
   canAccessSystemSettings: boolean
 }
@@ -112,6 +112,28 @@ const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canExportData: false,
     canAccessSystemSettings: false,
   },
+  contador: {
+    canViewAllClients: true,
+    canCreateClients: false,
+    canEditClients: false,
+    canDeleteClients: false,
+    canViewGroups: true,
+    canCreateGroups: false,
+    canEditGroups: false,
+    canDeleteGroups: false,
+    canViewAllLoans: true,
+    canCreateLoans: false,
+    canEditLoans: false,
+    canDeleteLoans: false,
+    canViewAllPayments: true,
+    canProcessPayments: false,
+    canViewPaymentReports: true,
+    canManageUsers: false,
+    canAssignAdvisors: false,
+    canViewFinancialReports: true,
+    canExportData: true,
+    canAccessSystemSettings: false,
+  },
 }
 
 // Información extendida del usuario con rol
@@ -126,14 +148,14 @@ interface RoleContextType {
   role: UserRole | null
   permissions: RolePermissions | null
   isLoading: boolean
-  
+
   // Funciones de utilidad
   hasPermission: (permission: keyof RolePermissions) => boolean
   isAdmin: () => boolean
   isAdvisor: () => boolean
   isClient: () => boolean
   canAccessRoute: (route: string) => boolean
-  
+
   // Funciones para obtener datos filtrados por rol
   getAccessibleClientIds: () => string[]
   refreshUserRole: () => Promise<void>
@@ -143,12 +165,12 @@ export const RoleContext = createContext<RoleContextType | undefined>(undefined)
 
 // Rutas protegidas por rol
 const PROTECTED_ROUTES: Record<string, UserRole[]> = {
-  '/dashboard': ['admin', 'asesor', 'cliente'],
-  '/dashboard/clients': ['admin', 'asesor'],
-  '/dashboard/loans': ['admin', 'asesor'],
-  '/dashboard/payments': ['admin', 'asesor'],
-  '/dashboard/reports': ['admin', 'asesor'],
-  '/dashboard/reporteria': ['admin', 'asesor'],
+  '/dashboard': ['admin', 'asesor', 'cliente', 'contador'],
+  '/dashboard/clients': ['admin', 'asesor', 'contador'],
+  '/dashboard/loans': ['admin', 'asesor', 'contador'],
+  '/dashboard/payments': ['admin', 'asesor', 'contador'],
+  '/dashboard/reports': ['admin', 'asesor', 'contador'],
+  '/dashboard/reporteria': ['admin', 'asesor', 'contador'],
   '/dashboard/users': ['admin'],
   '/dashboard/logs': ['admin'],
   '/dashboard/settings': ['admin', 'asesor', 'cliente'],
@@ -230,7 +252,7 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
             setUser(userWithRole)
             return
           }
-        } catch {}
+        } catch { }
       }
       const res = await fetch('/api/auth/user', { credentials: 'include' as any })
       if (res.ok) {
@@ -306,9 +328,9 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
 
   const getAccessibleClientIds = (): string[] => {
     if (!user) return []
-    
-    if (user.role === 'admin') {
-      // Admin puede ver todos los clientes (se manejará en las consultas)
+
+    if (user.role === 'admin' || user.role === 'contador') {
+      // Admin y Contador pueden ver todos los clientes (se manejará en las consultas)
       return []
     } else if (user.role === 'asesor') {
       // Asesor solo puede ver sus clientes asignados
@@ -317,7 +339,7 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
       // Cliente solo puede ver su propio perfil
       return [user.id]
     }
-    
+
     return []
   }
 
@@ -362,9 +384,9 @@ export function usePermission(permission: keyof RolePermissions) {
 // Hook para proteger componentes por rol
 export function useRoleGuard(allowedRoles: UserRole[]) {
   const { role, isLoading } = useRole()
-  
+
   const hasAccess = role ? allowedRoles.includes(role) : false
-  
+
   return {
     hasAccess,
     isLoading,
@@ -381,7 +403,7 @@ interface RoleGuardProps {
 
 export function RoleGuard({ allowedRoles, children, fallback }: RoleGuardProps) {
   const { hasAccess, isLoading } = useRoleGuard(allowedRoles)
-  
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -389,7 +411,7 @@ export function RoleGuard({ allowedRoles, children, fallback }: RoleGuardProps) 
       </div>
     )
   }
-  
+
   if (!hasAccess) {
     return fallback || (
       <div className="flex items-center justify-center min-h-screen">
@@ -400,6 +422,6 @@ export function RoleGuard({ allowedRoles, children, fallback }: RoleGuardProps) 
       </div>
     )
   }
-  
+
   return <>{children}</>
 }

@@ -32,13 +32,13 @@ export default function UsersPage() {
       if (!obj || typeof obj.ts !== 'number') return null
       if (Date.now() - obj.ts > CACHE_TTL_MS) return null
       return obj.data ?? null
-    } catch {}
+    } catch { }
     return null
   }
   const writeCache = (key: string, data: any) => {
     try {
       sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }))
-    } catch {}
+    } catch { }
   }
 
   const K = {
@@ -94,6 +94,8 @@ export default function UsersPage() {
         return 'Asesor'
       case 'cliente':
         return 'Cliente'
+      case 'contador':
+        return 'Contador'
       default:
         return role
     }
