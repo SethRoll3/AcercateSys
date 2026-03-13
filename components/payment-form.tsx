@@ -28,8 +28,8 @@ interface PaymentFormProps {
 }
 
 export function PaymentForm({ loanId, scheduleItem, onPaymentSuccess, onCancel, initialPayment, initialBoletas = [], fullMode = false, fullAmount, fullScheduleIds = [] }: PaymentFormProps) {
-  // Calcular el monto total de la cuota
-  const totalAmount = Number(scheduleItem.amount) + (scheduleItem.mora || 0)
+  const baseAmount = Number(scheduleItem.principal || 0) + Number(scheduleItem.interest || 0) + Number(scheduleItem.admin_fees ?? 20)
+  const totalAmount = baseAmount + Number(scheduleItem.mora || 0)
   // Calcular el monto ya pagado
   const paidAmount = scheduleItem.paid_amount || scheduleItem.paidAmount || 0
   // Calcular el monto restante por pagar

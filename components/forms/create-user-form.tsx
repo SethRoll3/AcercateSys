@@ -25,7 +25,7 @@ export function CreateUserForm({ onUserCreated }: CreateUserFormProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     if (!formData.email || !formData.full_name || !formData.password || !formData.role) {
       toast.error("Todos los campos son obligatorios")
       return
@@ -93,7 +93,7 @@ export function CreateUserForm({ onUserCreated }: CreateUserFormProps) {
               required
             />
           </div>
-          
+
           <div className="space-y-2">
             <Label htmlFor="full_name">Nombre Completo *</Label>
             <Input
@@ -128,6 +128,7 @@ export function CreateUserForm({ onUserCreated }: CreateUserFormProps) {
                 <SelectItem value="admin">Administrador</SelectItem>
                 <SelectItem value="asesor">Asesor</SelectItem>
                 <SelectItem value="cliente">Cliente</SelectItem>
+                <SelectItem value="contador">Contador</SelectItem>
               </SelectContent>
             </Select>
           </div>

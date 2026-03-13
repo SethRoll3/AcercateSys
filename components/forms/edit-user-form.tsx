@@ -45,7 +45,7 @@ export function EditUserForm({ user, isOpen, onClose, onUserUpdated }: EditUserF
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     if (!formData.email || !formData.full_name || !formData.role) {
       toast.error("Email, nombre completo y rol son obligatorios")
       return
@@ -109,7 +109,7 @@ export function EditUserForm({ user, isOpen, onClose, onUserUpdated }: EditUserF
               required
             />
           </div>
-          
+
           <div className="space-y-2">
             <Label htmlFor="full_name">Nombre Completo *</Label>
             <Input
@@ -146,6 +146,7 @@ export function EditUserForm({ user, isOpen, onClose, onUserUpdated }: EditUserF
                 <SelectItem value="admin">Administrador</SelectItem>
                 <SelectItem value="asesor">Asesor</SelectItem>
                 <SelectItem value="cliente">Cliente</SelectItem>
+                <SelectItem value="contador">Contador</SelectItem>
               </SelectContent>
             </Select>
           </div>

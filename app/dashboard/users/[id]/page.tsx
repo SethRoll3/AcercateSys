@@ -123,6 +123,7 @@ export default function UserDetailPage() {
       case 'admin': return 'Administrador'
       case 'asesor': return 'Asesor'
       case 'cliente': return 'Cliente'
+      case 'contador': return 'Contador'
       default: return role
     }
   }
@@ -183,7 +184,7 @@ export default function UserDetailPage() {
               <div className="text-lg font-semibold">{user.full_name}</div>
             </div>
           </div>
-          
+
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-sm">
               <Mail className="h-4 w-4 text-muted-foreground" />
