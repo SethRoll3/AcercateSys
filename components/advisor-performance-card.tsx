@@ -5,7 +5,17 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, Tooltip } from 'recharts'
-import { ArrowUpRight, ArrowDownRight, Users, Wallet, AlertTriangle, CheckCircle2 } from "lucide-react"
+import { ArrowUpRight, ArrowDownRight, Users, Wallet, AlertTriangle, CheckCircle2, BadgeDollarSign } from "lucide-react"
+
+interface CommissionData {
+  total: number
+  onTime: number
+  late1to3: number
+  late3to5: number
+  lateOver5: number
+  paymentCount: number
+  breakdown: { label: string; amount: number; pct: string; color: string }[]
+}
 
 interface AdvisorStats {
   totalPortfolio: number
@@ -17,6 +27,7 @@ interface AdvisorStats {
   clientsCount: number
   portfolioHealth: { name: string; value: number; color: string }[]
   recoveryProgress: number
+  commission?: CommissionData
 }
 
 interface AdvisorPerformanceCardProps {
@@ -34,6 +45,14 @@ const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat("es-GT", {
     style: "currency",
     currency: "GTQ",
+    maximumFractionDigits: 2,
+  }).format(amount)
+}
+
+const formatCurrencyShort = (amount: number) => {
+  return new Intl.NumberFormat("es-GT", {
+    style: "currency",
+    currency: "GTQ",
     maximumFractionDigits: 0,
   }).format(amount)
 }
@@ -45,6 +64,8 @@ export function AdvisorPerformanceCard({ advisor, stats, onViewDetails }: Adviso
     .join("")
     .substring(0, 2)
     .toUpperCase()
+
+  const commission = stats.commission
 
   return (
     <Card className="overflow-hidden border-border/50 bg-card/50 backdrop-blur-sm hover:bg-card/80 transition-all duration-300 group">
@@ -76,7 +97,7 @@ export function AdvisorPerformanceCard({ advisor, stats, onViewDetails }: Adviso
             Cartera Total Gestionada
           </div>
           <div className="text-3xl font-bold text-primary tracking-tight">
-            {formatCurrency(stats.totalPortfolio)}
+            {formatCurrencyShort(stats.totalPortfolio)}
           </div>
           <div className="flex items-center gap-2 text-xs">
             <span className="text-emerald-500 font-medium flex items-center">
@@ -85,7 +106,7 @@ export function AdvisorPerformanceCard({ advisor, stats, onViewDetails }: Adviso
             </span>
             <span className="text-muted-foreground">·</span>
             <span className="text-muted-foreground">
-              {formatCurrency(stats.outstandingBalance)} pendiente
+              {formatCurrencyShort(stats.outstandingBalance)} pendiente
             </span>
           </div>
         </div>
@@ -107,9 +128,59 @@ export function AdvisorPerformanceCard({ advisor, stats, onViewDetails }: Adviso
               <AlertTriangle className="h-3 w-3 text-red-500" />
             </div>
             <div className="text-xl font-bold text-red-500">{stats.moraLoansCount}</div>
-            <div className="text-[10px] text-muted-foreground">{formatCurrency(stats.moraAmount)}</div>
+            <div className="text-[10px] text-muted-foreground">{formatCurrencyShort(stats.moraAmount)}</div>
           </div>
         </div>
+
+        {/* Commission Section */}
+        {commission && (
+          <div className="bg-background/40 rounded-lg p-3 border border-border/50 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <BadgeDollarSign className="h-4 w-4 text-emerald-500" />
+                <span className="text-xs font-semibold uppercase text-muted-foreground">Comisión por puntualidad</span>
+              </div>
+              <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                {commission.paymentCount} pagos
+              </Badge>
+            </div>
+            <div className="text-2xl font-bold text-emerald-500">
+              {formatCurrency(commission.total)}
+            </div>
+            
+            {/* Stacked bar */}
+            {commission.total > 0 && (
+              <div className="h-3 w-full rounded-full overflow-hidden flex bg-secondary">
+                {commission.breakdown.filter(b => b.amount > 0).map((segment, idx) => {
+                  const widthPct = commission.total > 0 ? (segment.amount / commission.total) * 100 : 0
+                  return (
+                    <div
+                      key={idx}
+                      className="h-full transition-all duration-500"
+                      style={{ width: `${widthPct}%`, backgroundColor: segment.color }}
+                      title={`${segment.label}: ${formatCurrency(segment.amount)}`}
+                    />
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Breakdown list */}
+            <div className="space-y-1.5">
+              {commission.breakdown.map((item, idx) => (
+                <div key={idx} className="flex items-center justify-between text-[11px]">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                    <span className="text-muted-foreground">{item.label}</span>
+                  </div>
+                  <span className={`font-medium ${item.amount > 0 ? 'text-foreground' : 'text-muted-foreground/50'}`}>
+                    {formatCurrency(item.amount)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Charts Section */}
         <div className="grid grid-cols-2 gap-4 pt-2">
@@ -159,7 +230,7 @@ export function AdvisorPerformanceCard({ advisor, stats, onViewDetails }: Adviso
           <div className="flex flex-col justify-center space-y-2">
             <div className="flex justify-between text-[10px] text-muted-foreground">
               <span>Recuperado</span>
-              <span>{formatCurrency(stats.recoveredAmount)}</span>
+              <span>{formatCurrencyShort(stats.recoveredAmount)}</span>
             </div>
             <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
               <div 

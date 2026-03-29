@@ -77,6 +77,7 @@ export default function DashboardPage() {
   const [groupsTabVisited, setGroupsTabVisited] = useState(false)
   const [advisors, setAdvisors] = useState<any[]>([])
   const [advisorClientsView, setAdvisorClientsView] = useState<{ id: string, name: string, email: string } | null>(null)
+  const [advisorCommissions, setAdvisorCommissions] = useState<Record<string, any>>({})
   const [calcOpen, setCalcOpen] = useState(false)
   
   // REFERENCIA PARA EL SCROLL 
@@ -173,6 +174,10 @@ export default function DashboardPage() {
         promises.push(fetchWithTimeout('/api/advisors', { timeoutMs: 12000 }).then(r => r.ok ? r.json() : null))
         keys.push('advisors')
       }
+      if (role === 'admin') {
+        promises.push(fetchWithTimeout('/api/advisors/commissions', { timeoutMs: 12000 }).then(r => r.ok ? r.json() : null))
+        keys.push('commissions')
+      }
       const results = await Promise.all(promises)
       results.forEach((data, index) => {
         const key = keys[index]
@@ -234,6 +239,11 @@ export default function DashboardPage() {
           if (data) {
             setAdvisors(data)
             writeCache(K.advisors, data)
+          }
+        }
+        if (key === 'commissions') {
+          if (data) {
+            setAdvisorCommissions(data)
           }
         }
       })
@@ -1262,6 +1272,7 @@ export default function DashboardPage() {
                                     
                                     const recoveryProgress = totalRepayable > 0 ? (recoveredAmount / totalRepayable) * 100 : 0
                                     
+                                    const advisorCommission = advisorCommissions[advisor.id] || null
                                     const stats = {
                                       totalPortfolio,
                                       recoveredAmount,
@@ -1271,7 +1282,8 @@ export default function DashboardPage() {
                                       moraAmount,
                                       clientsCount: advisor.clients.length,
                                       portfolioHealth,
-                                      recoveryProgress
+                                      recoveryProgress,
+                                      commission: advisorCommission,
                                     }
                                     
                                     return (
