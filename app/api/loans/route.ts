@@ -392,11 +392,11 @@ export async function GET(request: NextRequest) {
     // For multiple loans, enrich with schedule aggregates
     if (Array.isArray(data)) {
       const loanIds = (data || []).map((l: any) => l.id).filter(Boolean)
-      let aggregates: Record<string, { total: number; paid: number; hasOverdue: boolean; moraTotal: number }> = {}
+      let aggregates: Record<string, { total: number; paid: number; hasOverdue: boolean; moraTotal: number; overdueDebt: number }> = {}
       if (loanIds.length) {
         const { data: scheduleRows } = await supabase
           .from('payment_schedule')
-          .select('loan_id, status, due_date, mora')
+          .select('loan_id, status, due_date, mora, amount')
           .in('loan_id', loanIds)
         const byLoan: Record<string, any[]> = {}
         for (const s of (scheduleRows || [])) {
@@ -424,13 +424,20 @@ export async function GET(request: NextRequest) {
             if (due < todayDate) return sum + Number(r?.mora || 0)
             return sum
           }, 0)
-          aggregates[String(id)] = { total, paid, hasOverdue, moraTotal }
+          const overdueDebt = rows.reduce((sum: number, r: any) => {
+            const status = String(r?.status || '')
+            if (status === 'paid') return sum
+            const due = parseYMD(String(r?.due_date || ''))
+            if (due < todayDate) return sum + Number(r?.amount || 0)
+            return sum
+          }, 0)
+          aggregates[String(id)] = { total, paid, hasOverdue, moraTotal, overdueDebt }
         }
       }
       const responseData = (data || []).map((loan: any) => {
         const t = transformLoan(loan)
-        const agg = aggregates[String(loan.id)] || { total: 0, paid: 0, hasOverdue: false, moraTotal: 0 }
-        return { ...t, progressPaid: agg.paid, progressTotal: agg.total, hasOverdue: agg.hasOverdue, moraTotal: agg.moraTotal }
+        const agg = aggregates[String(loan.id)] || { total: 0, paid: 0, hasOverdue: false, moraTotal: 0, overdueDebt: 0 }
+        return { ...t, progressPaid: agg.paid, progressTotal: agg.total, hasOverdue: agg.hasOverdue, moraTotal: agg.moraTotal, overdueDebt: agg.overdueDebt }
       })
       return NextResponse.json(responseData, { headers: { 'Cache-Control': 'no-store' } })
     }

@@ -1259,7 +1259,7 @@ export default function DashboardPage() {
                                     
                                     const activeLoansCount = advisorLoans.filter((l: any) => l.status === 'active').length
                                     const moraLoansCount = advisorLoans.filter((l: any) => Boolean((l as any).hasOverdue)).length
-                                    const moraAmount = advisorLoans.filter((l: any) => Boolean((l as any).hasOverdue)).reduce((sum: number, l: any) => sum + Number(l.amount || 0), 0)
+                                    const moraAmount = advisorLoans.filter((l: any) => Boolean((l as any).hasOverdue)).reduce((sum: number, l: any) => sum + Number((l as any).overdueDebt || 0), 0)
                                     
                                     const paidLoansCount = advisorLoans.filter((l: any) => l.status === 'paid').length
                                     const totalLoansCount = advisorLoans.length
@@ -1272,7 +1272,16 @@ export default function DashboardPage() {
                                     
                                     const recoveryProgress = totalRepayable > 0 ? (recoveredAmount / totalRepayable) * 100 : 0
                                     
-                                    const advisorCommission = advisorCommissions[advisor.id] || null
+                                    const defaultCommission = {
+                                      total: 0, onTime: 0, late1to3: 0, late3to5: 0, lateOver5: 0, paymentCount: 0,
+                                      breakdown: [
+                                        { label: 'Puntual (50%)', amount: 0, pct: '0%', color: '#22c55e' },
+                                        { label: '1-3 días (20%)', amount: 0, pct: '0%', color: '#facc15' },
+                                        { label: '3-5 días (5%)', amount: 0, pct: '0%', color: '#f97316' },
+                                        { label: '+5 días (0%)', amount: 0, pct: '0%', color: '#ef4444' },
+                                      ]
+                                    }
+                                    const advisorCommission = advisorCommissions[advisor.id] || defaultCommission
                                     const stats = {
                                       totalPortfolio,
                                       recoveredAmount,

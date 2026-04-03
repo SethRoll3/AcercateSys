@@ -48,7 +48,6 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Solo admin puede ver las comisiones de todos los asesores
     const { data: me } = await supabase
       .from('users')
       .select('role')
@@ -61,89 +60,73 @@ export async function GET() {
 
     const admin = await createAdminClient()
 
-    // 1. Obtener todos los pagos CONFIRMADOS con sus datos de schedule y loan
-    const { data: payments, error: paymentsError } = await admin
+    // ─── 1. Obtener TODAS las cuotas PAGADAS del payment_schedule ───
+    // Esta es la fuente de verdad (la misma que usa el dashboard para "cuotas confirmadas")
+    const { data: paidSchedules, error: schedError } = await admin
+      .from('payment_schedule')
+      .select('id, loan_id, due_date, interest, status, paid_amount')
+      .eq('status', 'paid')
+
+    if (schedError) {
+      console.error('[commissions] Error fetching payment_schedule:', schedError)
+      return NextResponse.json({ error: 'Failed to fetch schedules' }, { status: 500 })
+    }
+
+    console.log(`[commissions] Paid schedules (cuotas pagadas): ${(paidSchedules || []).length}`)
+
+    // ─── 2. Obtener TODOS los pagos para buscar la fecha real de pago ───
+    const { data: allPayments } = await admin
       .from('payments')
-      .select(`
-        id,
-        payment_date,
-        confirmation_status,
-        loan_id,
-        schedule_id,
-        amount
-      `)
-      .in('confirmation_status', ['confirmado', 'aprobado'])
+      .select('id, payment_date, schedule_id, loan_id')
 
-    if (paymentsError) {
-      console.error('Error fetching payments for commissions:', paymentsError)
-      return NextResponse.json({ error: 'Failed to fetch payments' }, { status: 500 })
-    }
+    // Mapa: schedule_id → payment_date (más reciente)
+    const schedulePaymentDateMap: Record<string, string> = {}
+    // Mapa alternativo: loan_id → payment_dates[] (para cuotas sin schedule_id directo)
+    const loanPaymentDatesMap: Record<string, string[]> = {}
 
-    if (!payments || payments.length === 0) {
-      return NextResponse.json({})
-    }
-
-    // 2. Obtener los schedules correspondientes (para due_date e interest)
-    const scheduleIds = Array.from(new Set((payments || []).map(p => p.schedule_id).filter(Boolean)))
-    let schedulesMap: Record<string, { due_date: string; interest: number }> = {}
-
-    if (scheduleIds.length > 0) {
-      // Supabase tiene un límite en los IN queries, hacemos chunks de 500
-      const chunks: string[][] = []
-      for (let i = 0; i < scheduleIds.length; i += 500) {
-        chunks.push(scheduleIds.slice(i, i + 500) as string[])
-      }
-      for (const chunk of chunks) {
-        const { data: schedules } = await admin
-          .from('payment_schedule')
-          .select('id, due_date, interest')
-          .in('id', chunk)
-
-        for (const s of (schedules || [])) {
-          schedulesMap[String(s.id)] = {
-            due_date: String(s.due_date || ''),
-            interest: Number(s.interest || 0),
-          }
+    for (const p of (allPayments || [])) {
+      if (p.schedule_id && p.payment_date) {
+        const existing = schedulePaymentDateMap[String(p.schedule_id)]
+        // Si ya existe, tomar la más reciente
+        if (!existing || String(p.payment_date) > existing) {
+          schedulePaymentDateMap[String(p.schedule_id)] = String(p.payment_date)
         }
       }
+      if (p.loan_id && p.payment_date) {
+        const lid = String(p.loan_id)
+        if (!loanPaymentDatesMap[lid]) loanPaymentDatesMap[lid] = []
+        loanPaymentDatesMap[lid].push(String(p.payment_date))
+      }
     }
 
-    // 3. Obtener loans → client_id mapping
-    const loanIds = Array.from(new Set((payments || []).map(p => String(p.loan_id)).filter(Boolean)))
-    let loanClientMap: Record<string, string> = {} // loan_id → client_id
+    // ─── 3. Obtener loans → client_id ───
+    const loanIds = Array.from(new Set((paidSchedules || []).map(s => String(s.loan_id)).filter(Boolean)))
+    const loanClientMap: Record<string, string> = {}
 
     if (loanIds.length > 0) {
-      const chunks: string[][] = []
       for (let i = 0; i < loanIds.length; i += 500) {
-        chunks.push(loanIds.slice(i, i + 500))
-      }
-      for (const chunk of chunks) {
+        const chunk = loanIds.slice(i, i + 500)
         const { data: loans } = await admin
           .from('loans')
           .select('id, client_id')
           .in('id', chunk)
-
         for (const l of (loans || [])) {
           loanClientMap[String(l.id)] = String(l.client_id || '')
         }
       }
     }
 
-    // 4. Obtener clients → advisor_id mapping
+    // ─── 4. Obtener clients → advisor_id ───
     const clientIds = Array.from(new Set(Object.values(loanClientMap).filter(Boolean)))
-    let clientAdvisorMap: Record<string, string> = {} // client_id → advisor_id
+    const clientAdvisorMap: Record<string, string> = {}
 
     if (clientIds.length > 0) {
-      const chunks: string[][] = []
       for (let i = 0; i < clientIds.length; i += 500) {
-        chunks.push(clientIds.slice(i, i + 500))
-      }
-      for (const chunk of chunks) {
+        const chunk = clientIds.slice(i, i + 500)
         const { data: clients } = await admin
           .from('clients')
           .select('id, advisor_id')
           .in('id', chunk)
-
         for (const c of (clients || [])) {
           if (c.advisor_id) {
             clientAdvisorMap[String(c.id)] = String(c.advisor_id)
@@ -152,28 +135,53 @@ export async function GET() {
       }
     }
 
-    // 5. Calcular comisiones por asesor
+    // ─── 5. Calcular comisiones por asesor ───
     const commissions: Record<string, { total: number; onTime: number; late1to3: number; late3to5: number; lateOver5: number; paymentCount: number }> = {}
 
-    for (const payment of (payments || [])) {
-      const scheduleId = String(payment.schedule_id || '')
-      const loanId = String(payment.loan_id || '')
-      const schedule = schedulesMap[scheduleId]
+    let processed = 0
+    let usedFallbackDate = 0
 
-      if (!schedule || !schedule.due_date || !payment.payment_date) continue
+    for (const sched of (paidSchedules || [])) {
+      const schedId = String(sched.id)
+      const loanId = String(sched.loan_id || '')
+      const dueDate = String(sched.due_date || '')
+      const interest = Number(sched.interest || 0)
 
+      if (!dueDate || !loanId) continue
+
+      // Encontrar advisor
       const clientId = loanClientMap[loanId]
       if (!clientId) continue
-
       const advisorId = clientAdvisorMap[clientId]
       if (!advisorId) continue
 
-      const { rate, bucket } = getCommissionRate(
-        String(payment.payment_date),
-        schedule.due_date
-      )
+      // Buscar fecha de pago:
+      // 1ro: desde pagos vinculados a este schedule
+      // 2do: desde cualquier pago del mismo loan (tomar el más cercano a due_date)
+      // 3ro: fallback = due_date (asumir puntual)
+      let paymentDate = schedulePaymentDateMap[schedId]
 
-      const commissionAmount = Math.round(schedule.interest * rate * 100) / 100
+      if (!paymentDate) {
+        // Buscar en pagos del mismo loan, tomar la fecha más cercana al due_date
+        const loanDates = loanPaymentDatesMap[loanId] || []
+        if (loanDates.length > 0) {
+          // Ordenar por cercanía al due_date
+          const dueDateMs = parseYMD(dueDate).getTime()
+          loanDates.sort((a, b) => {
+            return Math.abs(parseYMD(a).getTime() - dueDateMs) - Math.abs(parseYMD(b).getTime() - dueDateMs)
+          })
+          paymentDate = loanDates[0]
+        }
+      }
+
+      if (!paymentDate) {
+        // Fallback: usar la misma due_date (se cuenta como puntual)
+        paymentDate = dueDate
+        usedFallbackDate++
+      }
+
+      const { rate, bucket } = getCommissionRate(paymentDate, dueDate)
+      const commissionAmount = Math.round(interest * rate * 100) / 100
 
       if (!commissions[advisorId]) {
         commissions[advisorId] = { total: 0, onTime: 0, late1to3: 0, late3to5: 0, lateOver5: 0, paymentCount: 0 }
@@ -182,40 +190,70 @@ export async function GET() {
       commissions[advisorId].total += commissionAmount
       commissions[advisorId][bucket] += commissionAmount
       commissions[advisorId].paymentCount++
+      processed++
     }
 
-    // 6. Redondear y construir breakdown para cada asesor
+    console.log(`[commissions] Processed: ${processed}, Fallback dates used: ${usedFallbackDate}`)
+
+    // ─── 6. Construir resultado ───
     const result: Record<string, AdvisorCommission> = {}
 
-    for (const [advisorId, data] of Object.entries(commissions)) {
-      const round = (n: number) => Math.round(n * 100) / 100
-      const total = round(data.total)
-      const onTime = round(data.onTime)
-      const late1to3 = round(data.late1to3)
-      const late3to5 = round(data.late3to5)
-      const lateOver5 = round(data.lateOver5)
+    // Incluir todos los advisor IDs conocidos
+    const allAdvisorIds = new Set([
+      ...Object.values(clientAdvisorMap),
+      ...Object.keys(commissions),
+    ])
 
-      result[advisorId] = {
-        total,
-        onTime,
-        late1to3,
-        late3to5,
-        lateOver5,
-        paymentCount: data.paymentCount,
-        breakdown: [
-          { label: 'Puntual (50%)', amount: onTime, pct: total > 0 ? `${Math.round((onTime / total) * 100)}%` : '0%', color: '#22c55e' },
-          { label: '1-3 días (20%)', amount: late1to3, pct: total > 0 ? `${Math.round((late1to3 / total) * 100)}%` : '0%', color: '#facc15' },
-          { label: '3-5 días (5%)', amount: late3to5, pct: total > 0 ? `${Math.round((late3to5 / total) * 100)}%` : '0%', color: '#f97316' },
-          { label: '+5 días (0%)', amount: lateOver5, pct: '0%', color: '#ef4444' },
-        ],
+    for (const advisorId of allAdvisorIds) {
+      const data = commissions[advisorId]
+      if (data) {
+        const round = (n: number) => Math.round(n * 100) / 100
+        const total = round(data.total)
+        const onTime = round(data.onTime)
+        const late1to3 = round(data.late1to3)
+        const late3to5 = round(data.late3to5)
+        const lateOver5 = round(data.lateOver5)
+
+        result[advisorId] = {
+          total,
+          onTime,
+          late1to3,
+          late3to5,
+          lateOver5,
+          paymentCount: data.paymentCount,
+          breakdown: [
+            { label: 'Puntual (50%)', amount: onTime, pct: total > 0 ? `${Math.round((onTime / total) * 100)}%` : '0%', color: '#22c55e' },
+            { label: '1-3 días (20%)', amount: late1to3, pct: total > 0 ? `${Math.round((late1to3 / total) * 100)}%` : '0%', color: '#facc15' },
+            { label: '3-5 días (5%)', amount: late3to5, pct: total > 0 ? `${Math.round((late3to5 / total) * 100)}%` : '0%', color: '#f97316' },
+            { label: '+5 días (0%)', amount: lateOver5, pct: '0%', color: '#ef4444' },
+          ],
+        }
+      } else {
+        result[advisorId] = buildEmptyCommission()
       }
     }
+
+    console.log(`[commissions] Result for ${Object.keys(result).length} advisors:`,
+      Object.entries(result).map(([id, c]) => `${id}: Q${c.total} (${c.paymentCount} pagos)`).join(', ')
+    )
 
     return NextResponse.json(result, {
       headers: { 'Cache-Control': 'private, no-store' },
     })
   } catch (error) {
-    console.error('Error computing advisor commissions:', error)
+    console.error('[commissions] Error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+function buildEmptyCommission(): AdvisorCommission {
+  return {
+    total: 0, onTime: 0, late1to3: 0, late3to5: 0, lateOver5: 0, paymentCount: 0,
+    breakdown: [
+      { label: 'Puntual (50%)', amount: 0, pct: '0%', color: '#22c55e' },
+      { label: '1-3 días (20%)', amount: 0, pct: '0%', color: '#facc15' },
+      { label: '3-5 días (5%)', amount: 0, pct: '0%', color: '#f97316' },
+      { label: '+5 días (0%)', amount: 0, pct: '0%', color: '#ef4444' },
+    ],
   }
 }

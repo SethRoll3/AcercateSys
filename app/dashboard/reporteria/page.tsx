@@ -8,7 +8,7 @@ import { FileSpreadsheet } from "lucide-react"
 import { LoadingSpinner } from "@/components/loading-spinner"
 import { toast } from "@/hooks/use-toast"
 
-type ReportKey = "payments_general" | "delinquent_portfolio" | "aged_receivables" | "portfolio_total" | null
+type ReportKey = "payments_general" | "delinquent_portfolio" | "aged_receivables" | "portfolio_total" | "client_payments" | null
 
 export default function ReporteriaPage() {
   const [selected, setSelected] = useState<ReportKey>(null)
@@ -99,6 +99,24 @@ export default function ReporteriaPage() {
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
             Disponible para asesores y administradores.
+          </CardContent>
+        </Card>
+
+        <Card
+          role="button"
+          aria-label="Reporte de Pagos por Cliente"
+          onClick={() => setSelected("client_payments")}
+          className={`cursor-pointer border bg-card/50 backdrop-blur-sm ${selected === "client_payments" ? "ring-2 ring-primary" : "hover:bg-muted/40"}`}
+        >
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="h-5 w-5" />
+              Pagos por Cliente
+            </CardTitle>
+            <CardDescription>Detalle de todos los pagos aprobados por cliente y préstamo, con links a boletas.</CardDescription>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            Incluye imágenes de boletas.
           </CardContent>
         </Card>
       </div>
@@ -220,6 +238,58 @@ export default function ReporteriaPage() {
                       console.error("Error al descargar el reporte:", error)
                       toast({
                         title: "Error al descargar",
+                        description: String(error?.message || "Hubo un error al descargar el reporte."),
+                        variant: "destructive",
+                      })
+                    } finally {
+                      setIsDownloading(false)
+                    }
+                  }}
+                  className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800"
+                  disabled={isDownloading}
+                >
+                  {isDownloading ? "Descargando..." : "Descargar Excel"}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+          {selected === "client_payments" && (
+            <Card className="bg-card/50 backdrop-blur-sm">
+              <CardHeader>
+                <CardTitle>Reporte de Pagos por Cliente</CardTitle>
+                <CardDescription>Descarga el detalle de todos los pagos aprobados, agrupados por cliente y préstamo. Incluye links a las imágenes de boletas.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button
+                  onClick={async () => {
+                    setIsDownloading(true)
+                    try {
+                      const response = await fetch(`/api/reports/client-payments/excel`)
+                      if (!response.ok) {
+                        let errorMsg = "Error al descargar el reporte"
+                        try {
+                          const errData = await response.json()
+                          errorMsg = errData?.error || errorMsg
+                        } catch {}
+                        throw new Error(errorMsg)
+                      }
+                      const blob = await response.blob()
+                      const url = window.URL.createObjectURL(blob)
+                      const a = document.createElement("a")
+                      a.href = url
+                      a.download = `Cooperativa_Pagos_Por_Cliente_${new Date().toISOString().slice(0, 10)}.xlsx`
+                      document.body.appendChild(a)
+                      a.click()
+                      a.remove()
+                      window.URL.revokeObjectURL(url)
+                      toast({
+                        title: "✅ Reporte descargado",
+                        description: "El reporte de pagos por cliente se descargó exitosamente.",
+                      })
+                    } catch (error: any) {
+                      console.error("Error al descargar el reporte:", error)
+                      toast({
+                        title: "❌ Error al descargar",
                         description: String(error?.message || "Hubo un error al descargar el reporte."),
                         variant: "destructive",
                       })
