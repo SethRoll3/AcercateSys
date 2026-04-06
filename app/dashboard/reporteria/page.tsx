@@ -83,7 +83,7 @@ export default function ReporteriaPage() {
             Disponible para asesores y administradores.
           </CardContent>
         </Card>
-        
+
         <Card
           role="button"
           aria-label="Reporte Total Cartera"
@@ -253,7 +253,7 @@ export default function ReporteriaPage() {
               </CardContent>
             </Card>
           )}
-          {selected === "client_payments" && (
+          {/*selected === "client_payments" && (
             <Card className="bg-card/50 backdrop-blur-sm">
               <CardHeader>
                 <CardTitle>Reporte de Pagos por Cliente</CardTitle>
@@ -304,8 +304,8 @@ export default function ReporteriaPage() {
                 </Button>
               </CardContent>
             </Card>
-          )}
-      </div>
+          )*/}
+        </div>
       </div>
     </div>
   )
