@@ -116,7 +116,7 @@ export default function ReporteriaPage() {
             <CardDescription>Detalle de todos los pagos aprobados por cliente y préstamo, con links a boletas.</CardDescription>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
-            Incluye imágenes de boletas.
+            En desarrollo, aun no disponible.
           </CardContent>
         </Card>
       </div>
