@@ -85,12 +85,20 @@ import path from "path"
         }
       }
 
+      const { searchParams } = new URL(request.url)
+      const from = searchParams.get('from')
+      const to = searchParams.get('to')
+
       let scheduleQuery = admin
         .from('payment_schedule')
         .select('id, loan_id, payment_number, due_date, amount, principal, interest, mora, admin_fees, status')
         .eq('status', 'pending')
         .lt('due_date', gtTodayYMD)
         .order('due_date', { ascending: true })
+
+      // Apply date range filter if provided
+      if (from) scheduleQuery = scheduleQuery.gte('due_date', from)
+      if (to) scheduleQuery = scheduleQuery.lte('due_date', to)
 
       if (me.role === 'asesor' && loanIdsForAdvisor.length) {
         scheduleQuery = scheduleQuery.in('loan_id', loanIdsForAdvisor)

@@ -33,11 +33,20 @@ export async function GET(request: Request) {
       if (!loanIdsForAdvisor.length) return generateEmptyExcel()
     }
 
+    // Date range filter
+    const { searchParams } = new URL(request.url)
+    const from = searchParams.get('from')
+    const to = searchParams.get('to')
+
     // Fetch ALL unpaid schedules
     let scheduleQuery = admin
       .from('payment_schedule')
       .select('id, loan_id, due_date, amount, principal, interest, mora, admin_fees, paid_amount, status')
       .neq('status', 'paid')
+
+    // Apply date range filter if provided
+    if (from) scheduleQuery = scheduleQuery.gte('due_date', from)
+    if (to) scheduleQuery = scheduleQuery.lte('due_date', to)
 
     if (me.role === 'asesor' && loanIdsForAdvisor.length) {
       scheduleQuery = scheduleQuery.in('loan_id', loanIdsForAdvisor)

@@ -30,10 +30,6 @@ export async function GET(request: Request) {
     const startDate = searchParams.get("startDate")
     const endDate = searchParams.get("endDate")
 
-    if (!startDate || !endDate) {
-      return NextResponse.json({ error: "Start date and end date are required" }, { status: 400 })
-    }
-
     // Build payments query with role-based filtering
     let paymentsQuery = supabase
       .from("payments")
@@ -46,10 +42,12 @@ export async function GET(request: Request) {
           )
         )
       `)
-      .gte("payment_date", startDate)
-      .lte("payment_date", endDate)
       .eq('confirmation_status', 'aprobado')
       .order("payment_date", { ascending: true })
+
+    // Apply date filters only if provided
+    if (startDate) paymentsQuery = paymentsQuery.gte("payment_date", startDate)
+    if (endDate) paymentsQuery = paymentsQuery.lte("payment_date", endDate)
 
     // Apply role-based filtering
     if (userData.role === 'cliente') {
@@ -181,12 +179,12 @@ export async function GET(request: Request) {
       const clientData = clientsMap.get(clientKey)
       const paidAmount = Number(payment.amount)
       const scheduledAmount = schedule 
-        ? Number(schedule.amount || 0) + Number(schedule.admin_fees || 0) + Number(schedule.mora || 0)
+        ? Number(schedule.amount || 0) + Number(schedule.mora || 0)
         : 0
       const mora = schedule ? Number(schedule.mora || 0) : 0
       const capital = schedule ? Number(schedule.principal || 0) : 0
       const adminFees = schedule ? Number(schedule.admin_fees || 0) : 0
-      const interest = schedule ? Math.max(0, Number(schedule.amount || 0) - capital) : 0
+      const interest = schedule ? Math.max(0, Number(schedule.amount || 0) - capital - adminFees) : 0
       
       // Determine payment status
       let paymentStatus = "Completo"

@@ -4,10 +4,14 @@ import { translateStatus } from "@/lib/utils"
 import ExcelJS from "exceljs"
 import path from "path"
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const supabase = await createClient()
     const admin = await createAdminClient()
+
+    const { searchParams } = new URL(request.url)
+    const from = searchParams.get('from')
+    const to = searchParams.get('to')
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -47,7 +51,7 @@ export async function GET() {
     let allPayments: any[] = []
     for (let i = 0; i < loanIds.length; i += 200) {
       const chunk = loanIds.slice(i, i + 200)
-      const { data: payments } = await admin
+      let payQuery = admin
         .from('payments')
         .select(`
           id, amount, payment_date, payment_method, receipt_number, notes,
@@ -57,6 +61,10 @@ export async function GET() {
         .in('loan_id', chunk)
         .eq('confirmation_status', 'aprobado')
         .order('payment_date', { ascending: true })
+      // Apply date filters if provided
+      if (from) payQuery = payQuery.gte('payment_date', from)
+      if (to) payQuery = payQuery.lte('payment_date', to)
+      const { data: payments } = await payQuery
       allPayments = allPayments.concat(payments || [])
     }
 

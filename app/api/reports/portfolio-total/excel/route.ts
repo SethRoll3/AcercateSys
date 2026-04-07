@@ -4,10 +4,14 @@ import ExcelJS from "exceljs"
 import path from "path"
 import puppeteer from "puppeteer"
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const supabase = await createClient()
     const admin = await createAdminClient()
+
+    const { searchParams } = new URL(request.url)
+    const from = searchParams.get('from')
+    const to = searchParams.get('to')
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -33,6 +37,9 @@ export async function GET() {
     if (me.role === 'asesor' && clientIds.length) {
       loansQuery = loansQuery.in('client_id', clientIds)
     }
+    // Apply date range filter on start_date if provided
+    if (from) loansQuery = loansQuery.gte('start_date', from)
+    if (to) loansQuery = loansQuery.lte('start_date', to)
     const { data: loans, error: loansError } = await loansQuery
     if (loansError) return NextResponse.json({ error: loansError.message }, { status: 500 })
 
