@@ -1,10 +1,14 @@
 import type { Payment, Loan, Client } from "./types"
-import { parseYMDToUTC, translateStatus } from "./utils"
+import { parseYMDToUTC } from "./utils"
 
 type ReceiptBranding = {
   coopName?: string
-  logo?: string | null // dataURL
-  logoIcon?: string | null // dataURL
+  logo?: string | null
+  logoIcon?: string | null
+  officeLine1?: string
+  officeLine2?: string
+  series?: string
+  footerLabel?: string
   colors?: {
     primary?: string
     secondary?: string
@@ -17,15 +21,14 @@ export function generatePaymentReceipt(
   loan: Loan & { client: Client },
   branding?: ReceiptBranding
 ): string {
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("es-GT", {
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat("es-GT", {
       style: "currency",
       currency: "GTQ",
     }).format(amount)
-  }
 
-  const formatDate = (date: string) => {
-    if (!date) return "N/A"
+  const formatDateLong = (date: string) => {
+    if (!date) return "-"
     const isYMD = /^\d{4}-\d{2}-\d{2}$/.test(date)
     const dt = isYMD ? parseYMDToUTC(date) : new Date(date)
     return new Intl.DateTimeFormat("es-GT", {
@@ -36,205 +39,295 @@ export function generatePaymentReceipt(
     }).format(dt)
   }
 
+  const formatDateShort = (date: string) => {
+    if (!date) return "-"
+    const isYMD = /^\d{4}-\d{2}-\d{2}$/.test(date)
+    const dt = isYMD ? parseYMDToUTC(date) : new Date(date)
+    return new Intl.DateTimeFormat("es-GT", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      timeZone: "America/Guatemala",
+    }).format(dt)
+  }
+
   const safe = (value: string | number | null | undefined) => {
-    if (value === null || value === undefined) return "N/A"
-    if (typeof value === "string" && value.trim() === "") return "N/A"
+    if (value === null || value === undefined) return "-"
+    if (typeof value === "string" && value.trim() === "") return "-"
     return String(value)
   }
 
+  const escapeHtml = (value: string | number | null | undefined) =>
+    safe(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;")
+
   const boletas = payment.boletas || []
-  const images = [
-    ...(payment.receiptImageUrl ? [{ url: payment.receiptImageUrl, caption: "Recibo del pago" }] : []),
-    ...boletas.filter(b => !!b.imageUrl).map(b => ({ url: b.imageUrl!, caption: `Boleta ${safe(b.numeroBoleta)}` }))
-  ]
-
-  const totalBoletas = boletas.reduce((sum, b) => sum + (Number(b.monto) || 0), 0)
-
-  // Paleta y marca
-  const coopName = branding?.coopName || "acercate"
-  const brandPrimary = branding?.colors?.primary || "#0ea5e9"
-  const brandSecondary = branding?.colors?.secondary || "#38bdf8"
+  const firstBoleta = boletas[0]
+  const coopName = branding?.coopName || "COOPERATIVA ACÉRCATE"
+  const officeLine1 = branding?.officeLine1 || "7a. AVENIDA 1-35 ZONA 8 EDIFICIO TECTONIC"
+  const officeLine2 = branding?.officeLine2 || "NIVEL 1, OF. 1021 GUATEMALA"
+  const series = branding?.series || "A"
+  const footerLabel = branding?.footerLabel || "ORIGINAL CLIENTE"
+  const brandPrimary = branding?.colors?.primary || "#113C8D"
+  const brandSecondary = branding?.colors?.secondary || "#3B82F6"
   const brandText = branding?.colors?.text || "#0f172a"
   const logoDataUrl = branding?.logo || null
   const logoIconDataUrl = branding?.logoIcon || null
+  const clientName = `${safe(loan.client.first_name)} ${safe(loan.client.last_name)}`.trim()
+  const paymentDate = formatDateShort(payment.paymentDate || payment.createdAt)
+  const paymentDateLong = formatDateLong(payment.paymentDate || payment.createdAt)
+  const amount = Number(payment.amount) || 0
+  const reference = firstBoleta?.referencia || payment.receiptNumber
+  const bank = firstBoleta?.banco || payment.paymentMethod
+  const phone = loan.client.phone || "-"
+  const method = payment.paymentMethod || "-"
+  const monthlyPayment = Number(loan.monthlyPayment) || 0
 
-  // Generate HTML for PDF (diseño mejorado)
   const html = `
     <!DOCTYPE html>
     <html>
       <head>
         <meta charset="UTF-8">
         <style>
+          @page { size: 228mm 108mm; margin: 0; }
           * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; padding: 28px; color: ${brandText}; }
-
-          /* Encabezado */
-          .brand { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
-          .brand-left { display: flex; align-items: center; gap: 12px; }
-          .brand-title { font-size: 22px; font-weight: 800; color: ${brandPrimary}; letter-spacing: 0.4px; }
-          .brand-sub { font-size: 11px; color: #64748b; }
-          .divider { height: 3px; background: linear-gradient(90deg, ${brandPrimary}, ${brandSecondary}); border-radius: 3px; margin-bottom: 22px; }
-
-          /* Títulos */
-          .section-title { font-size: 14px; font-weight: 700; color: ${brandText}; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.3px; }
-
-          /* Tarjetas de información */
-          .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px; }
-          .card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; background: #ffffff; }
-          .item { margin-bottom: 8px; }
-          .label { font-size: 11px; color: #64748b; text-transform: uppercase; }
-          .value { font-size: 13px; font-weight: 600; color: #0f172a; }
-
-          /* Resumen del pago */
-          .summary { display: grid; grid-template-columns: 1.2fr 1fr; gap: 14px; margin-bottom: 16px; }
-          .amount-box { background: linear-gradient(135deg, ${brandPrimary} 0%, ${brandSecondary} 100%); color: white; padding: 16px; border-radius: 12px; text-align: center; }
-          .amount-label { font-size: 12px; opacity: 0.9; }
-          .amount-value { font-size: 30px; font-weight: 800; letter-spacing: 0.5px; }
-
-          /* Tabla Boletas */
-          table { width: 100%; border-collapse: collapse; }
-          .tbl { width: 100%; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; margin-top: 8px; }
-          .tbl thead { background: #f8fafc; }
-          .tbl th { text-align: left; font-size: 11px; color: #475569; padding: 10px; border-bottom: 1px solid #e2e8f0; }
-          .tbl td { font-size: 12px; padding: 10px; border-bottom: 1px solid #f1f5f9; }
-          .tbl tfoot td { font-weight: 700; background: #f8fafc; }
-
-          /* Imágenes (sin recortes) */
-          .images { margin-top: 12px; }
-          .image-card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; margin-bottom: 12px; page-break-inside: avoid; }
-          .image-title { font-size: 12px; color: #475569; margin-bottom: 8px; }
-          .image-wrap { width: 100%; max-height: 720px; display: flex; align-items: center; justify-content: center; background: #ffffff; border-radius: 8px; overflow: hidden; }
-          .image-wrap img { width: 100%; height: auto; object-fit: contain; }
-
-          /* Notas y confirmación */
-          .notes { border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; background: #f8fafc; }
-          .muted { color: #64748b; }
-
-          /* Firmas */
-          .signs { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 24px; }
-          .sign-box { text-align: center; }
-          .line { border-top: 2px solid ${brandText}; margin-bottom: 6px; padding-top: 6px; }
-
-          /* Pie */
-          .footer { margin-top: 18px; text-align: center; font-size: 11px; color: #64748b; }
+          html, body { width: 228mm; height: 108mm; }
+          body { font-family: Arial, Helvetica, sans-serif; color: ${brandText}; background: white; }
+          .receipt {
+            width: 228mm;
+            height: 108mm;
+            display: grid;
+            grid-template-columns: 9mm 17mm 1fr 9mm;
+            border-top: 1px solid #d4d4d8;
+            border-bottom: 1px solid #d4d4d8;
+          }
+          .holes {
+            background:
+              radial-gradient(circle at 50% 7px, #ffffff 2.35mm, transparent 2.45mm) center top / 100% 11.5mm repeat-y,
+              radial-gradient(circle at 50% 7px, #9ca3af 2.45mm, transparent 2.55mm) center top / 100% 11.5mm repeat-y,
+              #f3f4f6;
+            border-left: 1px solid #e4e4e7;
+            border-right: 1px solid #e4e4e7;
+          }
+          .band {
+            position: relative;
+            background: linear-gradient(180deg, #0b2b70, #123f98 55%, #1d4ed8);
+            color: #ffffff;
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            transform: rotate(180deg);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            letter-spacing: 1.1px;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 8px 0;
+          }
+          .content {
+            position: relative;
+            padding: 4.2mm 6.5mm 3.5mm 6.5mm;
+            overflow: hidden;
+          }
+          .watermark {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+            opacity: 0.17;
+          }
+          .watermark img {
+            width: 58mm;
+            height: auto;
+          }
+          .header {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            column-gap: 4mm;
+            align-items: start;
+            margin-bottom: 1mm;
+          }
+          .coop {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 2mm;
+            align-items: start;
+          }
+          .coop-logo img {
+            width: 8mm;
+            height: auto;
+          }
+          .coop-name {
+            font-size: 7.2px;
+            font-weight: 700;
+            line-height: 1.2;
+            text-transform: uppercase;
+          }
+          .coop-line {
+            font-size: 6.2px;
+            line-height: 1.2;
+            text-transform: uppercase;
+          }
+          .series {
+            text-align: right;
+            font-size: 8.5px;
+            font-weight: 700;
+            line-height: 1.2;
+            text-transform: uppercase;
+          }
+          .serial {
+            font-size: 32px;
+            font-weight: 700;
+            line-height: 1;
+            letter-spacing: 0.4px;
+          }
+          .brand-center {
+            text-align: center;
+            margin-top: 2.8mm;
+            margin-bottom: 3.8mm;
+          }
+          .brand-center-name {
+            font-size: 11px;
+            text-transform: lowercase;
+            letter-spacing: 1px;
+            color: ${brandPrimary};
+            font-weight: 700;
+          }
+          .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 1.6mm 2.8mm;
+            align-items: end;
+          }
+          .field {
+            border-bottom: 1px dotted #3f3f46;
+            min-height: 6mm;
+            padding-bottom: 0.65mm;
+          }
+          .label {
+            font-size: 6px;
+            text-transform: uppercase;
+            color: #334155;
+            letter-spacing: 0.3px;
+            margin-bottom: 0.4mm;
+          }
+          .value {
+            font-size: 8.2px;
+            font-weight: 700;
+            text-transform: uppercase;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          .value.mono {
+            font-family: "Courier New", Courier, monospace;
+            letter-spacing: 0.2px;
+          }
+          .foot {
+            margin-top: 2.1mm;
+            text-align: center;
+            font-size: 6.7px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+          }
+          .foot2 {
+            margin-top: 0.8mm;
+            text-align: center;
+            font-size: 5.8px;
+            text-transform: uppercase;
+            color: #475569;
+            letter-spacing: 0.25px;
+          }
         </style>
       </head>
       <body>
-        <div class="brand">
-          <div class="brand-left">
-            ${logoDataUrl ? `<img src="${logoDataUrl}" alt="logo ${coopName}" style="height:36px; width:auto;" />` : (logoIconDataUrl ? `<img src="${logoIconDataUrl}" alt="logo ${coopName}" style="height:36px; width:auto;" />` : "")}
-            <div>
-              <div class="brand-title">${coopName.toUpperCase()}</div>
-              <div class="brand-sub">Sistema de Gestión de Préstamos</div>
-            </div>
-          </div>
-          <div class="value">Recibo: ${safe(payment.receiptNumber)}</div>
-        </div>
-        <div class="divider"></div>
-
-        <div class="grid-2">
-          <div class="card">
-            <div class="section-title">Cliente</div>
-            <div class="item"><div class="label">Nombre</div><div class="value">${safe(`${loan.client.first_name} ${loan.client.last_name}`)}</div></div>
-            <div class="item"><div class="label">Teléfono</div><div class="value">${safe(loan.client.phone)}</div></div>
-            <div class="item"><div class="label">Correo</div><div class="value">${safe(loan.client.email)}</div></div>
-          </div>
-          <div class="card">
-            <div class="section-title">Préstamo</div>
-            <div class="item"><div class="label">Número de préstamo</div><div class="value">${safe(loan.loanNumber)}</div></div>
-            <div class="item"><div class="label">Cuota mensual</div><div class="value">${formatCurrency(Number(loan.monthlyPayment) || 0)}</div></div>
-            <div class="item"><div class="label">Estado</div><div class="value">${translateStatus(loan.status)}</div></div>
-          </div>
-        </div>
-
-        <div class="summary">
-          <div class="amount-box">
-            <div class="amount-label">Monto Pagado</div>
-            <div class="amount-value">${formatCurrency(Number(payment.amount) || 0)}</div>
-          </div>
-          <div class="card">
-            <div class="section-title">Pago</div>
-            <div class="item"><div class="label">Fecha de pago</div><div class="value">${formatDate(payment.paymentDate)}</div></div>
-            <div class="item"><div class="label">Método</div><div class="value">${safe(payment.paymentMethod)}</div></div>
-            <div class="item"><div class="label">Emitido</div><div class="value">${formatDate(payment.createdAt)}</div></div>
-          </div>
-        </div>
-
-        ${boletas.length > 0 ? `
-          <div class="card">
-            <div class="section-title">Boletas asociadas</div>
-            <div class="tbl-wrap">
-              <table class="tbl">
-                <thead>
-                  <tr>
-                    <th>Número</th>
-                    <th>Fecha</th>
-                    <th>Banco</th>
-                    <th>Referencia</th>
-                    <th style="text-align:right;">Monto</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${boletas.map(b => `
-                    <tr>
-                      <td>${safe(b.numeroBoleta)}</td>
-                      <td>${formatDate(b.fecha)}</td>
-                      <td>${safe(b.banco)}</td>
-                      <td>${safe(b.referencia)}</td>
-                      <td style="text-align:right;">${formatCurrency(Number(b.monto) || 0)}</td>
-                    </tr>
-                  `).join("")}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colspan="4">Total boletas</td>
-                    <td style="text-align:right;">${formatCurrency(totalBoletas)}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </div>
-        ` : ""}
-
-        ${images.length > 0 ? `
-          <div class="section-title">Imágenes del pago y boletas</div>
-          ${images.map(img => `
-            <div class="image-card">
-              <div class="image-title">${img.caption}</div>
-              <div class="image-wrap">
-                <img src="${img.url}" alt="${img.caption}" />
+        <div class="receipt">
+          <div class="holes"></div>
+          <div class="band">BOLETA DE TRANSACCIONES</div>
+          <div class="content">
+            ${logoIconDataUrl ? `
+              <div class="watermark">
+                <img src="${logoIconDataUrl}" alt="logo marca" />
+              </div>
+            ` : ""}
+            <div class="header">
+              <div class="coop">
+                <div class="coop-logo">${logoIconDataUrl || logoDataUrl ? `<img src="${logoIconDataUrl || logoDataUrl}" alt="logo ${escapeHtml(coopName)}" />` : ""}</div>
+                <div>
+                  <div class="coop-name">${escapeHtml(coopName)}</div>
+                  <div class="coop-line">${escapeHtml(officeLine1)}</div>
+                  <div class="coop-line">${escapeHtml(officeLine2)}</div>
+                </div>
+              </div>
+              <div class="series">
+                <div>SERIE ${escapeHtml(series)}</div>
+                <div class="serial">${escapeHtml(payment.receiptNumber)}</div>
               </div>
             </div>
-          `).join("")}
-        ` : `
-          <div class="notes"><span class="muted">No hay imágenes adjuntas.</span></div>
-        `}
-
-        ${payment.notes ? `
-          <div class="notes" style="margin-top:12px;">
-            <div class="section-title">Notas</div>
-            <div class="value">${safe(payment.notes)}</div>
+            <div class="brand-center">
+              <div class="brand-center-name">acercate</div>
+            </div>
+            <div class="grid">
+              <div class="field">
+                <div class="label">Asociado No.</div>
+                <div class="value mono">${escapeHtml(loan.client.id)}</div>
+              </div>
+              <div class="field">
+                <div class="label">Nombre</div>
+                <div class="value">${escapeHtml(clientName)}</div>
+              </div>
+              <div class="field">
+                <div class="label">Préstamo</div>
+                <div class="value mono">${escapeHtml(loan.loanNumber)}</div>
+              </div>
+              <div class="field">
+                <div class="label">Fecha de pago</div>
+                <div class="value">${escapeHtml(paymentDate)}</div>
+              </div>
+              <div class="field">
+                <div class="label">Monto</div>
+                <div class="value">${escapeHtml(formatCurrency(amount))}</div>
+              </div>
+              <div class="field">
+                <div class="label">Cuota mensual</div>
+                <div class="value">${escapeHtml(formatCurrency(monthlyPayment))}</div>
+              </div>
+              <div class="field">
+                <div class="label">Concepto</div>
+                <div class="value">PAGO DE CUOTA</div>
+              </div>
+              <div class="field">
+                <div class="label">Banco / Método</div>
+                <div class="value">${escapeHtml(bank)}</div>
+              </div>
+              <div class="field">
+                <div class="label">Forma de pago</div>
+                <div class="value">${escapeHtml(method)}</div>
+              </div>
+              <div class="field">
+                <div class="label">Referencia</div>
+                <div class="value mono">${escapeHtml(reference)}</div>
+              </div>
+              <div class="field">
+                <div class="label">Teléfono</div>
+                <div class="value mono">${escapeHtml(phone)}</div>
+              </div>
+              <div class="field" style="grid-column: span 3;">
+                <div class="label">Detalle</div>
+                <div class="value">${escapeHtml(`Pago registrado el ${paymentDateLong}`)}</div>
+              </div>
+            </div>
+            <div class="foot">${escapeHtml(footerLabel)}</div>
+            <div class="foot2">DOCUMENTO GENERADO AUTOMÁTICAMENTE POR EL SISTEMA</div>
           </div>
-        ` : ""}
-
-        <div class="card" style="margin-top:12px;">
-          <div class="section-title">Confirmación</div>
-          <div class="grid-2">
-            <div class="item"><div class="label">Estado</div><div class="value">${safe((payment.confirmationStatus || 'confirmado').toUpperCase())}</div></div>
-            <div class="item"><div class="label">Aprobado por</div><div class="value">${safe(payment.confirmedBy)}</div></div>
-            <div class="item"><div class="label">Fecha de aprobación</div><div class="value">${formatDate(payment.confirmedAt || '')}</div></div>
-            ${payment.rejectionReason ? `<div class="item"><div class="label">Motivo de rechazo</div><div class="value">${safe(payment.rejectionReason)}</div></div>` : ''}
-          </div>
-        </div>
-
-        <div class="signs">
-          <div class="sign-box"><div class="line"></div><div class="muted">Firma del Cliente</div></div>
-          <div class="sign-box"><div class="line"></div><div class="muted">Firma Autorizada</div></div>
-        </div>
-
-        <div class="footer">
-          <div>Este documento es un comprobante oficial de pago.</div>
-          <div>Generado el ${formatDate(new Date().toISOString())}</div>
+          <div class="holes"></div>
         </div>
       </body>
     </html>

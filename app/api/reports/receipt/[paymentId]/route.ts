@@ -2,7 +2,8 @@ import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 import { generatePaymentReceipt } from "@/lib/pdf-generator"
-import puppeteer from "puppeteer"
+import puppeteerCore from "puppeteer-core"
+import chromium from "@sparticuz/chromium"
 import path from "path"
 import { promises as fs } from "fs"
 import { computeETag, formatHttpDate } from "@/lib/http-cache"
@@ -186,10 +187,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ paym
       id: payment.loan.id,
       // Map required Loan field userId to client_id to satisfy type
       userId: payment.loan.client_id,
+      loan_number: payment.loan.loan_number,
       loanNumber: payment.loan.loan_number,
       amount: Number(payment.loan.amount),
       interestRate: Number(payment.loan.interest_rate),
       termMonths: payment.loan.term_months,
+      monthly_payment: Number(payment.loan.monthly_payment),
       monthlyPayment: Number(payment.loan.monthly_payment),
       status: payment.loan.status,
       startDate: payment.loan.start_date,
@@ -197,6 +200,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ paym
       createdAt: payment.loan.created_at,
       updatedAt: payment.loan.updated_at,
       client: {
+        advisor_id: payment.loan.client.advisor_id,
         id: payment.loan.client.id,
         first_name: payment.loan.client.first_name,
         last_name: payment.loan.client.last_name,
@@ -209,7 +213,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ paym
 
     // Leer logos desde /public y convertir a dataURL para incrustar en el PDF
     const publicDir = path.join(process.cwd(), "public")
-    const logoPath = path.join(publicDir, "logoCooperativa.jpg")
+    const logoPath = path.join(publicDir, "logoCooperativaConTexto.jpg")
     const logoIconPath = path.join(publicDir, "logoCooperativaSinTexto.jpg")
 
     async function fileToDataUrl(p: string): Promise<string | null> {
@@ -230,25 +234,50 @@ export async function GET(request: Request, { params }: { params: Promise<{ paym
     ])
 
     const brandedHtml = generatePaymentReceipt(transformedPayment, transformedLoan, {
-      coopName: "acercate",
+      coopName: "COOPERATIVA INTEGRAL DE AHORRO Y CRÉDITO ACÉRCATE R.L.",
+      officeLine1: "7A. AVENIDA 1-35 ZONA 8, EDIFICIO TECTONIC",
+      officeLine2: "NIVEL 1 OF. 1021, GUATEMALA",
+      series: "A",
+      footerLabel: "ORIGINAL CLIENTE",
       logo: logoDataUrl,
       logoIcon: logoIconDataUrl,
       colors: {
-        primary: "#0ea5e9",
-        secondary: "#38bdf8",
+        primary: "#0f2e78",
+        secondary: "#1d4ed8",
         text: "#0f172a",
       },
     })
 
-    // Generate PDF using headless browser
-    const browser = await puppeteer.launch({ headless: true })
+    let browser: any = null
     try {
+      try {
+        browser = await puppeteerCore.launch({
+          args: (chromium as any).args,
+          defaultViewport: (chromium as any).defaultViewport,
+          executablePath: await (chromium as any).executablePath(),
+          headless: (chromium as any).headless,
+        })
+      } catch {
+        const { default: puppeteerLocal } = await import("puppeteer")
+        try {
+          browser = await puppeteerLocal.launch({ headless: true, channel: "chrome" as any })
+        } catch {
+          try {
+            browser = await puppeteerLocal.launch({ headless: true, channel: "msedge" as any })
+          } catch {
+            browser = await puppeteerLocal.launch({ headless: true })
+          }
+        }
+      }
+
       const page = await browser.newPage()
       await page.setContent(brandedHtml, { waitUntil: 'networkidle0' })
       const pdfBuffer = await page.pdf({
-        format: 'A4',
+        width: '228mm',
+        height: '108mm',
+        preferCSSPageSize: true,
         printBackground: true,
-        margin: { top: '20mm', right: '15mm', bottom: '20mm', left: '15mm' }
+        margin: { top: '0mm', right: '0mm', bottom: '0mm', left: '0mm' }
       })
       // Usar Uint8Array para garantizar BodyInit válido (evita SharedArrayBuffer)
       const pdfBytes = new Uint8Array(pdfBuffer)
@@ -261,7 +290,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ paym
       headers.append("Cache-Control", "private, no-cache")
       return new NextResponse(pdfBytes, { headers })
     } finally {
-      await browser.close()
+      if (browser) {
+        await browser.close()
+      }
     }
   } catch (error) {
     console.error("[v0] Error generating receipt:", error)
