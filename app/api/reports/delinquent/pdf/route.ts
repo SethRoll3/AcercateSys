@@ -17,7 +17,7 @@ export async function GET(request: Request) {
 
     const { data: me } = await supabase.from('users').select('id, role, email').eq('auth_id', user.id).single()
     if (!me) return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    if (me.role !== 'admin' && me.role !== 'asesor') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (me.role !== 'admin' && me.role !== 'asesor' && me.role !== 'contador') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const gtTodayYMD = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guatemala' }).format(new Date())
 

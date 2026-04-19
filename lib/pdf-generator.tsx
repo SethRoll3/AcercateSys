@@ -1,5 +1,5 @@
 import type { Payment, Loan, Client } from "./types"
-import { parseYMDToUTC, translateStatus } from "./utils"
+import { parseYMDToUTC } from "./utils"
 
 type ReceiptBranding = {
   coopName?: string
@@ -17,228 +17,373 @@ export function generatePaymentReceipt(
   loan: Loan & { client: Client },
   branding?: ReceiptBranding
 ): string {
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("es-GT", {
-      style: "currency",
-      currency: "GTQ",
-    }).format(amount)
-  }
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat("es-GT", { style: "currency", currency: "GTQ" }).format(amount)
 
   const formatDate = (date: string) => {
-    if (!date) return "N/A"
+    if (!date) return "___/___/______"
     const isYMD = /^\d{4}-\d{2}-\d{2}$/.test(date)
     const dt = isYMD ? parseYMDToUTC(date) : new Date(date)
-    return new Intl.DateTimeFormat("es-GT", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      timeZone: "America/Guatemala",
-    }).format(dt)
+    const d = dt.getUTCDate().toString().padStart(2, "0")
+    const m = (dt.getUTCMonth() + 1).toString().padStart(2, "0")
+    const y = dt.getUTCFullYear()
+    return `${d}/${m}/${y}`
   }
 
   const safe = (value: string | number | null | undefined) => {
-    if (value === null || value === undefined) return "N/A"
-    if (typeof value === "string" && value.trim() === "") return "N/A"
+    if (value === null || value === undefined) return "—"
+    if (typeof value === "string" && value.trim() === "") return "—"
     return String(value)
   }
 
-  const boletas = payment.boletas || []
-  const images = [
-    ...(payment.receiptImageUrl ? [{ url: payment.receiptImageUrl, caption: "Recibo del pago" }] : []),
-    ...boletas.filter(b => !!b.imageUrl).map(b => ({ url: b.imageUrl!, caption: `Boleta ${safe(b.numeroBoleta)}` }))
-  ]
-
-  const totalBoletas = boletas.reduce((sum, b) => sum + (Number(b.monto) || 0), 0)
-
-  // Paleta y marca
-  const coopName = branding?.coopName || "acercate"
-  const brandPrimary = branding?.colors?.primary || "#0ea5e9"
-  const brandSecondary = branding?.colors?.secondary || "#38bdf8"
-  const brandText = branding?.colors?.text || "#0f172a"
   const logoDataUrl = branding?.logo || null
   const logoIconDataUrl = branding?.logoIcon || null
 
-  // Generate HTML for PDF (diseño mejorado)
-  const html = `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="UTF-8">
-        <style>
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; padding: 28px; color: ${brandText}; }
+  // Pick the best logo available
+  const logoSrc = logoDataUrl || logoIconDataUrl || null
 
-          /* Encabezado */
-          .brand { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
-          .brand-left { display: flex; align-items: center; gap: 12px; }
-          .brand-title { font-size: 22px; font-weight: 800; color: ${brandPrimary}; letter-spacing: 0.4px; }
-          .brand-sub { font-size: 11px; color: #64748b; }
-          .divider { height: 3px; background: linear-gradient(90deg, ${brandPrimary}, ${brandSecondary}); border-radius: 3px; margin-bottom: 22px; }
+  // Generate a receipt number string formatted like the physical one
+  const receiptNo = payment.receiptNumber
+    ? String(payment.receiptNumber).padStart(5, "0")
+    : String(payment.id || "00000").slice(-5).padStart(5, "0")
 
-          /* Títulos */
-          .section-title { font-size: 14px; font-weight: 700; color: ${brandText}; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.3px; }
+  const clientName = `${safe(loan.client?.first_name)} ${safe(loan.client?.last_name)}`.trim()
+  const clientPhone = safe(loan.client?.phone)
 
-          /* Tarjetas de información */
-          .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px; }
-          .card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; background: #ffffff; }
-          .item { margin-bottom: 8px; }
-          .label { font-size: 11px; color: #64748b; text-transform: uppercase; }
-          .value { font-size: 13px; font-weight: 600; color: #0f172a; }
+  const boletas = payment.boletas || []
 
-          /* Resumen del pago */
-          .summary { display: grid; grid-template-columns: 1.2fr 1fr; gap: 14px; margin-bottom: 16px; }
-          .amount-box { background: linear-gradient(135deg, ${brandPrimary} 0%, ${brandSecondary} 100%); color: white; padding: 16px; border-radius: 12px; text-align: center; }
-          .amount-label { font-size: 12px; opacity: 0.9; }
-          .amount-value { font-size: 30px; font-weight: 800; letter-spacing: 0.5px; }
+  // ── helper for a single receipt slip (we print 2 per page: original + copia) ──
+  const slip = (copy: "ORIGINAL CLIENTE" | "COPIA COOPERATIVA") => `
+  <div class="slip">
+    <!-- LEFT VERTICAL STRIPE -->
+    <div class="stripe">
+      <div class="stripe-text">BOLETA DE TRANSACCIONES</div>
+    </div>
 
-          /* Tabla Boletas */
-          table { width: 100%; border-collapse: collapse; }
-          .tbl { width: 100%; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; margin-top: 8px; }
-          .tbl thead { background: #f8fafc; }
-          .tbl th { text-align: left; font-size: 11px; color: #475569; padding: 10px; border-bottom: 1px solid #e2e8f0; }
-          .tbl td { font-size: 12px; padding: 10px; border-bottom: 1px solid #f1f5f9; }
-          .tbl tfoot td { font-weight: 700; background: #f8fafc; }
-
-          /* Imágenes (sin recortes) */
-          .images { margin-top: 12px; }
-          .image-card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; margin-bottom: 12px; page-break-inside: avoid; }
-          .image-title { font-size: 12px; color: #475569; margin-bottom: 8px; }
-          .image-wrap { width: 100%; max-height: 720px; display: flex; align-items: center; justify-content: center; background: #ffffff; border-radius: 8px; overflow: hidden; }
-          .image-wrap img { width: 100%; height: auto; object-fit: contain; }
-
-          /* Notas y confirmación */
-          .notes { border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; background: #f8fafc; }
-          .muted { color: #64748b; }
-
-          /* Firmas */
-          .signs { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 24px; }
-          .sign-box { text-align: center; }
-          .line { border-top: 2px solid ${brandText}; margin-bottom: 6px; padding-top: 6px; }
-
-          /* Pie */
-          .footer { margin-top: 18px; text-align: center; font-size: 11px; color: #64748b; }
-        </style>
-      </head>
-      <body>
-        <div class="brand">
-          <div class="brand-left">
-            ${logoDataUrl ? `<img src="${logoDataUrl}" alt="logo ${coopName}" style="height:36px; width:auto;" />` : (logoIconDataUrl ? `<img src="${logoIconDataUrl}" alt="logo ${coopName}" style="height:36px; width:auto;" />` : "")}
-            <div>
-              <div class="brand-title">${coopName.toUpperCase()}</div>
-              <div class="brand-sub">Sistema de Gestión de Préstamos</div>
-            </div>
-          </div>
-          <div class="value">Recibo: ${safe(payment.receiptNumber)}</div>
+    <!-- MAIN CONTENT -->
+    <div class="main">
+      <!-- TOP BAR: coop info + serie/number -->
+      <div class="top-bar">
+        <div class="coop-info">
+          <div class="coop-name">COOPERATIVA INTEGRAL DE AHORRO Y CRÉDITO</div>
+          <div class="coop-name">ACERCATE, RESPONSABILIDAD LIMITADA</div>
+          <div class="coop-detail">7a. AVENIDA 12-23 ZONA 9 EDIFICIO ETISA</div>
+          <div class="coop-detail">5o. NIVEL OF. 51 GUATEMALA</div>
+          <div class="coop-detail">NIT: 105715239 &nbsp; TEL: 2234-7509</div>
         </div>
-        <div class="divider"></div>
+        <div class="serie-box">
+          <div class="serie-label">SERIE A</div>
+          <div class="serie-no">No. ${receiptNo}</div>
+        </div>
+      </div>
 
-        <div class="grid-2">
-          <div class="card">
-            <div class="section-title">Cliente</div>
-            <div class="item"><div class="label">Nombre</div><div class="value">${safe(`${loan.client.first_name} ${loan.client.last_name}`)}</div></div>
-            <div class="item"><div class="label">Teléfono</div><div class="value">${safe(loan.client.phone)}</div></div>
-            <div class="item"><div class="label">Correo</div><div class="value">${safe(loan.client.email)}</div></div>
-          </div>
-          <div class="card">
-            <div class="section-title">Préstamo</div>
-            <div class="item"><div class="label">Número de préstamo</div><div class="value">${safe(loan.loanNumber)}</div></div>
-            <div class="item"><div class="label">Cuota mensual</div><div class="value">${formatCurrency(Number(loan.monthlyPayment) || 0)}</div></div>
-            <div class="item"><div class="label">Estado</div><div class="value">${translateStatus(loan.status)}</div></div>
-          </div>
+      <!-- LOGO CENTERED -->
+      <div class="logo-area">
+        ${logoSrc ? `<img src="${logoSrc}" class="logo-img" alt="Acercate" />` : `<div class="logo-text">acercate</div>`}
+      </div>
+
+      <!-- FORM FIELDS -->
+      <div class="fields">
+        <div class="field-row">
+          <span class="field-label">Fecha:</span>
+          <span class="field-value field-line">${formatDate(payment.paymentDate || payment.createdAt || "")}</span>
+          <span class="field-label" style="margin-left:12px;">No. Préstamo:</span>
+          <span class="field-value field-line">${safe(loan.loanNumber)}</span>
+        </div>
+        <div class="field-row">
+          <span class="field-label">Cliente:</span>
+          <span class="field-value field-line full">${clientName}</span>
+        </div>
+        <div class="field-row">
+          <span class="field-label">Teléfono:</span>
+          <span class="field-value field-line">${clientPhone}</span>
+          <span class="field-label" style="margin-left:12px;">Forma de pago:</span>
+          <span class="field-value field-line">${safe(payment.paymentMethod)}</span>
+        </div>
+        <div class="field-row">
+          <span class="field-label">Cuota(s):</span>
+          <span class="field-value field-line">Préstamo #${safe(loan.loanNumber)}</span>
+          <span class="field-label" style="margin-left:12px;">Estado:</span>
+          <span class="field-value field-line">${safe(payment.confirmationStatus === 'aprobado' ? 'Aprobado' : payment.confirmationStatus === 'rechazado' ? 'Rechazado' : 'Pendiente')}</span>
         </div>
 
-        <div class="summary">
-          <div class="amount-box">
-            <div class="amount-label">Monto Pagado</div>
-            <div class="amount-value">${formatCurrency(Number(payment.amount) || 0)}</div>
-          </div>
-          <div class="card">
-            <div class="section-title">Pago</div>
-            <div class="item"><div class="label">Fecha de pago</div><div class="value">${formatDate(payment.paymentDate)}</div></div>
-            <div class="item"><div class="label">Método</div><div class="value">${safe(payment.paymentMethod)}</div></div>
-            <div class="item"><div class="label">Emitido</div><div class="value">${formatDate(payment.createdAt)}</div></div>
-          </div>
+        <!-- AMOUNT BOX -->
+        <div class="amount-section">
+          <div class="amount-label">MONTO RECIBIDO</div>
+          <div class="amount-value">${formatCurrency(Number(payment.amount) || 0)}</div>
         </div>
 
         ${boletas.length > 0 ? `
-          <div class="card">
-            <div class="section-title">Boletas asociadas</div>
-            <div class="tbl-wrap">
-              <table class="tbl">
-                <thead>
-                  <tr>
-                    <th>Número</th>
-                    <th>Fecha</th>
-                    <th>Banco</th>
-                    <th>Referencia</th>
-                    <th style="text-align:right;">Monto</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${boletas.map(b => `
-                    <tr>
-                      <td>${safe(b.numeroBoleta)}</td>
-                      <td>${formatDate(b.fecha)}</td>
-                      <td>${safe(b.banco)}</td>
-                      <td>${safe(b.referencia)}</td>
-                      <td style="text-align:right;">${formatCurrency(Number(b.monto) || 0)}</td>
-                    </tr>
-                  `).join("")}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colspan="4">Total boletas</td>
-                    <td style="text-align:right;">${formatCurrency(totalBoletas)}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </div>
-        ` : ""}
-
-        ${images.length > 0 ? `
-          <div class="section-title">Imágenes del pago y boletas</div>
-          ${images.map(img => `
-            <div class="image-card">
-              <div class="image-title">${img.caption}</div>
-              <div class="image-wrap">
-                <img src="${img.url}" alt="${img.caption}" />
-              </div>
+        <div class="boletas-mini">
+          <div class="boleta-mini-header">Boletas / Referencias:</div>
+          ${boletas.map(b => `
+            <div class="boleta-mini-row">
+              <span>${safe(b.numeroBoleta)}</span>
+              <span>${safe(b.banco)}</span>
+              <span>${safe(b.referencia)}</span>
+              <span style="font-weight:700;">${formatCurrency(Number(b.monto) || 0)}</span>
             </div>
           `).join("")}
-        ` : `
-          <div class="notes"><span class="muted">No hay imágenes adjuntas.</span></div>
-        `}
-
-        ${payment.notes ? `
-          <div class="notes" style="margin-top:12px;">
-            <div class="section-title">Notas</div>
-            <div class="value">${safe(payment.notes)}</div>
-          </div>
+        </div>
         ` : ""}
 
-        <div class="card" style="margin-top:12px;">
-          <div class="section-title">Confirmación</div>
-          <div class="grid-2">
-            <div class="item"><div class="label">Estado</div><div class="value">${safe((payment.confirmationStatus || 'confirmado').toUpperCase())}</div></div>
-            <div class="item"><div class="label">Aprobado por</div><div class="value">${safe(payment.confirmedBy)}</div></div>
-            <div class="item"><div class="label">Fecha de aprobación</div><div class="value">${formatDate(payment.confirmedAt || '')}</div></div>
-            ${payment.rejectionReason ? `<div class="item"><div class="label">Motivo de rechazo</div><div class="value">${safe(payment.rejectionReason)}</div></div>` : ''}
-          </div>
+        ${payment.notes ? `
+        <div class="field-row" style="margin-top:4px;">
+          <span class="field-label">Obs.:</span>
+          <span class="field-value field-line full">${safe(payment.notes)}</span>
         </div>
+        ` : ""}
+      </div>
 
-        <div class="signs">
-          <div class="sign-box"><div class="line"></div><div class="muted">Firma del Cliente</div></div>
-          <div class="sign-box"><div class="line"></div><div class="muted">Firma Autorizada</div></div>
+      <!-- SIGNATURES -->
+      <div class="signatures">
+        <div class="sig-col">
+          <div class="sig-line"></div>
+          <div class="sig-lbl">Firma del Socio / Cliente</div>
         </div>
+        <div class="sig-col">
+          <div class="sig-line"></div>
+          <div class="sig-lbl">Firma y Sello Autorizado</div>
+        </div>
+      </div>
 
-        <div class="footer">
-          <div>Este documento es un comprobante oficial de pago.</div>
-          <div>Generado el ${formatDate(new Date().toISOString())}</div>
-        </div>
-      </body>
-    </html>
-  `
+      <!-- COPY LABEL -->
+      <div class="copy-label">${copy}</div>
+
+      <!-- AUTHORIZATION FOOTER TEXT (small, like physical) -->
+      <div class="auth-text">
+        AUTORIZADO SEGÚN RESOLUCIÓN No. INACOP-GALF-CBN-2023 DE LA FECHA 14 DE SEPTIEMBRE DE 2023.
+        FORMULARIOS STANDARD, 8, A, PBX: 2425-8900 · NIT: 125023-1 · S-200 · 08/2023 DEL No. A-0,001 AL No. A-10,000
+      </div>
+    </div>
+  </div>`
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    @page { size: 215mm 279mm; margin: 8mm; }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 9px;
+      color: #000;
+      width: 100%;
+    }
+
+    /* ── each slip takes ~half the page ── */
+    .slip {
+      display: flex;
+      flex-direction: row;
+      width: 100%;
+      border: 1px solid #ccc;
+      margin-bottom: 8px;
+      min-height: 130mm;
+    }
+
+    /* LEFT STRIPE */
+    .stripe {
+      width: 18px;
+      background: #1a3a6b;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .stripe-text {
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);
+      color: white;
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    /* MAIN */
+    .main {
+      flex: 1;
+      padding: 6px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    /* TOP BAR */
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 1px solid #1a3a6b;
+      padding-bottom: 4px;
+      margin-bottom: 4px;
+    }
+    .coop-name {
+      font-size: 7.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      line-height: 1.3;
+    }
+    .coop-detail {
+      font-size: 7px;
+      color: #333;
+      line-height: 1.4;
+    }
+    .serie-box {
+      text-align: right;
+      flex-shrink: 0;
+      margin-left: 8px;
+    }
+    .serie-label {
+      font-size: 9px;
+      font-weight: 700;
+      color: #1a3a6b;
+    }
+    .serie-no {
+      font-size: 14px;
+      font-weight: 900;
+      color: #1a3a6b;
+      letter-spacing: 0.5px;
+    }
+
+    /* LOGO */
+    .logo-area {
+      text-align: center;
+      margin: 6px 0;
+    }
+    .logo-img {
+      max-height: 55px;
+      max-width: 160px;
+      object-fit: contain;
+    }
+    .logo-text {
+      font-size: 26px;
+      font-weight: 900;
+      color: #6db8d9;
+      letter-spacing: 1px;
+    }
+
+    /* FORM FIELDS */
+    .fields {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .field-row {
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+    .field-label {
+      font-size: 8px;
+      font-weight: 700;
+      white-space: nowrap;
+      color: #1a3a6b;
+    }
+    .field-value {
+      font-size: 8.5px;
+    }
+    .field-line {
+      border-bottom: 0.75px solid #555;
+      flex: 1;
+      min-width: 40px;
+      padding-bottom: 1px;
+    }
+    .full { flex: 1 1 100%; }
+
+    /* AMOUNT */
+    .amount-section {
+      background: #f0f5ff;
+      border: 1.5px solid #1a3a6b;
+      border-radius: 4px;
+      text-align: center;
+      padding: 6px;
+      margin: 4px 0;
+    }
+    .amount-label {
+      font-size: 8px;
+      font-weight: 700;
+      color: #1a3a6b;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .amount-value {
+      font-size: 20px;
+      font-weight: 900;
+      color: #1a3a6b;
+    }
+
+    /* BOLETAS MINI */
+    .boletas-mini {
+      border: 0.75px solid #ccc;
+      border-radius: 3px;
+      padding: 4px;
+    }
+    .boleta-mini-header {
+      font-weight: 700;
+      font-size: 7.5px;
+      color: #1a3a6b;
+      margin-bottom: 3px;
+    }
+    .boleta-mini-row {
+      display: flex;
+      gap: 8px;
+      font-size: 7.5px;
+      border-top: 0.5px solid #eee;
+      padding-top: 2px;
+    }
+
+    /* SIGNATURES */
+    .signatures {
+      display: flex;
+      gap: 16px;
+      margin-top: 10px;
+    }
+    .sig-col { flex: 1; text-align: center; }
+    .sig-line {
+      border-top: 1px solid #000;
+      margin-bottom: 3px;
+      margin-top: 20px;
+    }
+    .sig-lbl { font-size: 7.5px; color: #333; }
+
+    /* COPY LABEL */
+    .copy-label {
+      text-align: center;
+      font-size: 8px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #1a3a6b;
+      margin-top: 4px;
+      letter-spacing: 0.5px;
+    }
+
+    /* AUTH TEXT */
+    .auth-text {
+      font-size: 5.5px;
+      color: #777;
+      text-align: center;
+      margin-top: 4px;
+      line-height: 1.4;
+    }
+
+    /* Dashed separator between slips */
+    .slip-separator {
+      border-top: 1.5px dashed #999;
+      margin: 4px 0 8px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  ${slip("ORIGINAL CLIENTE")}
+  <div class="slip-separator"></div>
+  ${slip("COPIA COOPERATIVA")}
+</body>
+</html>`
 
   return html
 }

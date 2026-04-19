@@ -170,7 +170,7 @@ export default function DashboardPage() {
       keys.push('groupLoans')
       promises.push(fetchWithTimeout('/api/payments', { timeoutMs: 12000, cache: 'no-store' as any }).then(r => r.ok ? r.json() : null))
       keys.push('payments')
-      if (['admin', 'asesor'].includes(role)) {
+      if (['admin', 'asesor', 'contador'].includes(role)) {
         promises.push(fetchWithTimeout('/api/advisors', { timeoutMs: 12000 }).then(r => r.ok ? r.json() : null))
         keys.push('advisors')
       }
@@ -468,7 +468,7 @@ export default function DashboardPage() {
     return d >= start
   }
 
-  const kpiLoansBase = (userData.role === 'admin' || userData.role === 'asesor') ? (loans || []) : []
+  const kpiLoansBase = (userData.role === 'admin' || userData.role === 'asesor' || userData.role === 'contador') ? (loans || []) : []
   const kpiActiveLoans = kpiLoansBase.filter((l: any) => l.status === 'active')
   const kpiPendingLoans = kpiLoansBase.filter((l: any) => l.status === 'pending')
   const kpiAlDiaLoans = kpiActiveLoans.filter((l: any) => !Boolean((l as any).hasOverdue))
@@ -515,7 +515,7 @@ export default function DashboardPage() {
   };
 
   const advisorSelectedLoans = (() => {
-    if (!(userData.role === 'asesor' || userData.role === 'admin')) return displayLoans
+    if (!(userData.role === 'asesor' || userData.role === 'admin' || userData.role === 'contador')) return displayLoans
     const list = (loans || [])
     if (!advisorSelectedView) return []
     let filtered: any[] = []
@@ -536,14 +536,14 @@ export default function DashboardPage() {
     return filtered
   })()
 
-  const scopeLoans = ((userData.role === 'asesor') || (userData.role === 'admin')) ? (advisorSelectedView ? advisorSelectedLoans : (loans || [])) : displayLoans
-  const advisorGlobalProgress = ((userData.role === 'asesor') || (userData.role === 'admin')) ? (() => {
+  const scopeLoans = ((userData.role === 'asesor') || (userData.role === 'admin') || (userData.role === 'contador')) ? (advisorSelectedView ? advisorSelectedLoans : (loans || [])) : displayLoans
+  const advisorGlobalProgress = ((userData.role === 'asesor') || (userData.role === 'admin') || (userData.role === 'contador')) ? (() => {
     const paid = (scopeLoans || []).reduce((s: number, l: any) => s + Number((l as any).progressPaid || 0), 0)
     const total = (scopeLoans || []).reduce((s: number, l: any) => s + Number((l as any).progressTotal || 0), 0)
     return { paid, total }
   })() : { paid: 0, total: 0 }
 
-  const advisorTotals = ((userData.role === 'asesor') || (userData.role === 'admin')) ? (() => {
+  const advisorTotals = ((userData.role === 'asesor') || (userData.role === 'admin') || (userData.role === 'contador')) ? (() => {
     const installments = (l: any) => {
       const months = Number(l?.termMonths || 0)
       const freq = String(l?.paymentFrequency || '')
@@ -559,7 +559,7 @@ export default function DashboardPage() {
     return { totalRepayable, paidRecovered }
   })() : { totalRepayable: 0, paidRecovered: 0 }
 
-  const advisorGroupTotals = ((userData.role === 'asesor') || (userData.role === 'admin')) ? (() => {
+  const advisorGroupTotals = ((userData.role === 'asesor') || (userData.role === 'admin') || (userData.role === 'contador')) ? (() => {
     const ids = new Set((scopeLoans || []).map((l: any) => String(l.id)))
     const byId: Record<string, any> = {}
     for (const l of (scopeLoans || [])) byId[String(l.id)] = l
@@ -604,10 +604,10 @@ export default function DashboardPage() {
       <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-3xl font-bold text-foreground mb-2 truncate">
-            {userData.role === "admin" ? "Panel de Administración" : "Mis Préstamos"}
+            {userData.role === "admin" || userData.role === "contador" ? "Panel de Administración" : "Mis Préstamos"}
           </h2>
           <p className="text-muted-foreground">
-            {userData.role === "admin"
+            {userData.role === "admin" || userData.role === "contador"
               ? "Resumen general del sistema de préstamos"
               : "Gestiona y revisa tus préstamos activos"}
           </p>
@@ -636,9 +636,19 @@ export default function DashboardPage() {
             <CreateLoanDialog clients={transformedClients} onLoanCreated={refreshAfterCreation} />
           </div>
         )}
+        {userData.role === 'contador' && (
+          <div className="flex flex-wrap md:flex-nowrap items-center gap-2 w-full md:w-auto">
+            <Button variant="outline" size="sm" className="gap-2 bg-transparent" asChild>
+              <a href="/api/reports/loans-excel" target="_blank" rel="noopener noreferrer">
+                <Download className="h-4 w-4" />
+                Exportar Excel
+              </a>
+            </Button>
+          </div>
+        )}
       </div>
 
-      {(userData.role === 'admin' || userData.role === 'asesor') && (
+      {(userData.role === 'admin' || userData.role === 'asesor' || userData.role === 'contador') && (
         <div className="mb-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
             <Tooltip>
@@ -761,7 +771,7 @@ export default function DashboardPage() {
 
       {/* GRILLA DE CARDS: 2 COLUMNAS EN MÓVIL */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-4">
-        {userData.role === 'asesor' || userData.role === 'admin' ? (
+        {userData.role === 'asesor' || userData.role === 'admin' || userData.role === 'contador' ? (
           <>
             {userData.role === 'asesor' && (
               <StatsCard
@@ -1019,16 +1029,16 @@ export default function DashboardPage() {
             ))}
           </Tabs>
         ) : (
-          <Tabs defaultValue="clients" onValueChange={(v) => { if (v === 'groups') setGroupsTabVisited(true) }} className="w-full">
+          <Tabs defaultValue="clients" onValueChange={(v) => { if (v === 'groups') setGroupsTabVisited(true) }} className="w-full" id="loans-tabs">
             <TabsList className="grid w-full max-w-full grid-cols-2 bg-muted/50">
               <TabsTrigger value="clients">Clientes</TabsTrigger>
               <TabsTrigger value="groups">Grupos</TabsTrigger>
             </TabsList>
             <TabsContent value="clients">
               <h3 className="text-xl font-semibold text-foreground mb-4">
-                {userData.role === "admin" ? "Todos los Préstamos" : "Mis Préstamos"}
+                {userData.role === "admin" || userData.role === "contador" ? "Todos los Préstamos" : "Mis Préstamos"}
               </h3>
-              {(userData.role === 'asesor' || userData.role === 'admin') && !advisorSelectedView && (
+              {(userData.role === 'asesor' || userData.role === 'admin' || userData.role === 'contador') && !advisorSelectedView && (
                 <div className="mb-2 text-sm text-muted-foreground">Seleccione una card superior para ver la tabla de préstamos</div>
               )}
               {loansError && (
@@ -1046,7 +1056,7 @@ export default function DashboardPage() {
                   }}>Reintentar</Button>
               </div>
             )}
-              {(userData.role === 'asesor' || userData.role === 'admin') && advisorSelectedView !== 'asesores_stats' && (
+              {(userData.role === 'asesor' || userData.role === 'admin' || userData.role === 'contador') && advisorSelectedView !== 'asesores_stats' && (
                 <div className="mb-2 text-sm text-muted-foreground">
                   {(() => {
                     const labelMap: Record<string, string> = { all: 'Todos', active: 'Activos', aldia: 'Al día', mora: 'Con mora', pending: 'Pendientes', paid: 'Pagados', asesores_stats: 'Estadísticas de asesores' }
@@ -1056,7 +1066,7 @@ export default function DashboardPage() {
                   })()}
                 </div>
               )}
-              {(userData.role === 'asesor' || userData.role === 'admin') ? (
+              {(userData.role === 'asesor' || userData.role === 'admin' || userData.role === 'contador') ? (
                 advisorSelectedView ? (
                   advisorSelectedView === 'asesores_stats' ? (
                     (() => {

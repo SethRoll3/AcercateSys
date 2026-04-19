@@ -152,12 +152,18 @@ export default function ReporteriaPage() {
     try {
       const url = buildUrl(selectedReport.pdfUrl, "pdf")
       const response = await fetch(url)
-      if (!response.ok) {
-        let errorMsg = "Error al descargar el reporte"
+
+      // Check content-type to detect JSON error responses before trying to blob
+      const contentType = response.headers.get("content-type") || ""
+      if (!response.ok || contentType.includes("application/json")) {
+        let errorMsg = `Error ${response.status} al generar el PDF`
         try { const d = await response.json(); errorMsg = d?.error || errorMsg } catch {}
         throw new Error(errorMsg)
       }
+
       const blob = await response.blob()
+      if (blob.size === 0) throw new Error("El servidor devolvió un PDF vacío.")
+
       const blobUrl = window.URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = blobUrl
@@ -168,8 +174,8 @@ export default function ReporteriaPage() {
       window.URL.revokeObjectURL(blobUrl)
       toast({ title: "✅ Reporte descargado", description: "El PDF se descargó exitosamente." })
     } catch (error: any) {
-      console.error("Error:", error)
-      toast({ title: "❌ Error al descargar", description: String(error?.message || "Hubo un error."), variant: "destructive" })
+      console.error("Error PDF:", error)
+      toast({ title: "❌ Error al descargar PDF", description: String(error?.message || "Hubo un error al generar el PDF."), variant: "destructive" })
     } finally {
       setIsDownloading(null)
     }

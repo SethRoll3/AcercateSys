@@ -18,7 +18,7 @@ export async function GET(request: Request) {
 
     const { data: me } = await supabase.from('users').select('id, role, email').eq('auth_id', user.id).single()
     if (!me) return NextResponse.json({ error: "User not found" }, { status: 404 })
-    if (me.role !== 'admin' && me.role !== 'asesor') {
+    if (me.role !== 'admin' && me.role !== 'asesor' && me.role !== 'contador') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -265,6 +265,32 @@ export async function GET(request: Request) {
     ws.mergeCells(desc.number, 1, desc.number, 13)
     desc.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' }
     desc.getCell(1).font = { italic: true }
+
+    // Explanation section
+    ws.addRow([])
+    const expTitle = ws.addRow(['📖 Cómo leer este reporte'])
+    ws.mergeCells(expTitle.number, 1, expTitle.number, 13)
+    expTitle.getCell(1).font = { bold: true, color: { argb: '1E40AF' }, size: 12 }
+    expTitle.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EFF6FF' } }
+    expTitle.getCell(1).border = { top: { style: 'thin', color: { argb: 'BFDBFE' } }, bottom: { style: 'thin', color: { argb: 'BFDBFE' } }, left: { style: 'thin', color: { argb: 'BFDBFE' } }, right: { style: 'thin', color: { argb: 'BFDBFE' } } }
+
+    const fmtCurrStr = (n: number) => `Q${n.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    const expLines: [string, string, string][] = [
+      ['Total Prestado', fmtCurrStr(totalPrestado), 'Suma de montos originales de préstamos ACTIVOS. Es lo que la cooperativa tiene colocado actualmente.'],
+      ['Capital Recuperado', fmtCurrStr(totalCapitalRecuperado), 'Capital PURO ya cobrado (sin intereses, mora ni gastos admin). Los pagos se aplican en orden: Mora → Gastos Admin → Intereses → Capital.'],
+      ['Saldo Pendiente', `${fmtCurrStr(totalPrestado)} − ${fmtCurrStr(totalCapitalRecuperado)} = ${fmtCurrStr(saldoPendiente)}`, 'Capital que aún falta recuperar = Total Prestado − Capital Recuperado.'],
+      ['Intereses Recuperados', fmtCurrStr(totalInteresesRecuperados), 'Intereses ya cobrados de los préstamos activos (va separado del capital).'],
+      ['Intereses por Pagar', fmtCurrStr(totalInteresesPorPagar), 'Intereses que aún se esperan cobrar en el futuro de los préstamos activos.'],
+    ]
+    for (const [label, value, explanation] of expLines) {
+      const r = ws.addRow([label, value, explanation])
+      r.getCell(1).font = { bold: true, color: { argb: '1E3A5F' } }
+      for (let c = 1; c <= 13; c++) {
+        r.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EFF6FF' } }
+      }
+      r.getCell(3).font = { color: { argb: '475569' }, italic: true }
+      ws.mergeCells(r.number, 3, r.number, 13)
+    }
 
     async function createChartImage(
       type: 'bar' | 'doughnut',

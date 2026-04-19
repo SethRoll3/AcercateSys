@@ -246,9 +246,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ paym
       const page = await browser.newPage()
       await page.setContent(brandedHtml, { waitUntil: 'networkidle0' })
       const pdfBuffer = await page.pdf({
-        format: 'A4',
+        format: 'Letter',
         printBackground: true,
-        margin: { top: '20mm', right: '15mm', bottom: '20mm', left: '15mm' }
+        margin: { top: '8mm', right: '8mm', bottom: '8mm', left: '8mm' }
       })
       // Usar Uint8Array para garantizar BodyInit válido (evita SharedArrayBuffer)
       const pdfBytes = new Uint8Array(pdfBuffer)

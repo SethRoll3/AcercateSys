@@ -16,7 +16,7 @@ export async function GET(request: Request) {
 
     const { data: me } = await supabase.from('users').select('id, role, email').eq('auth_id', user.id).single()
     if (!me) return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    if (me.role !== 'admin' && me.role !== 'asesor') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (me.role !== 'admin' && me.role !== 'asesor' && me.role !== 'contador') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     let clientIds: string[] = []
     if (me.role === 'asesor') {
@@ -137,6 +137,18 @@ export async function GET(request: Request) {
         ${row('Recuperación', `${recuperacionPct.toFixed(2)}%`)}
         ${row('Ticket promedio', fmtQ(ticketPromedio))}
       </div>
+
+      <div style="margin-top:18px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:12px;">
+        <div style="font-size:11px; font-weight:700; color:#1e40af; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.3px;">📖 Cómo leer este reporte</div>
+        <div style="font-size:10px; color:#1e293b; line-height:1.7;">
+          <b>Total Prestado (${fmtQ(totalPrestado)})</b> — Suma de los montos originales de todos los préstamos <b>activos</b>. Es lo que la cooperativa tiene colocado actualmente.<br/>
+          <b>Capital Recuperado (${fmtQ(totalCapitalRecuperado)})</b> — Porción de <b>capital puro</b> ya cobrado de esos préstamos (no incluye intereses, mora ni gastos administrativos).<br/>
+          <b>Saldo Pendiente (${fmtQ(saldoPendiente)})</b> — Capital que aún falta recuperar: ${fmtQ(totalPrestado)} − ${fmtQ(totalCapitalRecuperado)} = <b>${fmtQ(saldoPendiente)}</b>.<br/>
+          <b>Intereses Recuperados (${fmtQ(totalInteresesRecuperados)})</b> — Intereses ya cobrados de los préstamos activos (separado del capital).<br/>
+          <b>Intereses por Pagar (${fmtQ(totalInteresesPorPagar)})</b> — Intereses que aún se esperan cobrar en el futuro de los préstamos activos.
+        </div>
+      </div>
+
       <div class="footer">Reporte generado por el sistema Acercate.</div>
     </body></html>`
 

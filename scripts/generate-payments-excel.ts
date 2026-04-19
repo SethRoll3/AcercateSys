@@ -252,16 +252,30 @@ async function main() {
           observaciones = boletas[0].observaciones || ''
         }
 
-        const dataRow = ws.addRow([paymentNumber, imageUrl ? 'Ver aquí' : '(sin boleta)', observaciones])
+        // Construir URL válida para Excel
+        let finalUrl = ''
+        if (imageUrl) {
+          // Si la URL no empieza con http, construir la URL pública de Supabase
+          if (imageUrl.startsWith('http')) {
+            finalUrl = imageUrl
+          } else {
+            // Es un path relativo dentro del bucket → construir URL pública
+            finalUrl = `${supabaseUrl}/storage/v1/object/public/boletas-images/${imageUrl}`
+          }
+          // Sanitizar: reemplazar espacios y codificar caracteres especiales
+          finalUrl = encodeURI(finalUrl.trim())
+        }
+
+        const dataRow = ws.addRow([paymentNumber, finalUrl ? 'Ver aquí' : '(sin boleta)', observaciones])
 
         // Centrar número de pago
         dataRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' }
         dataRow.getCell(1).font = { size: 10 }
 
         // Hyperlink en "Ver aquí"
-        if (imageUrl) {
+        if (finalUrl) {
           const linkCell = dataRow.getCell(2)
-          linkCell.value = { text: 'Ver aquí', hyperlink: imageUrl }
+          linkCell.value = { text: 'Ver aquí', hyperlink: finalUrl }
           linkCell.font = { color: { argb: '2563EB' }, underline: true, size: 10 }
           linkCell.alignment = { horizontal: 'center', vertical: 'middle' }
         } else {
