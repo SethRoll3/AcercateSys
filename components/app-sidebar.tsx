@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Home, Users, LogOut, CreditCard, FileText, Settings, UserCheck, Calculator, Loader2 } from "lucide-react"
+import { Home, Users, LogOut, CreditCard, FileText, Settings, UserCheck, Calculator, Loader2, History } from "lucide-react"
 import { useState } from "react"
 import { LoanCalculatorModal } from "@/components/loan-calculator-modal"
 import { createClient } from "@/lib/supabase/client"
@@ -19,6 +19,7 @@ interface MenuItem {
 const menuItems: MenuItem[] = [
   { name: "Dashboard", href: "/dashboard", icon: Home, permission: null }, // Siempre visible
   { name: "Clientes", href: "/dashboard/clients", icon: Users, permission: null }, // Visible para roles con acceso a la ruta (admin/asesor)
+  { name: "Historial", href: "/dashboard/historial", icon: History, permission: null }, // Historial de préstamos
   { name: "Reportería", href: "/dashboard/reporteria", icon: FileText, permission: "canViewFinancialReports" },
   { name: "Usuarios", href: "/dashboard/users", icon: UserCheck, permission: "canManageUsers" },
   { name: "Logs", href: "/dashboard/logs", icon: FileText, permission: "canAccessSystemSettings" },

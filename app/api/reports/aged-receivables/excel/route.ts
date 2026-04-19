@@ -72,6 +72,7 @@ export async function GET(request: Request) {
     const reportData: Record<string, {
       clientName: string,
       loanNumber: string,
+      maxDaysOverdue: number,
       totalDue: number,
       current: number,
       days1_30: number,
@@ -109,6 +110,7 @@ export async function GET(request: Request) {
         reportData[s.loan_id] = {
           clientName: `${loan.client?.first_name || ''} ${loan.client?.last_name || ''}`.trim(),
           loanNumber: loan.loan_number || 'N/A',
+          maxDaysOverdue: 0,
           totalDue: 0,
           current: 0,
           days1_30: 0,
@@ -123,14 +125,17 @@ export async function GET(request: Request) {
 
       if (daysOverdue <= 0) {
         entry.current += debt
-      } else if (daysOverdue <= 30) {
-        entry.days1_30 += debt
-      } else if (daysOverdue <= 60) {
-        entry.days31_60 += debt
-      } else if (daysOverdue <= 90) {
-        entry.days61_90 += debt
       } else {
-        entry.days90plus += debt
+        if (daysOverdue > entry.maxDaysOverdue) entry.maxDaysOverdue = daysOverdue
+        if (daysOverdue <= 30) {
+          entry.days1_30 += debt
+        } else if (daysOverdue <= 60) {
+          entry.days31_60 += debt
+        } else if (daysOverdue <= 90) {
+          entry.days61_90 += debt
+        } else {
+          entry.days90plus += debt
+        }
       }
     })
 
@@ -174,6 +179,7 @@ export async function GET(request: Request) {
     const headers = [
       'Cliente',
       'No. Préstamo',
+      'Días en Mora',
       'Saldo Total',
       'Corriente',
       '1-30 Días',
@@ -196,6 +202,7 @@ export async function GET(request: Request) {
       const r = ws.addRow([
         row.clientName,
         row.loanNumber,
+        row.maxDaysOverdue > 0 ? `${row.maxDaysOverdue} días` : 'Al día',
         row.totalDue,
         row.current,
         row.days1_30,
@@ -203,8 +210,11 @@ export async function GET(request: Request) {
         row.days61_90,
         row.days90plus
       ])
-      // Apply currency format to amount columns
-      ;[3, 4, 5, 6, 7, 8].forEach(idx => {
+      // Color-code the días en mora cell
+      const diasColor = row.maxDaysOverdue > 90 ? 'FFDC2626' : row.maxDaysOverdue > 60 ? 'FFEA580C' : row.maxDaysOverdue > 30 ? 'FFCA8A04' : row.maxDaysOverdue > 0 ? 'FF16A34A' : 'FF64748B'
+      r.getCell(3).font = { bold: row.maxDaysOverdue > 0, color: { argb: diasColor } }
+      // Apply currency format to amount columns (4-9)
+      ;[4, 5, 6, 7, 8, 9].forEach(idx => {
         r.getCell(idx).numFmt = currencyFmt
       })
     })
@@ -213,6 +223,7 @@ export async function GET(request: Request) {
     ws.columns = [
       { width: 30 }, // Client
       { width: 15 }, // Loan
+      { width: 14 }, // Días en Mora
       { width: 15 }, // Total
       { width: 15 }, // Current
       { width: 15 }, // 1-30

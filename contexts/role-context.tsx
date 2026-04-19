@@ -167,6 +167,7 @@ export const RoleContext = createContext<RoleContextType | undefined>(undefined)
 const PROTECTED_ROUTES: Record<string, UserRole[]> = {
   '/dashboard': ['admin', 'asesor', 'cliente', 'contador'],
   '/dashboard/clients': ['admin', 'asesor', 'contador'],
+  '/dashboard/historial': ['admin', 'asesor', 'contador'],
   '/dashboard/loans': ['admin', 'asesor', 'contador'],
   '/dashboard/payments': ['admin', 'asesor', 'contador'],
   '/dashboard/reports': ['admin', 'asesor', 'contador'],
