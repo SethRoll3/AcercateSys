@@ -187,10 +187,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ paym
       // Map required Loan field userId to client_id to satisfy type
       userId: payment.loan.client_id,
       loanNumber: payment.loan.loan_number,
+      loan_number: payment.loan.loan_number,
       amount: Number(payment.loan.amount),
       interestRate: Number(payment.loan.interest_rate),
       termMonths: payment.loan.term_months,
       monthlyPayment: Number(payment.loan.monthly_payment),
+      monthly_payment: Number(payment.loan.monthly_payment),
       status: payment.loan.status,
       startDate: payment.loan.start_date,
       endDate: payment.loan.end_date,
@@ -202,6 +204,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ paym
         last_name: payment.loan.client.last_name,
         email: payment.loan.client.email,
         phone: payment.loan.client.phone,
+        advisor_id: payment.loan.client.advisor_id || null, // Añadido para TS
         createdAt: payment.loan.client.created_at,
         updatedAt: payment.loan.client.updated_at,
       },
@@ -219,35 +222,51 @@ export async function GET(request: Request, { params }: { params: Promise<{ paym
         const ext = path.extname(p).toLowerCase()
         const mime = ext === ".png" ? "image/png" : "image/jpeg"
         return `data:${mime};base64,${base64}`
-      } catch {
-        return null
-      }
+      return `data:${mime};base64,${base64}`
+    } catch {
+      return null
     }
+  }
 
-    const [logoDataUrl, logoIconDataUrl] = await Promise.all([
-      fileToDataUrl(logoPath),
-      fileToDataUrl(logoIconPath),
-    ])
+  const [logoDataUrl, logoIconDataUrl] = await Promise.all([
+    fileToDataUrl(logoPath),
+    fileToDataUrl(logoIconPath),
+  ])
 
-    const brandedHtml = generatePaymentReceipt(transformedPayment, transformedLoan, {
-      coopName: "acercate",
-      logo: logoDataUrl,
-      logoIcon: logoIconDataUrl,
-      colors: {
-        primary: "#0ea5e9",
-        secondary: "#38bdf8",
-        text: "#0f172a",
-      },
+  const brandedHtml = generatePaymentReceipt(transformedPayment, transformedLoan, {
+    coopName: "acercate",
+    logo: logoDataUrl,
+    logoIcon: logoIconDataUrl,
+    colors: {
+      primary: "#0ea5e9",
+      secondary: "#38bdf8",
+      text: "#0f172a",
+    },
+  })
+
+  // Generate PDF using headless browser, compatible with Vercel Serverless
+  let browser
+  if (process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production") {
+    const puppeteerCore = await import("puppeteer-core")
+    const sparticuzChromium = (await import("@sparticuz/chromium")).default as any
+    browser = await puppeteerCore.launch({
+      args: sparticuzChromium.args,
+      defaultViewport: sparticuzChromium.defaultViewport,
+      executablePath: await sparticuzChromium.executablePath(),
+      headless: sparticuzChromium.headless,
     })
+  } else {
+    // Local dev uses standard puppeteer
+    const puppeteer = await import("puppeteer")
+    browser = await puppeteer.default.launch({ headless: true })
+  }
 
-    // Generate PDF using headless browser
-    const browser = await puppeteer.launch({ headless: true })
-    try {
-      const page = await browser.newPage()
-      await page.setContent(brandedHtml, { waitUntil: 'networkidle0' })
-      const pdfBuffer = await page.pdf({
-        format: 'Letter',
-        printBackground: true,
+  try {
+    const page = await browser.newPage()
+    await page.setContent(brandedHtml, { waitUntil: 'networkidle0' })
+    const pdfBuffer = await page.pdf({
+      format: 'Letter',
+      printBackground: true,
         margin: { top: '8mm', right: '8mm', bottom: '8mm', left: '8mm' }
       })
       // Usar Uint8Array para garantizar BodyInit válido (evita SharedArrayBuffer)

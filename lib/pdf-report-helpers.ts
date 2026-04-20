@@ -37,7 +37,22 @@ export async function htmlToPdfResponse(
   filename: string,
   landscape = false,
 ): Promise<NextResponse> {
-  const browser = await puppeteer.launch({ headless: true })
+  let browser
+  if (process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production") {
+    const puppeteerCore = await import("puppeteer-core")
+    const sparticuzChromium = (await import("@sparticuz/chromium")).default as any
+    browser = await puppeteerCore.launch({
+      args: sparticuzChromium.args,
+      defaultViewport: sparticuzChromium.defaultViewport,
+      executablePath: await sparticuzChromium.executablePath(),
+      headless: sparticuzChromium.headless,
+    })
+  } else {
+    // Local dev uses standard puppeteer
+    const puppeteer = await import("puppeteer")
+    browser = await puppeteer.default.launch({ headless: true })
+  }
+
   try {
     const page = await browser.newPage()
     await page.setContent(html, { waitUntil: 'networkidle0' })
