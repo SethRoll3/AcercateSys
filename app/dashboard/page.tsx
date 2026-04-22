@@ -79,7 +79,9 @@ export default function DashboardPage() {
   const [advisorClientsView, setAdvisorClientsView] = useState<{ id: string, name: string, email: string } | null>(null)
   const [advisorCommissions, setAdvisorCommissions] = useState<Record<string, any>>({})
   const [calcOpen, setCalcOpen] = useState(false)
-  
+  const [interestStats, setInterestStats] = useState<{ totalCapitalRecuperado: number, totalInteresesRecuperados: number, totalInteresesPorPagar: number }>({ totalCapitalRecuperado: 0, totalInteresesRecuperados: 0, totalInteresesPorPagar: 0 })
+  const [explanationOpen, setExplanationOpen] = useState(false)
+
   // REFERENCIA PARA EL SCROLL 
   const resultsSectionRef = useRef<HTMLDivElement>(null)
 
@@ -174,10 +176,11 @@ export default function DashboardPage() {
         promises.push(fetchWithTimeout('/api/advisors', { timeoutMs: 12000 }).then(r => r.ok ? r.json() : null))
         keys.push('advisors')
       }
-      if (role === 'admin') {
+      if (['admin', 'contador'].includes(role)) {
         promises.push(fetchWithTimeout('/api/advisors/commissions', { timeoutMs: 12000 }).then(r => r.ok ? r.json() : null))
         keys.push('commissions')
       }
+
       const results = await Promise.all(promises)
       results.forEach((data, index) => {
         const key = keys[index]
@@ -250,6 +253,18 @@ export default function DashboardPage() {
     } catch (e) {
       console.error('Dashboard revalidation error:', e)
     } finally {
+      // Also fetch interest stats for the explanation panel
+      try {
+        const istRes = await fetch('/api/reports/portfolio-stats')
+        if (istRes.ok) {
+          const ist = await istRes.json()
+          setInterestStats({
+            totalCapitalRecuperado: Number(ist.totalCapitalRecuperado || 0),
+            totalInteresesRecuperados: Number(ist.totalInteresesRecuperados || 0),
+            totalInteresesPorPagar: Number(ist.totalInteresesPorPagar || 0)
+          })
+        }
+      } catch {}
       setIsLoading(false)
       inFlightRef.current = false
     }
@@ -477,10 +492,9 @@ export default function DashboardPage() {
   const kpiSaldoAlDia = kpiAlDiaLoans.reduce((s: number, l: any) => s + Number(l.amount || 0), 0)
   const kpiMoraAmount = kpiMoraLoans.reduce((s: number, l: any) => s + Number((l as any).moraTotal || 0), 0)
   const kpiMoraPct = kpiActiveCapital > 0 ? (kpiMoraAmount / kpiActiveCapital) : 0
-  const kpiRecoveredAmount = kpiActiveLoans.reduce((s: number, l: any) => {
-    const k = String(l?.id || '')
-    return s + Number(paymentsAgg[k] || 0)
-  }, 0)
+  // kpiRecoveredAmount: capital puro recuperado — uses same priority logic as the Total Cartera PDF report
+  // (loaded from /api/reports/portfolio-stats which applies mora -> fees -> interest -> capital)
+  const kpiRecoveredAmount = interestStats.totalCapitalRecuperado
   const kpiRecoveredPct = kpiActiveCapital > 0 ? (kpiRecoveredAmount / kpiActiveCapital) : 0
 
   const approvalsThisMonth = kpiLoansBase.filter((l: any) => {
@@ -599,473 +613,324 @@ export default function DashboardPage() {
     }, 150);
   }
 
+  // ─── Cartera explanation logic (mirrors the "Total Cartera" report) ───────
+  const kpiTotalPrestado = kpiActiveLoans.reduce((s: number, l: any) => s + Number(l.amount || 0), 0)
+  const kpiSaldoPendiente = Math.max(0, kpiTotalPrestado - kpiRecoveredAmount)
+
   return (
     <>
-      <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-3">
+      {/* ── HEADER ─────────────────────────────────────────────── */}
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-3xl font-bold text-foreground mb-2 truncate">
-            {userData.role === "admin" || userData.role === "contador" ? "Panel de Administración" : "Mis Préstamos"}
+          <h2 className="text-2xl sm:text-3xl font-bold text-foreground mb-1 truncate">
+            {userData.role === 'admin' || userData.role === 'contador' ? 'Panel de Administración' : userData.role === 'asesor' ? 'Panel del Asesor' : 'Mis Préstamos'}
           </h2>
-          <p className="text-muted-foreground">
-            {userData.role === "admin" || userData.role === "contador"
-              ? "Resumen general del sistema de préstamos"
-              : "Gestiona y revisa tus préstamos activos"}
+          <p className="text-muted-foreground text-sm">
+            {userData.role === 'admin' || userData.role === 'contador'
+              ? 'Resumen general del sistema de préstamos'
+              : userData.role === 'asesor'
+              ? 'Gestiona tus clientes y sus préstamos'
+              : 'Gestiona y revisa tus préstamos activos'}
           </p>
         </div>
-        {userData.role === "admin" && (
-          <div className="flex flex-wrap md:flex-nowrap items-center gap-2 w-full md:w-auto">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {(userData.role === 'admin' || userData.role === 'contador') && (
             <Button variant="outline" size="sm" className="gap-2 bg-transparent" asChild>
               <a href="/api/reports/loans-excel" target="_blank" rel="noopener noreferrer">
                 <Download className="h-4 w-4" />
                 Exportar Excel
               </a>
             </Button>
+          )}
+          {(userData.role === 'admin' || userData.role === 'asesor') && (
             <Button variant="outline" size="sm" className="gap-2 bg-transparent" onClick={() => setCalcOpen(true)}>
               <Calculator className="h-4 w-4" />
               Calculadora
             </Button>
+          )}
+          {(userData.role === 'admin' || userData.role === 'asesor') && (
             <CreateLoanDialog clients={transformedClients} onLoanCreated={refreshAfterCreation} />
-          </div>
-        )}
+          )}
+        </div>
+      </div>
+
+      {/* ── ADMIN / ASESOR / CONTADOR DASHBOARD ────────────────── */}
+      {(userData.role === 'admin' || userData.role === 'asesor' || userData.role === 'contador') && (<>
+
+        {/* ── ROW 1: PRIMARY CARTERA METRICS ── */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-4">
+          {/* Cartera Activa */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Card className="border-border/50 bg-gradient-to-br from-primary/10 to-primary/5 backdrop-blur-sm hover:from-primary/15 hover:to-primary/10 transition-all duration-300 hover:-translate-y-0.5 cursor-default">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 px-4">
+                  <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">Cartera Activa</CardTitle>
+                  <TrendingUp className="h-4 w-4 text-primary shrink-0" />
+                </CardHeader>
+                <CardContent className="px-4 pb-4">
+                  <div className="text-xl sm:text-2xl font-bold text-foreground tabular-nums">{formatCurrency(kpiActiveCapital)}</div>
+                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                    <Badge variant="secondary" className="h-4 text-[10px] px-1.5">{kpiActiveLoans.length} préstamos</Badge>
+                    <span className="text-xs text-muted-foreground">activos</span>
+                  </div>
+                </CardContent>
+              </Card>
+            </TooltipTrigger>
+            <TooltipContent>Capital total de todos los préstamos activos (al día + en mora)</TooltipContent>
+          </Tooltip>
+
+          {/* Capital Recuperado */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Card className="border-border/50 bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 backdrop-blur-sm hover:from-emerald-500/15 hover:to-emerald-500/10 transition-all duration-300 hover:-translate-y-0.5 cursor-default">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 px-4">
+                  <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">Capital Recuperado</CardTitle>
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                </CardHeader>
+                <CardContent className="px-4 pb-4">
+                  <div className="text-xl sm:text-2xl font-bold text-emerald-500 tabular-nums">{formatCurrency(kpiRecoveredAmount)}</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {formatPct(kpiRecoveredPct * 100)}% de cartera activa
+                  </div>
+                </CardContent>
+              </Card>
+            </TooltipTrigger>
+            <TooltipContent>Pagos confirmados/aprobados en préstamos activos (solo capital puro, después de deducir mora, gastos e intereses)</TooltipContent>
+          </Tooltip>
+
+          {/* Saldo Pendiente */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Card className="border-border/50 bg-gradient-to-br from-amber-500/10 to-amber-500/5 backdrop-blur-sm hover:from-amber-500/15 hover:to-amber-500/10 transition-all duration-300 hover:-translate-y-0.5 cursor-default">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 px-4">
+                  <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">Saldo Pendiente</CardTitle>
+                  <Hourglass className="h-4 w-4 text-amber-500 shrink-0" />
+                </CardHeader>
+                <CardContent className="px-4 pb-4">
+                  <div className="text-xl sm:text-2xl font-bold text-amber-500 tabular-nums">{formatCurrency(kpiSaldoPendiente)}</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Capital aún por recuperar
+                  </div>
+                </CardContent>
+              </Card>
+            </TooltipTrigger>
+            <TooltipContent>Capital Activo − Capital Recuperado = lo que aún falta cobrar</TooltipContent>
+          </Tooltip>
+
+          {/* Mora actual */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Card className={`border-border/50 backdrop-blur-sm transition-all duration-300 hover:-translate-y-0.5 cursor-default ${kpiMoraAmount > 0 ? 'bg-gradient-to-br from-rose-500/10 to-rose-500/5 hover:from-rose-500/15 hover:to-rose-500/10' : 'bg-gradient-to-br from-emerald-500/5 to-card/60 hover:bg-card/80'}`}>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 px-4">
+                  <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">Mora Actual</CardTitle>
+                  <AlertTriangle className={`h-4 w-4 shrink-0 ${kpiMoraAmount > 0 ? 'text-rose-500' : 'text-emerald-500'}`} />
+                </CardHeader>
+                <CardContent className="px-4 pb-4">
+                  <div className={`text-xl sm:text-2xl font-bold tabular-nums ${kpiMoraAmount > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{formatCurrency(kpiMoraAmount)}</div>
+                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                    {kpiMoraLoans.length > 0 && <Badge variant="destructive" className="h-4 text-[10px] px-1.5">{kpiMoraLoans.length} préstamos</Badge>}
+                    <span className="text-xs text-muted-foreground">{formatPct(kpiMoraPct * 100)}% cartera</span>
+                  </div>
+                  <div className={`text-[10px] mt-1.5 flex items-center gap-0.5 ${moraTrendUp ? 'text-rose-400' : 'text-emerald-400'}`}>
+                    {moraTrendUp ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                    {formatPct(Math.abs(moraTrendPct))}% vs mes anterior
+                  </div>
+                </CardContent>
+              </Card>
+            </TooltipTrigger>
+            <TooltipContent>Monto total de cuotas vencidas sin pagar en préstamos en mora</TooltipContent>
+          </Tooltip>
+        </div>
+
+        {/* ── ROW 2: SECONDARY MINI METRICS ── */}
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-3">
+          <Card className="border-border/50 bg-card/60 backdrop-blur-sm">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3 px-4">
+              <CardTitle className="text-xs font-medium text-muted-foreground">Aprobados este mes</CardTitle>
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+            </CardHeader>
+            <CardContent className="px-4 pb-3">
+              <div className="text-xl font-bold text-foreground">{approvalsThisMonthCount} <span className="text-sm font-normal text-muted-foreground">préstamos</span></div>
+              <div className="text-xs text-muted-foreground">{formatCurrency(approvalsThisMonthAmount)} en desembolsos</div>
+              <div className={`text-[10px] mt-0.5 flex items-center gap-0.5 ${approvalsTrendUp ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {approvalsTrendUp ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                {formatPct(Math.abs(approvalsGrowthPct))}% vs mes anterior
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-border/50 bg-card/60 backdrop-blur-sm">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3 px-4">
+              <CardTitle className="text-xs font-medium text-muted-foreground">Saldo al día (sin mora)</CardTitle>
+              <Wallet className="h-3.5 w-3.5 text-sky-500" />
+            </CardHeader>
+            <CardContent className="px-4 pb-3">
+              <div className="text-xl font-bold text-foreground">{formatCurrency(kpiSaldoAlDia)}</div>
+              <div className="text-xs text-muted-foreground">{kpiAlDiaLoans.length} préstamos corrientes</div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* ── COLLAPSIBLE EXPLANATION BAR (full width, zero dead space) ── */}
+        <div className="rounded-lg border border-border/50 bg-card/60 backdrop-blur-sm mb-4 overflow-hidden">
+          <button
+            onClick={() => setExplanationOpen(o => !o)}
+            className="w-full flex items-center justify-between gap-2 px-4 py-2.5 text-left hover:bg-muted/30 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <FileText className="h-3.5 w-3.5 text-primary shrink-0" />
+              <span className="text-xs font-semibold text-foreground">Cómo leer estos números</span>
+            </div>
+            <svg className={`h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform duration-200 ${explanationOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+          </button>
+          {explanationOpen && (
+            <div className="px-4 pb-3 pt-0 border-t border-border/30">
+              <div className="text-xs text-foreground leading-6 space-y-0.5 py-2">
+                <div><strong>Total Prestado ({formatCurrency(kpiActiveCapital)})</strong> — Suma de los montos originales de todos los préstamos <strong>activos</strong>. Es lo que la cooperativa tiene colocado actualmente.</div>
+                <div><strong className="text-emerald-500">Capital Recuperado ({formatCurrency(kpiRecoveredAmount)})</strong> — Porción de <strong>capital puro</strong> ya cobrado de esos préstamos (no incluye intereses, mora ni gastos administrativos).</div>
+                <div><strong className="text-amber-500">Saldo Pendiente ({formatCurrency(kpiSaldoPendiente)})</strong> — Capital que aún falta recuperar: {formatCurrency(kpiActiveCapital)} − {formatCurrency(kpiRecoveredAmount)} = <strong className="text-amber-500">{formatCurrency(kpiSaldoPendiente)}</strong>.</div>
+                <div><strong className="text-sky-400">Intereses Recuperados ({formatCurrency(interestStats.totalInteresesRecuperados)})</strong> — Intereses ya cobrados de los préstamos activos (separado del capital).</div>
+                <div><strong className="text-violet-400">Intereses por Pagar ({formatCurrency(interestStats.totalInteresesPorPagar)})</strong> — Intereses que aún se esperan cobrar en el futuro de los préstamos activos.</div>
+              </div>
+              <p className="text-[10px] text-muted-foreground">💡 Cada pago cubre primero mora → gastos admin → intereses → y finalmente capital.</p>
+            </div>
+          )}
+        </div>
+
+
+
+
+        {/* ── ROW 3: QUICK-FILTER TAB BAR ── */}
+        <div className="flex flex-wrap gap-2 mb-6">
+          {[
+            { key: 'all', label: 'Todos', count: (loans || []).length },
+            { key: 'active', label: 'Activos', count: activeLoans },
+            { key: 'aldia', label: 'Al día', count: pendingPortfolioCount },
+            { key: 'mora', label: 'En mora', count: moraLoansList.length },
+            { key: 'pending', label: 'Pendientes', count: pendingLoans },
+            { key: 'paid', label: 'Pagados', count: paidLoans },
+            ...((userData.role === 'admin' || userData.role === 'contador') ? [{ key: 'asesores_stats', label: 'Asesores', count: advisors.length || Array.from(new Set((clients || []).map((c: any) => String(c.advisor_id)).filter(Boolean))).length }] : []),
+          ].map(({ key, label, count }) => (
+            <button
+              key={key}
+              onClick={() => handleAdvisorCardClick(key as any)}
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-150 ${
+                advisorSelectedView === key
+                  ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                  : 'bg-muted/40 text-muted-foreground border-border/50 hover:bg-muted/80 hover:text-foreground'
+              }`}
+            >
+              {label}
+              <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] text-[10px] rounded-full px-1 ${
+                advisorSelectedView === key ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-muted text-muted-foreground'
+              }`}>{count}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* ── ASESOR PORTFOLIO CHARTS ── */}
         {userData.role === 'asesor' && (
-          <div className="flex flex-wrap md:flex-nowrap items-center gap-2 w-full md:w-auto">
-            <Button variant="outline" size="sm" className="gap-2 bg-transparent" onClick={() => setCalcOpen(true)}>
-              <Calculator className="h-4 w-4" />
-              Calculadora
-            </Button>
-            <CreateLoanDialog clients={transformedClients} onLoanCreated={refreshAfterCreation} />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+            <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Recuperación individual</CardTitle>
+                <QuetzalIcon className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-2xl font-bold text-foreground">{formatCurrency(advisorTotals.totalRepayable)}</div>
+                    <p className="text-xs text-muted-foreground mt-1">Total a recuperar</p>
+                    <p className="text-xs text-emerald-500 mt-1">Recuperado: {formatCurrency(advisorTotals.paidRecovered)}</p>
+                  </div>
+                  <div className="w-28 h-28 relative shrink-0">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie dataKey="value" data={[{ name: 'Recuperado', value: Math.min(advisorTotals.paidRecovered, advisorTotals.totalRepayable) }, { name: 'Pendiente', value: Math.max(0, advisorTotals.totalRepayable - advisorTotals.paidRecovered) }]} innerRadius={40} outerRadius={54} paddingAngle={2}>
+                          <Cell fill={getProgressColor(advisorTotals.paidRecovered, advisorTotals.totalRepayable)} />
+                          <Cell fill="#e5e7eb22" />
+                        </Pie>
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <div className="text-xs font-semibold">{advisorTotals.totalRepayable > 0 ? Math.round((advisorTotals.paidRecovered / advisorTotals.totalRepayable) * 100) : 0}%</div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Recuperación grupal</CardTitle>
+                <QuetzalIcon className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-2xl font-bold text-foreground">{formatCurrency(advisorGroupTotals.totalRepayable)}</div>
+                    <p className="text-xs text-muted-foreground mt-1">Total a recuperar</p>
+                    <p className="text-xs text-emerald-500 mt-1">Recuperado: {formatCurrency(advisorGroupTotals.paidRecovered)}</p>
+                  </div>
+                  <div className="w-28 h-28 relative shrink-0">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie dataKey="value" data={[{ name: 'Recuperado', value: Math.min(advisorGroupTotals.paidRecovered, advisorGroupTotals.totalRepayable) }, { name: 'Pendiente', value: Math.max(0, advisorGroupTotals.totalRepayable - advisorGroupTotals.paidRecovered) }]} innerRadius={40} outerRadius={54} paddingAngle={2}>
+                          <Cell fill={getProgressColor(advisorGroupTotals.paidRecovered, advisorGroupTotals.totalRepayable)} />
+                          <Cell fill="#e5e7eb22" />
+                        </Pie>
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <div className="text-xs font-semibold">{advisorGroupTotals.totalRepayable > 0 ? Math.round((advisorGroupTotals.paidRecovered / advisorGroupTotals.totalRepayable) * 100) : 0}%</div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         )}
-        {userData.role === 'contador' && (
-          <div className="flex flex-wrap md:flex-nowrap items-center gap-2 w-full md:w-auto">
-            <Button variant="outline" size="sm" className="gap-2 bg-transparent" asChild>
-              <a href="/api/reports/loans-excel" target="_blank" rel="noopener noreferrer">
-                <Download className="h-4 w-4" />
-                Exportar Excel
-              </a>
-            </Button>
-          </div>
-        )}
-      </div>
 
-      {(userData.role === 'admin' || userData.role === 'asesor' || userData.role === 'contador') && (
-        <div className="mb-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Card className="border-border/50 bg-card/60 backdrop-blur-sm hover:bg-card/80 transition-all duration-300 hover:-translate-y-0.5">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">Saldo al día</CardTitle>
-                    <Wallet className="h-4 w-4 text-emerald-500" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-foreground">{formatCurrency(kpiSaldoAlDia)}</div>
-                    <div className="text-xs text-muted-foreground mt-1">Activos al día (sin mora)</div>
-                  </CardContent>
-                </Card>
-              </TooltipTrigger>
-              <TooltipContent>Solo activos sin mora (excluye los que están en mora)</TooltipContent>
-            </Tooltip>
+        {/* ── SCROLL ANCHOR ── */}
+        <div ref={resultsSectionRef} className="scroll-mt-28" style={{ scrollMarginTop: '120px' }} />
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Card className="border-border/50 bg-card/60 backdrop-blur-sm hover:bg-card/80 transition-all duration-300 hover:-translate-y-0.5">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">Cartera activa</CardTitle>
-                    <TrendingUp className="h-4 w-4 text-primary" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-foreground">{formatCurrency(kpiActiveCapital)}</div>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
-                      <Badge variant="secondary" className="h-5 px-2 text-[10px]">{kpiActiveLoans.length} préstamos</Badge>
-                      <span>Activos totales (con y sin mora)</span>
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      Recuperado: {formatCurrency(kpiRecoveredAmount)} · {formatPct(kpiRecoveredPct * 100)}%
-                    </div>
-                  </CardContent>
-                </Card>
-              </TooltipTrigger>
-              <TooltipContent>Total activos, incluye los que están al día y en mora</TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Card className="border-border/50 bg-card/60 backdrop-blur-sm hover:bg-card/80 transition-all duration-300 hover:-translate-y-0.5">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">Mora actual</CardTitle>
-                    <AlertTriangle className="h-4 w-4 text-rose-500" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-foreground">{formatCurrency(kpiMoraAmount)}</div>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
-                      <Badge variant="destructive" className="h-5 px-2 text-[10px]">{kpiMoraLoans.length} préstamos</Badge>
-                      <span>{formatPct(kpiMoraPct * 100)}% de la cartera</span>
-                    </div>
-                    <div className={`text-[11px] mt-2 flex items-center gap-1 ${moraTrendUp ? 'text-rose-500' : 'text-emerald-500'}`}>
-                      {moraTrendUp ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-                      {formatPct(Math.abs(moraTrendPct))}% vs mes anterior
-                    </div>
-                  </CardContent>
-                </Card>
-              </TooltipTrigger>
-              <TooltipContent>Monto total en mora y su porcentaje sobre la cartera activa</TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Card className="border-border/50 bg-card/60 backdrop-blur-sm hover:bg-card/80 transition-all duration-300 hover:-translate-y-0.5">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">Aprobados del mes</CardTitle>
-                    <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-foreground">{approvalsThisMonthCount}</div>
-                    <div className="text-xs text-muted-foreground mt-1">{formatCurrency(approvalsThisMonthAmount)} en desembolsos</div>
-                  </CardContent>
-                </Card>
-              </TooltipTrigger>
-              <TooltipContent>Préstamos aprobados y activados en el mes actual</TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Card className="border-border/50 bg-card/60 backdrop-blur-sm hover:bg-card/80 transition-all duration-300 hover:-translate-y-0.5">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">Crecimiento aprobaciones</CardTitle>
-                    <Users className="h-4 w-4 text-sky-500" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-foreground">{formatPct(Math.abs(approvalsGrowthPct))}%</div>
-                    <div className={`text-[11px] mt-2 flex items-center gap-1 ${approvalsTrendUp ? 'text-emerald-500' : 'text-rose-500'}`}>
-                      {approvalsTrendUp ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-                      {approvalsTrendUp ? 'Sube' : 'Baja'} vs mes anterior
-                    </div>
-                  </CardContent>
-                </Card>
-              </TooltipTrigger>
-              <TooltipContent>Variación del número de préstamos aprobados respecto al mes anterior</TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Card className="border-border/50 bg-card/60 backdrop-blur-sm hover:bg-card/80 transition-all duration-300 hover:-translate-y-0.5">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">Crecimiento en monto</CardTitle>
-                    <Wallet className="h-4 w-4 text-violet-500" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-foreground">{formatPct(Math.abs(approvalsAmountGrowthPct))}%</div>
-                    <div className={`text-[11px] mt-2 flex items-center gap-1 ${approvalsAmountTrendUp ? 'text-emerald-500' : 'text-rose-500'}`}>
-                      {approvalsAmountTrendUp ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-                      {approvalsAmountTrendUp ? 'Sube' : 'Baja'} vs mes anterior
-                    </div>
-                  </CardContent>
-                </Card>
-              </TooltipTrigger>
-              <TooltipContent>Variación del total desembolsado respecto al mes anterior</TooltipContent>
-            </Tooltip>
-          </div>
-        </div>
-      )}
-
-      {/* GRILLA DE CARDS: 2 COLUMNAS EN MÓVIL */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-4">
-        {userData.role === 'asesor' || userData.role === 'admin' || userData.role === 'contador' ? (
-          <>
-            {userData.role === 'asesor' && (
-              <StatsCard
-                title="Todos"
-                value={(loans || []).length}
-                description="Todos los estados"
-                icon={TrendingUp}
-                onClick={() => handleAdvisorCardClick('all')}
-                className="ring-1 ring-transparent hover:ring-primary/20"
-              />
-            )}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div>
-                  <StatsCard
-                    title="Activos"
-                    value={activeLoans}
-                    description="Préstamos en curso"
-                    icon={Wallet}
-                    onClick={() => handleAdvisorCardClick('active')}
-                    className="ring-1 ring-transparent hover:ring-primary/20"
-                  />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>Capital total en préstamos activos</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div>
-                  <StatsCard
-                    title="Al día"
-                    value={pendingPortfolioCount}
-                    description="Préstamos al día"
-                    icon={CheckCircle2}
-                    onClick={() => handleAdvisorCardClick('aldia')}
-                    className="ring-1 ring-transparent hover:ring-primary/20"
-                  />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>Préstamos activos al día, sin cuotas vencidas</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div>
-                  <StatsCard
-                    title="Mora actual"
-                    value={moraLoansList.length}
-                    description="Préstamos en mora"
-                    icon={AlertTriangle}
-                    onClick={() => handleAdvisorCardClick('mora')}
-                    className="ring-1 ring-transparent hover:ring-primary/20"
-                  />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>Monto y proporción de cartera con mora</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div>
-                  <StatsCard
-                    title="Pendientes de autorizar"
-                    value={formatCurrency(pendingLoansAmount)}
-                    description={`${pendingLoans} préstamos sin autorizar`}
-                    icon={Hourglass}
-                    onClick={() => handleAdvisorCardClick('pending')}
-                    className="ring-1 ring-transparent hover:ring-primary/20"
-                  />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>Préstamos creados que aún no están autorizados</TooltipContent>
-            </Tooltip>
-            {userData.role === 'asesor' && (
-              <StatsCard
-                title="Pagados"
-                value={paidLoans}
-                description="Finalizados"
-                icon={TrendingUp}
-                onClick={() => handleAdvisorCardClick('paid')}
-                className="ring-1 ring-transparent hover:ring-primary/20"
-              />
-            )}
-            {userData.role === 'admin' && (
-              <StatsCard
-                title="Asesores"
-                value={Array.from(new Set((clients || []).map((c: any) => String(c.advisor_id)).filter(Boolean))).length}
-                description="Estadísticas"
-                icon={TrendingUp}
-                onClick={() => handleAdvisorCardClick('asesores_stats')}
-                className="ring-1 ring-transparent hover:ring-primary/20 col-span-2 lg:col-span-1" 
-              />
-            )}
-          </>
-        ) : (
-          <StatsCard
-            title="Total Préstamos"
-            value={formatCurrency(totalLoanAmount)}
-            description="Monto total"
-            icon={QuetzalIcon}
-          />
-        )}
-        {userData.role === 'cliente' && (
-          <StatsCard title="Activos" value={activeLoans} description="En curso" icon={TrendingUp} />
-        )}
-        
-      </div>
-
-      {userData.role === 'asesor' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-          <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Total en Préstamos (Individuales)</CardTitle>
-              <QuetzalIcon className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between gap-6">
-                <div>
-                  <div className="text-2xl font-bold text-foreground">{formatCurrency(advisorTotals.totalRepayable)}</div>
-                  <p className="text-xs text-muted-foreground mt-1">Total a pagar con intereses y aportes</p>
-                </div>
-                <div className="w-28 h-28 md:w-32 md:h-32 relative">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie dataKey="value" data={[{ name: 'Recuperado', value: Math.min(advisorTotals.paidRecovered, advisorTotals.totalRepayable) }, { name: 'Pendiente', value: Math.max(0, advisorTotals.totalRepayable - advisorTotals.paidRecovered) }]} innerRadius={44} outerRadius={58} paddingAngle={2}>
-                        <Cell fill={getProgressColor(advisorTotals.paidRecovered, advisorTotals.totalRepayable)} />
-                        <Cell fill="#e5e7eb" />
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <div className="text-sm font-semibold">{formatCurrency(advisorTotals.paidRecovered)}</div>
-                    <div className="text-[10px] text-muted-foreground">recuperado</div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Total en Préstamos de Grupo</CardTitle>
-              <QuetzalIcon className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between gap-6">
-                <div>
-                  <div className="text-2xl font-bold text-foreground">{formatCurrency(advisorGroupTotals.totalRepayable)}</div>
-                  <p className="text-xs text-muted-foreground mt-1">Total a pagar con intereses y aportes</p>
-                </div>
-                <div className="w-28 h-28 md:w-32 md:h-32 relative">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie dataKey="value" data={[{ name: 'Recuperado', value: Math.min(advisorGroupTotals.paidRecovered, advisorGroupTotals.totalRepayable) }, { name: 'Pendiente', value: Math.max(0, advisorGroupTotals.totalRepayable - advisorGroupTotals.paidRecovered) }]} innerRadius={44} outerRadius={58} paddingAngle={2}>
-                        <Cell fill={getProgressColor(advisorGroupTotals.paidRecovered, advisorGroupTotals.totalRepayable)} />
-                        <Cell fill="#e5e7eb" />
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <div className="text-sm font-semibold">{formatCurrency(advisorGroupTotals.paidRecovered)}</div>
-                    <div className="text-[10px] text-muted-foreground">recuperado</div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* ANCLA DEL SCROLL CON REF Y MARGEN SUPERIOR */}
-      <div 
-        ref={resultsSectionRef} 
-        className="scroll-mt-28" // scroll-mt evita que el header tape el contenido
-        style={{ scrollMarginTop: '120px' }} // Refuerzo por si Tailwind no carga
-      />
-      
-      <div className="mb-6">
-        {userData.role === 'cliente' ? (
-          <Tabs value={selectedLoanId || ''} onValueChange={(v) => { setSelectedLoanId(v); writeCache(K.selectedLoanId, v) }} className="w-full">
-            <TabsList className="flex w-full max-w-full gap-2 overflow-x-auto bg-muted/50 whitespace-nowrap">
-              {(loans || []).filter((l: any) => l.status === 'active').map((loan: any) => (
-                <TabsTrigger key={loan.id} value={loan.id} className="shrink-0 px-3 text-xs sm:text-sm truncate max-w-[70vw] sm:max-w-none">
-                  Préstamo {loan.loanNumber || loan.loan_number}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-            {(loans || []).filter((l: any) => l.status === 'active').map((loan: any) => (
-              <TabsContent key={loan.id} value={loan.id}>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* Card progreso préstamo */}
-                  <div
-                    className="rounded-lg border bg-card/50 backdrop-blur-sm p-4 hover:bg-muted/40 transition-all duration-200 cursor-pointer"
-                    onClick={() => {
-                      if (loan?.id) {
-                        window.location.href = `/dashboard/loans/${loan.id}`
-                      }
-                    }}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="text-lg font-semibold">Mi Préstamo</div>
-                      <div className="text-sm text-muted-foreground">{loan.loanNumber || loan.loan_number || ''}</div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <div className="w-40 h-40 relative">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie dataKey="value" data={[{ name: 'Pagadas', value: (activeLoanDetails[loan.id]?.schedule || []).filter((s: any) => s.status === 'paid').length }, { name: 'Restantes', value: Math.max(0, (activeLoanDetails[loan.id]?.schedule || []).length - (activeLoanDetails[loan.id]?.schedule || []).filter((s: any) => s.status === 'paid').length) }]} innerRadius={50} outerRadius={75} paddingAngle={2}>
-                              <Cell fill={getProgressColor((activeLoanDetails[loan.id]?.schedule || []).filter((s: any) => s.status === 'paid').length, (activeLoanDetails[loan.id]?.schedule || []).length)} />
-                              <Cell fill="#e5e7eb" />
-                            </Pie>
-                          </PieChart>
-                        </ResponsiveContainer>
-                        <div className="absolute inset-0 flex flex-col items-center justify-center">
-                          <div className="text-2xl font-bold">{(activeLoanDetails[loan.id]?.schedule || []).filter((s: any) => s.status === 'paid').length}/{(activeLoanDetails[loan.id]?.schedule || []).length}</div>
-                          <div className="text-xs text-muted-foreground">cuotas pagadas</div>
-                        </div>
-                      </div>
-                      <div className="flex-1 space-y-1">
-                        <div className="text-sm text-muted-foreground">Monto</div>
-                        <div className="text-xl font-semibold">{formatCurrency(loan.amount || 0)}</div>
-                        <div className="text-sm text-muted-foreground">Toque para ver detalle</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Card registrar pago */}
-                  <div
-                    className="rounded-lg border bg-card/50 backdrop-blur-sm p-4 hover:bg-muted/40 transition-all duration-200 cursor-pointer"
-                    onClick={() => {
-                      const schedule: any[] = (activeLoanDetails[loan.id]?.schedule || [])
-                      const next = schedule.find((s: any) => s.status !== 'paid')
-                      if (loan?.id && next?.id) {
-                        window.location.href = `/dashboard/loans/${loan.id}/payment?scheduleId=${next.id}`
-                      }
-                    }}
-                  >
-                    <div className="text-lg font-semibold mb-2">Registrar Pago</div>
-                    <div className="text-sm text-muted-foreground mb-3">Para el préstamo {loan.loanNumber || loan.loan_number || ''}</div>
-                    <div className="rounded-md border bg-muted/30 p-3">
-                      {(() => {
-                        const schedule: any[] = (activeLoanDetails[loan.id]?.schedule || [])
-                        const next = schedule.find((s: any) => s.status !== 'paid')
-                        const label = next ? `Cuota siguiente a pagar: #${next.payment_number}` : 'No hay cuotas pendientes'
-                        return (
-                          <div className="flex items-center justify-between">
-                            <div className="text-sm">{label}</div>
-                            <div className="text-sm text-muted-foreground">Préstamo {loan.loanNumber || loan.loan_number || ''}</div>
-                          </div>
-                        )
-                      })()}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-2">Toque para ir a registrar el pago</div>
-                  </div>
-                </div>
-              </TabsContent>
-            ))}
-          </Tabs>
-        ) : (
+        {/* ── LOANS TABLE ── */}
+        <div>
           <Tabs defaultValue="clients" onValueChange={(v) => { if (v === 'groups') setGroupsTabVisited(true) }} className="w-full" id="loans-tabs">
-            <TabsList className="grid w-full max-w-full grid-cols-2 bg-muted/50">
-              <TabsTrigger value="clients">Clientes</TabsTrigger>
-              <TabsTrigger value="groups">Grupos</TabsTrigger>
-            </TabsList>
-            <TabsContent value="clients">
-              <h3 className="text-xl font-semibold text-foreground mb-4">
-                {userData.role === "admin" || userData.role === "contador" ? "Todos los Préstamos" : "Mis Préstamos"}
-              </h3>
-              {(userData.role === 'asesor' || userData.role === 'admin' || userData.role === 'contador') && !advisorSelectedView && (
-                <div className="mb-2 text-sm text-muted-foreground">Seleccione una card superior para ver la tabla de préstamos</div>
-              )}
-              {loansError && (
-                <div className="mb-3 text-sm text-muted-foreground flex items-center gap-2">
-                  <span>{loansError}</span>
-                  <Button variant="outline" size="sm" onClick={async () => {
-                    try {
-                      const res = await fetchWithTimeout('/api/loans', { timeoutMs: 12000 })
-                      if (res.ok) {
-                        const data = await res.json()
-                        setLoans(data || [])
-                        setLoansError(null)
-                      }
-                    } catch {}
-                  }}>Reintentar</Button>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-xl font-semibold text-foreground">
+                  {userData.role !== 'asesor' ? 'Todos los Préstamos' : 'Mis Préstamos'}
+                </h3>
+                {advisorSelectedView && advisorSelectedView !== 'asesores_stats' && (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {(() => {
+                      const m: Record<string, string> = { all: 'Todos', active: 'Activos', aldia: 'Al día', mora: 'Con mora', pending: 'Pendientes', paid: 'Pagados' }
+                      return `Mostrando: ${m[String(advisorSelectedView)] || advisorSelectedView} · Progreso global: ${advisorGlobalProgress.paid}/${advisorGlobalProgress.total} cuotas`
+                    })()}
+                  </p>
+                )}
+                {!advisorSelectedView && (
+                  <p className="text-xs text-muted-foreground mt-0.5">Selecciona una tarjeta de arriba para filtrar</p>
+                )}
+              </div>
+              <TabsList className="grid w-full sm:w-auto grid-cols-2 bg-muted/50">
+                <TabsTrigger value="clients">Clientes</TabsTrigger>
+                <TabsTrigger value="groups">Grupos</TabsTrigger>
+              </TabsList>
+            </div>
+
+            {loansError && (
+              <div className="mb-3 text-sm text-muted-foreground flex items-center gap-2">
+                <span>{loansError}</span>
+                <Button variant="outline" size="sm" onClick={async () => {
+                  try {
+                    const res = await fetchWithTimeout('/api/loans', { timeoutMs: 12000 })
+                    if (res.ok) { const data = await res.json(); setLoans(data || []); setLoansError(null) }
+                  } catch {}
+                }}>Reintentar</Button>
               </div>
             )}
-              {(userData.role === 'asesor' || userData.role === 'admin' || userData.role === 'contador') && advisorSelectedView !== 'asesores_stats' && (
-                <div className="mb-2 text-sm text-muted-foreground">
-                  {(() => {
-                    const labelMap: Record<string, string> = { all: 'Todos', active: 'Activos', aldia: 'Al día', mora: 'Con mora', pending: 'Pendientes', paid: 'Pagados', asesores_stats: 'Estadísticas de asesores' }
-                    const sel = advisorSelectedView ? labelMap[String(advisorSelectedView)] : ''
-                    const label = sel ? ` (${sel})` : ''
-                    return `Progreso global${label}: ${advisorGlobalProgress.paid}/${advisorGlobalProgress.total} cuotas`
-                  })()}
-                </div>
-              )}
+
+            <TabsContent value="clients">
               {(userData.role === 'asesor' || userData.role === 'admin' || userData.role === 'contador') ? (
                 advisorSelectedView ? (
                   advisorSelectedView === 'asesores_stats' ? (
@@ -1075,24 +940,11 @@ export default function DashboardPage() {
                       const advisorLoans = (loans || []).filter((l: any) => (l.status === 'active' || l.status === 'paid') && clientAdvisor[String(l.clientId)])
                       const paidCount = advisorLoans.reduce((s: number, l: any) => s + Number((l as any).progressPaid || 0), 0)
                       const totalCount = advisorLoans.reduce((s: number, l: any) => s + Number((l as any).progressTotal || 0), 0)
-                      const data = [
-                        { name: 'Pagadas', value: paidCount },
-                        { name: 'Restantes', value: Math.max(0, totalCount - paidCount) }
-                      ]
-                      const installments = (l: any) => {
-                        const months = Number(l?.termMonths || 0)
-                        const freq = String(l?.paymentFrequency || '')
-                        return freq === 'quincenal' ? months * 2 : months
-                      }
+                      const data = [{ name: 'Pagadas', value: paidCount }, { name: 'Restantes', value: Math.max(0, totalCount - paidCount) }]
+                      const installments = (l: any) => { const months = Number(l?.termMonths || 0); const freq = String(l?.paymentFrequency || ''); return freq === 'quincenal' ? months * 2 : months }
                       const totalRepayableMoney = advisorLoans.reduce((s: number, l: any) => s + Number(l?.monthlyPayment || 0) * installments(l), 0)
-                      const paidRecoveredMoney = advisorLoans.reduce((s: number, l: any) => {
-                        const k = String(l?.id)
-                        return s + Number(paymentsAgg[k] || 0)
-                      }, 0)
-                      const moneyData = [
-                        { name: 'Recuperado', value: Math.min(paidRecoveredMoney, totalRepayableMoney) },
-                        { name: 'Pendiente', value: Math.max(0, totalRepayableMoney - paidRecoveredMoney) }
-                      ]
+                      const paidRecoveredMoney = advisorLoans.reduce((s: number, l: any) => { const k = String(l?.id); return s + Number(paymentsAgg[k] || 0) }, 0)
+                      const moneyData = [{ name: 'Recuperado', value: Math.min(paidRecoveredMoney, totalRepayableMoney) }, { name: 'Pendiente', value: Math.max(0, totalRepayableMoney - paidRecoveredMoney) }]
                       return (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
@@ -1125,7 +977,7 @@ export default function DashboardPage() {
                           </Card>
                           <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
                             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                              <CardTitle className="text-sm font-medium text-muted-foreground">Recuperación de dinero de asesores</CardTitle>
+                              <CardTitle className="text-sm font-medium text-muted-foreground">Recuperación de dinero</CardTitle>
                               <QuetzalIcon className="h-4 w-4 text-muted-foreground" />
                             </CardHeader>
                             <CardContent>
@@ -1155,37 +1007,55 @@ export default function DashboardPage() {
                           <div className="sm:col-span-2 mt-6">
                             {(() => {
                               const advisorItems = (() => {
-                                const byAdvisor: Record<string, { id: string, email: string, name: string, clients: any[], avatarUrl?: string }> = {}
+                                const byAdvisor: Record<string, { id: string, authId: string, advisorIdFromClients: string, email: string, name: string, clients: any[] }> = {}
                                 for (const a of advisors || []) {
                                   const id = String(a.id)
-                                  byAdvisor[id] = { id, email: String(a.email || ''), name: String(a.full_name || ''), clients: [] }
+                                  const authId = String(a.auth_id || '')
+                                  const name = String(a.full_name || '') || `${String(a.first_name || '')} ${String(a.last_name || '')}`.trim()
+                                  byAdvisor[id] = { id, authId, advisorIdFromClients: '', email: String(a.email || ''), name, clients: [] }
+                                  if (authId) byAdvisor[authId] = byAdvisor[id] // alias by auth_id too
                                 }
                                 for (const c of (clients || [])) {
                                   const aid = String(c.advisor_id || '')
                                   if (!aid) continue
-                                  const ref = (advisors || []).find((u: any) => String(u.id) === aid || String(u.auth_id) === aid)
-                                  if (!byAdvisor[aid]) {
-                                    byAdvisor[aid] = { id: aid, email: String((ref && ref.email) || c.advisor_email || ''), name: String((ref && ref.full_name) || ''), clients: [] }
-                                  } else {
-                                    const entry = byAdvisor[aid]
-                                    if (!entry.email) entry.email = String((ref && ref.email) || c.advisor_email || '')
-                                    if (!entry.name) entry.name = String((ref && ref.full_name) || '')
+                                  // Look up by users.id or users.auth_id
+                                  let ref = byAdvisor[aid]
+                                  if (!ref) {
+                                    // Try matching from advisors list
+                                    const found = (advisors || []).find((u: any) => String(u.id) === aid || String(u.auth_id) === aid)
+                                    if (found) {
+                                      const id = String(found.id)
+                                      if (!byAdvisor[id]) {
+                                        const name = String(found.full_name || '') || `${String(found.first_name || '')} ${String(found.last_name || '')}`.trim()
+                                        byAdvisor[id] = { id, authId: String(found.auth_id || ''), advisorIdFromClients: aid, email: String(found.email || ''), name, clients: [] }
+                                        if (aid !== id) byAdvisor[aid] = byAdvisor[id]
+                                      }
+                                      ref = byAdvisor[id]
+                                    } else {
+                                      byAdvisor[aid] = { id: aid, authId: '', advisorIdFromClients: aid, email: String(c.advisor_email || ''), name: '', clients: [] }
+                                      ref = byAdvisor[aid]
+                                    }
                                   }
-                                  byAdvisor[aid].clients.push(c)
+                                  if (ref && !ref.advisorIdFromClients) ref.advisorIdFromClients = aid
+                                  ref.clients.push(c)
                                 }
-                                return Object.values(byAdvisor).filter(it => (it.clients || []).length > 0)
+                                // Deduplicate: only keep entries that are the canonical users.id key
+                                const seen = new Set<string>()
+                                return Object.values(byAdvisor).filter(it => {
+                                  if (seen.has(it.id)) return false
+                                  seen.add(it.id)
+                                  return (it.clients || []).length > 0
+                                })
                               })()
-                              
+
                               if (advisorClientsView) {
                                 const target = advisorItems.find(it => it.id === advisorClientsView.id) || { id: advisorClientsView.id, name: advisorClientsView.name, email: advisorClientsView.email, clients: [] }
-                                const titleName = advisorClientsView.name || target.name || advisorClientsView.email || 'Asesor'
-                                const titleEmail = advisorClientsView.email || target.email || '-'
                                 return (
                                   <div className="mt-4 space-y-3">
                                     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                                       <div>
                                         <div className="text-sm text-muted-foreground">Clientes del asesor</div>
-                                        <div className="text-lg font-semibold text-foreground">{titleName} · {titleEmail}</div>
+                                        <div className="text-lg font-semibold text-foreground">{advisorClientsView.name || target.name} · {advisorClientsView.email || target.email}</div>
                                       </div>
                                       <Button variant="outline" size="sm" onClick={() => setAdvisorClientsView(null)}>Volver a tarjetas</Button>
                                     </div>
@@ -1247,69 +1117,33 @@ export default function DashboardPage() {
                                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mt-4">
                                   {advisorItems.map((advisor) => {
                                     const clientIds = new Set(advisor.clients.map((c: any) => String(c.id)))
-                                    const advisorLoans = (loans || []).filter((l: any) => {
-                                        const cid = String((l?.client || {}).id || l.clientId || '')
-                                        return clientIds.has(cid)
-                                    })
-                                    
-                                    const totalPortfolio = advisorLoans.reduce((sum: number, l: any) => sum + Number(l.amount || 0), 0)
-                                    
-                                    const recoveredAmount = advisorLoans.reduce((sum: number, l: any) => {
-                                      const k = String(l.id)
-                                      return sum + Number(paymentsAgg[k] || 0)
-                                    }, 0)
-                                    
-                                    const installments = (l: any) => {
-                                      const months = Number(l?.termMonths || 0)
-                                      const freq = String(l?.paymentFrequency || '')
-                                      return freq === 'quincenal' ? months * 2 : months
-                                    }
-                                    const totalRepayable = advisorLoans.reduce((s: number, l: any) => s + Number(l?.monthlyPayment || 0) * installments(l), 0)
+                                    const advisorLoansData = (loans || []).filter((l: any) => { const cid = String((l?.client || {}).id || l.clientId || ''); return clientIds.has(cid) })
+                                    const totalPortfolio = advisorLoansData.reduce((sum: number, l: any) => sum + Number(l.amount || 0), 0)
+                                    const recoveredAmount = advisorLoansData.reduce((sum: number, l: any) => { const k = String(l.id); return sum + Number(paymentsAgg[k] || 0) }, 0)
+                                    const installments = (l: any) => { const months = Number(l?.termMonths || 0); const freq = String(l?.paymentFrequency || ''); return freq === 'quincenal' ? months * 2 : months }
+                                    const totalRepayable = advisorLoansData.reduce((s: number, l: any) => s + Number(l?.monthlyPayment || 0) * installments(l), 0)
                                     const outstandingBalance = Math.max(0, totalRepayable - recoveredAmount)
-                                    
-                                    const activeLoansCount = advisorLoans.filter((l: any) => l.status === 'active').length
-                                    const moraLoansCount = advisorLoans.filter((l: any) => Boolean((l as any).hasOverdue)).length
-                                    const moraAmount = advisorLoans.filter((l: any) => Boolean((l as any).hasOverdue)).reduce((sum: number, l: any) => sum + Number((l as any).overdueDebt || 0), 0)
-                                    
-                                    const paidLoansCount = advisorLoans.filter((l: any) => l.status === 'paid').length
-                                    const totalLoansCount = advisorLoans.length
-                                    
+                                    const activeLoansCount = advisorLoansData.filter((l: any) => l.status === 'active').length
+                                    const moraLoansCount = advisorLoansData.filter((l: any) => Boolean((l as any).hasOverdue)).length
+                                    const moraAmount = advisorLoansData.filter((l: any) => Boolean((l as any).hasOverdue)).reduce((sum: number, l: any) => sum + Number((l as any).overdueDebt || 0), 0)
+                                    const paidLoansCount = advisorLoansData.filter((l: any) => l.status === 'paid').length
                                     const portfolioHealth = [
                                       { name: 'Al día', value: activeLoansCount - moraLoansCount, color: '#22c55e' },
                                       { name: 'En mora', value: moraLoansCount, color: '#ef4444' },
                                       { name: 'Pagados', value: paidLoansCount, color: '#3b82f6' },
                                     ].filter(d => d.value > 0)
-                                    
                                     const recoveryProgress = totalRepayable > 0 ? (recoveredAmount / totalRepayable) * 100 : 0
-                                    
-                                    const defaultCommission = {
-                                      total: 0, onTime: 0, late1to3: 0, late3to5: 0, lateOver5: 0, paymentCount: 0,
-                                      breakdown: [
-                                        { label: 'Puntual (50%)', amount: 0, pct: '0%', color: '#22c55e' },
-                                        { label: '1-3 días (20%)', amount: 0, pct: '0%', color: '#facc15' },
-                                        { label: '3-5 días (5%)', amount: 0, pct: '0%', color: '#f97316' },
-                                        { label: '+5 días (0%)', amount: 0, pct: '0%', color: '#ef4444' },
-                                      ]
-                                    }
-                                    const advisorCommission = advisorCommissions[advisor.id] || defaultCommission
-                                    const stats = {
-                                      totalPortfolio,
-                                      recoveredAmount,
-                                      outstandingBalance,
-                                      activeLoansCount,
-                                      moraLoansCount,
-                                      moraAmount,
-                                      clientsCount: advisor.clients.length,
-                                      portfolioHealth,
-                                      recoveryProgress,
-                                      commission: advisorCommission,
-                                    }
-                                    
+                                    const defaultCommission = { total: 0, onTime: 0, late1to3: 0, late3to5: 0, lateOver5: 0, paymentCount: 0, breakdown: [{ label: 'Puntual (50%)', amount: 0, pct: '0%', color: '#22c55e' }, { label: '1-3 días (20%)', amount: 0, pct: '0%', color: '#facc15' }, { label: '3-5 días (5%)', amount: 0, pct: '0%', color: '#f97316' }, { label: '+5 días (0%)', amount: 0, pct: '0%', color: '#ef4444' }] }
+                                    // Try all possible keys: users.id, users.auth_id, clients.advisor_id value
+                                    const advisorCommission = advisorCommissions[advisor.id]
+                                      || advisorCommissions[advisor.authId]
+                                      || advisorCommissions[advisor.advisorIdFromClients]
+                                      || defaultCommission
                                     return (
                                       <AdvisorPerformanceCard
                                         key={advisor.id}
                                         advisor={advisor}
-                                        stats={stats}
+                                        stats={{ totalPortfolio, recoveredAmount, outstandingBalance, activeLoansCount, moraLoansCount, moraAmount, clientsCount: advisor.clients.length, portfolioHealth, recoveryProgress, commission: advisorCommission }}
                                         onViewDetails={() => setAdvisorClientsView({ id: advisor.id, name: advisor.name, email: advisor.email })}
                                       />
                                     )
@@ -1329,82 +1163,138 @@ export default function DashboardPage() {
                 <LoansTable loans={displayLoans} userRole={userData.role} onLoanUpdated={fetchLoans} groupMap={loanGroupMap} />
               )}
             </TabsContent>
-          <TabsContent value="groups">
-            <h3 className="text-xl font-semibold text-foreground mb-4">Préstamos por Grupo</h3>
-            {groupsError && (
-              <div className="mb-3 text-sm text-muted-foreground flex items-center gap-2">
-                <span>{groupsError}</span>
-                <Button variant="outline" size="sm" onClick={async () => {
-                  try {
-                    const res = await fetchWithTimeout('/api/loans-groups', { timeoutMs: 12000 })
-                    if (res.ok) {
-                      const groupsData = await res.json()
-                      setGroupLoans(groupsData || [])
-                      const map: Record<string, { groupName: string }> = {}
-                      for (const g of groupsData || []) {
-                        const name = g.group?.nombre || 'Grupo'
-                        for (const item of g.loans || []) {
-                          if (item.loan_id) {
-                            map[item.loan_id] = { groupName: name }
-                          }
-                        }
+
+            <TabsContent value="groups">
+              <h3 className="text-xl font-semibold text-foreground mb-4">Préstamos por Grupo</h3>
+              {groupsError && (
+                <div className="mb-3 text-sm text-muted-foreground flex items-center gap-2">
+                  <span>{groupsError}</span>
+                  <Button variant="outline" size="sm" onClick={async () => {
+                    try {
+                      const res = await fetchWithTimeout('/api/loans-groups', { timeoutMs: 12000 })
+                      if (res.ok) {
+                        const groupsData = await res.json()
+                        setGroupLoans(groupsData || [])
+                        const map: Record<string, { groupName: string }> = {}
+                        for (const g of groupsData || []) { const name = g.group?.nombre || 'Grupo'; for (const item of g.loans || []) { if (item.loan_id) map[item.loan_id] = { groupName: name } } }
+                        setLoanGroupMap(map)
+                        setGroupsError(null)
                       }
-                      setLoanGroupMap(map)
-                      setGroupsError(null)
-                    }
-                  } catch {}
-                }}>Reintentar</Button>
-              </div>
-            )}
+                    } catch {}
+                  }}>Reintentar</Button>
+                </div>
+              )}
               {groupsTabVisited && (
                 <GroupLoansTable
-                  items={(groupLoans || [])
-                    .map((g: any) => {
-                      const selector = (loan: any) => {
-                        if (!advisorSelectedView || advisorSelectedView === 'all') return true
-                        if (advisorSelectedView === 'active') return loan?.status === 'active'
-                        if (advisorSelectedView === 'pending') return loan?.status === 'pending'
-                        if (advisorSelectedView === 'paid') return loan?.status === 'paid'
-                        if (advisorSelectedView === 'aldia') return !(loan as any)?.hasOverdue
-                        if (advisorSelectedView === 'mora') return Boolean((loan as any)?.hasOverdue)
-                        return true
-                      }
-                      const clientsItems = (g.loans || [])
-                        .map((item: any) => {
-                          const loan = loans.find((l: any) => String(l.id) === String(item.loan_id))
-                          if (!loan) return { name: '', amount: 0 }
-                          if (!selector(loan)) return { name: '', amount: 0 }
-                          const name = loan?.client ? `${loan.client.firstName ?? loan.client.first_name} ${loan.client.lastName ?? loan.client.last_name}` : ''
-                          const amount = loan?.amount ? Number(loan.amount) : 0
-                          const progressPaid = loan ? Number((loan as any).progressPaid || 0) : 0
-                          const progressTotal = loan ? Number((loan as any).progressTotal || 0) : 0
-                          const hasOverdue = loan ? Boolean((loan as any).hasOverdue) : false
-                          return { name, amount, progressPaid, progressTotal, hasOverdue }
-                        })
-                        .filter((c: any) => c.name)
-                      const groupHasSelected = (() => {
-                        if (!advisorSelectedView || advisorSelectedView === 'all') return true
-                        return (g.loans || []).some((item: any) => {
-                          const loan = loans.find((l: any) => String(l.id) === String(item.loan_id))
-                          return loan && selector(loan)
-                        })
-                      })()
-                      return {
-                        groupName: g.group?.nombre ?? 'Grupo',
-                        totalAmount: Number(g.total_amount) || clientsItems.reduce((s: number, c: any) => s + (c.amount || 0), 0),
-                        clients: clientsItems,
-                        groupId: g.group_id,
-                        totalMembers: (g.loans || []).length,
-                        _include: groupHasSelected,
-                      }
-                    })
-                    .filter((it: any) => it._include)}
+                  items={(groupLoans || []).map((g: any) => {
+                    const selector = (loan: any) => {
+                      if (!advisorSelectedView || advisorSelectedView === 'all') return true
+                      if (advisorSelectedView === 'active') return loan?.status === 'active'
+                      if (advisorSelectedView === 'pending') return loan?.status === 'pending'
+                      if (advisorSelectedView === 'paid') return loan?.status === 'paid'
+                      if (advisorSelectedView === 'aldia') return !(loan as any)?.hasOverdue
+                      if (advisorSelectedView === 'mora') return Boolean((loan as any)?.hasOverdue)
+                      return true
+                    }
+                    const clientsItems = (g.loans || []).map((item: any) => {
+                      const loan = loans.find((l: any) => String(l.id) === String(item.loan_id))
+                      if (!loan) return { name: '', amount: 0 }
+                      if (!selector(loan)) return { name: '', amount: 0 }
+                      const name = loan?.client ? `${loan.client.firstName ?? loan.client.first_name} ${loan.client.lastName ?? loan.client.last_name}` : ''
+                      const amount = loan?.amount ? Number(loan.amount) : 0
+                      const progressPaid = loan ? Number((loan as any).progressPaid || 0) : 0
+                      const progressTotal = loan ? Number((loan as any).progressTotal || 0) : 0
+                      const hasOverdue = loan ? Boolean((loan as any).hasOverdue) : false
+                      return { name, amount, progressPaid, progressTotal, hasOverdue }
+                    }).filter((c: any) => c.name)
+                    const groupHasSelected = (() => {
+                      if (!advisorSelectedView || advisorSelectedView === 'all') return true
+                      return (g.loans || []).some((item: any) => { const loan = loans.find((l: any) => String(l.id) === String(item.loan_id)); return loan && selector(loan) })
+                    })()
+                    return { groupName: g.group?.nombre ?? 'Grupo', totalAmount: Number(g.total_amount) || clientsItems.reduce((s: number, c: any) => s + (c.amount || 0), 0), clients: clientsItems, groupId: g.group_id, totalMembers: (g.loans || []).length, _include: groupHasSelected }
+                  }).filter((it: any) => it._include)}
                 />
               )}
             </TabsContent>
           </Tabs>
-        )}
-      </div>
+        </div>
+
+      </>)}
+
+      {/* ── CLIENTE DASHBOARD ──────────────────────────────────── */}
+      {userData.role === 'cliente' && (
+        <div>
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <StatsCard title="Total Préstamos" value={formatCurrency(totalLoanAmount)} description="Monto total" icon={QuetzalIcon} />
+            <StatsCard title="Activos" value={activeLoans} description="En curso" icon={TrendingUp} />
+          </div>
+          <Tabs value={selectedLoanId || ''} onValueChange={(v) => { setSelectedLoanId(v); writeCache(K.selectedLoanId, v) }} className="w-full">
+            <TabsList className="flex w-full max-w-full gap-2 overflow-x-auto bg-muted/50 whitespace-nowrap">
+              {(loans || []).filter((l: any) => l.status === 'active').map((loan: any) => (
+                <TabsTrigger key={loan.id} value={loan.id} className="shrink-0 px-3 text-xs sm:text-sm truncate max-w-[70vw] sm:max-w-none">
+                  Préstamo {loan.loanNumber || loan.loan_number}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            {(loans || []).filter((l: any) => l.status === 'active').map((loan: any) => (
+              <TabsContent key={loan.id} value={loan.id}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="rounded-lg border bg-card/50 backdrop-blur-sm p-4 hover:bg-muted/40 transition-all duration-200 cursor-pointer" onClick={() => { if (loan?.id) window.location.href = `/dashboard/loans/${loan.id}` }}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-lg font-semibold">Mi Préstamo</div>
+                      <div className="text-sm text-muted-foreground">{loan.loanNumber || loan.loan_number || ''}</div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="w-40 h-40 relative">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie dataKey="value" data={[{ name: 'Pagadas', value: (activeLoanDetails[loan.id]?.schedule || []).filter((s: any) => s.status === 'paid').length }, { name: 'Restantes', value: Math.max(0, (activeLoanDetails[loan.id]?.schedule || []).length - (activeLoanDetails[loan.id]?.schedule || []).filter((s: any) => s.status === 'paid').length) }]} innerRadius={50} outerRadius={75} paddingAngle={2}>
+                              <Cell fill={getProgressColor((activeLoanDetails[loan.id]?.schedule || []).filter((s: any) => s.status === 'paid').length, (activeLoanDetails[loan.id]?.schedule || []).length)} />
+                              <Cell fill="#e5e7eb" />
+                            </Pie>
+                          </PieChart>
+                        </ResponsiveContainer>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                          <div className="text-2xl font-bold">{(activeLoanDetails[loan.id]?.schedule || []).filter((s: any) => s.status === 'paid').length}/{(activeLoanDetails[loan.id]?.schedule || []).length}</div>
+                          <div className="text-xs text-muted-foreground">cuotas</div>
+                        </div>
+                      </div>
+                      <div className="flex-1 space-y-1">
+                        <div className="text-sm text-muted-foreground">Monto</div>
+                        <div className="text-xl font-semibold">{formatCurrency(loan.amount || 0)}</div>
+                        <div className="text-sm text-muted-foreground">Toque para ver detalle</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border bg-card/50 backdrop-blur-sm p-4 hover:bg-muted/40 transition-all duration-200 cursor-pointer" onClick={() => {
+                    const schedule: any[] = (activeLoanDetails[loan.id]?.schedule || [])
+                    const next = schedule.find((s: any) => s.status !== 'paid')
+                    if (loan?.id && next?.id) window.location.href = `/dashboard/loans/${loan.id}/payment?scheduleId=${next.id}`
+                  }}>
+                    <div className="text-lg font-semibold mb-2">Registrar Pago</div>
+                    <div className="text-sm text-muted-foreground mb-3">Para el préstamo {loan.loanNumber || loan.loan_number || ''}</div>
+                    <div className="rounded-md border bg-muted/30 p-3">
+                      {(() => {
+                        const schedule: any[] = (activeLoanDetails[loan.id]?.schedule || [])
+                        const next = schedule.find((s: any) => s.status !== 'paid')
+                        const label = next ? `Cuota siguiente a pagar: #${next.payment_number}` : 'No hay cuotas pendientes'
+                        return (
+                          <div className="flex items-center justify-between">
+                            <div className="text-sm">{label}</div>
+                            <div className="text-sm text-muted-foreground">Préstamo {loan.loanNumber || loan.loan_number || ''}</div>
+                          </div>
+                        )
+                      })()}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-2">Toque para ir a registrar el pago</div>
+                  </div>
+                </div>
+              </TabsContent>
+            ))}
+          </Tabs>
+        </div>
+      )}
+
       <LoanCalculatorModal open={calcOpen} onOpenChange={setCalcOpen} />
     </>
   )

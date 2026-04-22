@@ -14,9 +14,10 @@ export async function GET(request: Request) {
     .select('role')
     .eq('auth_id', user.id)
     .single()
-  if (meError || !me || !['admin','asesor'].includes(me.role)) {
+  if (meError || !me || !['admin','asesor','contador'].includes(me.role)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
+
 
   const admin = await createAdminClient()
   const { data: clientAdvisorRows } = await admin

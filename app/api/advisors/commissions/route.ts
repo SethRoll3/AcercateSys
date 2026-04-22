@@ -54,7 +54,7 @@ export async function GET() {
       .eq('auth_id', user.id)
       .single()
 
-    if (!me || me.role !== 'admin') {
+    if (!me || !['admin', 'contador'].includes(me.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
