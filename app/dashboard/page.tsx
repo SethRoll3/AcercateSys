@@ -12,6 +12,7 @@ import { CreateLoanDialog } from "@/components/create-loan-dialog"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Users, TrendingUp, FileText, Download, Calculator, ArrowUpRight, ArrowDownRight, Wallet, AlertTriangle, CheckCircle2, Hourglass } from "lucide-react"
 import { LoanCalculatorModal } from "@/components/loan-calculator-modal"
 const QuetzalIcon = ({ className }: { className?: string }) => (
@@ -81,6 +82,8 @@ export default function DashboardPage() {
   const [calcOpen, setCalcOpen] = useState(false)
   const [interestStats, setInterestStats] = useState<{ totalCapitalRecuperado: number, totalInteresesRecuperados: number, totalInteresesPorPagar: number }>({ totalCapitalRecuperado: 0, totalInteresesRecuperados: 0, totalInteresesPorPagar: 0 })
   const [explanationOpen, setExplanationOpen] = useState(false)
+  const [isMoraModalOpen, setIsMoraModalOpen] = useState(false)
+  const [moraModalData, setMoraModalData] = useState<any[]>([])
 
   // REFERENCIA PARA EL SCROLL 
   const resultsSectionRef = useRef<HTMLDivElement>(null)
@@ -490,7 +493,8 @@ export default function DashboardPage() {
   const kpiMoraLoans = kpiActiveLoans.filter((l: any) => Boolean((l as any).hasOverdue))
   const kpiActiveCapital = kpiActiveLoans.reduce((s: number, l: any) => s + Number(l.amount || 0), 0)
   const kpiSaldoAlDia = kpiAlDiaLoans.reduce((s: number, l: any) => s + Number(l.amount || 0), 0)
-  const kpiMoraAmount = kpiMoraLoans.reduce((s: number, l: any) => s + Number((l as any).moraTotal || 0), 0)
+  const kpiMoraAmount = kpiMoraLoans.reduce((s: number, l: any) => s + Number((l as any).overduePrincipal || 0), 0)
+  const kpiMoraCount = kpiMoraLoans.reduce((s: number, l: any) => s + Number((l as any).overdueCount || 0), 0)
   const kpiMoraPct = kpiActiveCapital > 0 ? (kpiMoraAmount / kpiActiveCapital) : 0
   // kpiRecoveredAmount: capital puro recuperado — uses same priority logic as the Total Cartera PDF report
   // (loaded from /api/reports/portfolio-stats which applies mora -> fees -> interest -> capital)
@@ -514,7 +518,7 @@ export default function DashboardPage() {
   const approvalsGrowthPct = calcTrendPct(approvalsThisMonthCount, approvalsPrevMonthCount)
   const approvalsAmountGrowthPct = calcTrendPct(approvalsThisMonthAmount, approvalsPrevMonthAmount)
 
-  const moraPrevMonthAmount = kpiMoraLoans.filter((l: any) => inRange(parseLoanDate(l), startOfPrevMonth, endOfPrevMonth)).reduce((s: number, l: any) => s + Number((l as any).moraTotal || 0), 0)
+  const moraPrevMonthAmount = kpiMoraLoans.filter((l: any) => inRange(parseLoanDate(l), startOfPrevMonth, endOfPrevMonth)).reduce((s: number, l: any) => s + Number((l as any).overduePrincipal || 0), 0)
   const moraTrendPct = calcTrendPct(kpiMoraAmount, moraPrevMonthAmount)
   const approvalsTrendUp = approvalsGrowthPct >= 0
   const approvalsAmountTrendUp = approvalsAmountGrowthPct >= 0
@@ -720,15 +724,21 @@ export default function DashboardPage() {
           {/* Mora actual */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Card className={`border-border/50 backdrop-blur-sm transition-all duration-300 hover:-translate-y-0.5 cursor-default ${kpiMoraAmount > 0 ? 'bg-gradient-to-br from-rose-500/10 to-rose-500/5 hover:from-rose-500/15 hover:to-rose-500/10' : 'bg-gradient-to-br from-emerald-500/5 to-card/60 hover:bg-card/80'}`}>
+              <Card 
+                onClick={() => {
+                  const allOverdue = kpiMoraLoans.flatMap((l: any) => (l.overdueInstallments || []).map((s: any) => ({ ...s, loan_id: l.id, loan_number: l.loanNumber, clientName: `${l.client?.firstName || ''} ${l.client?.lastName || ''}` })))
+                  setMoraModalData(allOverdue.sort((a,b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime()))
+                  setIsMoraModalOpen(true)
+                }}
+                className={`border-border/50 backdrop-blur-sm transition-all duration-300 hover:-translate-y-0.5 cursor-pointer hover:shadow-md ${kpiMoraAmount > 0 ? 'bg-gradient-to-br from-rose-500/10 to-rose-500/5 hover:from-rose-500/15 hover:to-rose-500/10 border-rose-500/20' : 'bg-gradient-to-br from-emerald-500/5 to-card/60 hover:bg-card/80 border-emerald-500/20'}`}>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 px-4">
-                  <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">Mora Actual</CardTitle>
-                  <AlertTriangle className={`h-4 w-4 shrink-0 ${kpiMoraAmount > 0 ? 'text-rose-500' : 'text-emerald-500'}`} />
+                  <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">Capital en Mora</CardTitle>
+                  <AlertTriangle className={`h-4 w-4 shrink-0 transition-transform ${kpiMoraAmount > 0 ? 'text-rose-500' : 'text-emerald-500'}`} />
                 </CardHeader>
                 <CardContent className="px-4 pb-4">
                   <div className={`text-xl sm:text-2xl font-bold tabular-nums ${kpiMoraAmount > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{formatCurrency(kpiMoraAmount)}</div>
                   <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                    {kpiMoraLoans.length > 0 && <Badge variant="destructive" className="h-4 text-[10px] px-1.5">{kpiMoraLoans.length} préstamos</Badge>}
+                    {kpiMoraCount > 0 && <Badge variant="destructive" className="h-4 text-[10px] px-1.5">{kpiMoraCount} cuotas atrasadas</Badge>}
                     <span className="text-xs text-muted-foreground">{formatPct(kpiMoraPct * 100)}% cartera</span>
                   </div>
                   <div className={`text-[10px] mt-1.5 flex items-center gap-0.5 ${moraTrendUp ? 'text-rose-400' : 'text-emerald-400'}`}>
@@ -738,7 +748,12 @@ export default function DashboardPage() {
                 </CardContent>
               </Card>
             </TooltipTrigger>
-            <TooltipContent>Monto total de cuotas vencidas sin pagar en préstamos en mora</TooltipContent>
+            <TooltipContent align="end">
+              <div className="text-xs max-w-xs space-y-1">
+                <p className="font-semibold">Suma del capital de las cuotas vencidas.</p>
+                <p className="text-muted-foreground">Haz clic para ver el desglose de cuotas y clientes.</p>
+              </div>
+            </TooltipContent>
           </Tooltip>
         </div>
 
@@ -1296,6 +1311,64 @@ export default function DashboardPage() {
       )}
 
       <LoanCalculatorModal open={calcOpen} onOpenChange={setCalcOpen} />
+
+      {/* Mora Modal */}
+      <Dialog open={isMoraModalOpen} onOpenChange={setIsMoraModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col p-0 overflow-hidden border-border/50 bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/60 shadow-2xl">
+          <DialogHeader className="p-6 pb-2 border-b border-border/50 bg-card/40 shrink-0">
+            <DialogTitle className="flex items-center gap-2 text-xl">
+              <AlertTriangle className="h-5 w-5 text-rose-500" />
+              Detalle de Cuotas en Mora
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-muted-foreground/20 scrollbar-track-transparent">
+            {moraModalData && moraModalData.length > 0 ? (
+              <div className="rounded-md border border-border/50 overflow-hidden">
+                <Table>
+                  <TableHeader className="bg-muted/30">
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="w-[120px]">Préstamo</TableHead>
+                      <TableHead>Cliente</TableHead>
+                      <TableHead className="w-[100px] text-center">Cuota #</TableHead>
+                      <TableHead className="w-[130px] text-center">Límite</TableHead>
+                      <TableHead className="text-right">Capital</TableHead>
+                      <TableHead className="w-[100px] text-center">Acción</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {moraModalData.map((s: any, idx) => {
+                      const d = new Date(s.due_date)
+                      const fmt = Number.isNaN(d.getTime()) ? s.due_date : new Intl.DateTimeFormat('es-GT', { timeZone: 'America/Guatemala', day: '2-digit', month: 'short', year: 'numeric' }).format(d)
+                      const isEven = idx % 2 === 0
+                      return (
+                        <TableRow key={idx} className={isEven ? 'bg-muted/10' : ''}>
+                          <TableCell className="font-medium">#{s.loan_number}</TableCell>
+                          <TableCell className="text-muted-foreground">{s.clientName}</TableCell>
+                          <TableCell className="text-center font-medium">{s.payment_number}</TableCell>
+                          <TableCell className="text-center text-rose-500 font-medium">{fmt}</TableCell>
+                          <TableCell className="text-right tabular-nums text-foreground font-semibold">
+                            {formatCurrency(Number(s.principal || 0))}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Button variant="ghost" size="sm" className="h-7 text-xs px-2 hover:bg-primary/10 hover:text-primary" onClick={() => { if (s.loan_id) window.location.href = `/dashboard/loans/${s.loan_id}` }}>
+                              Ver Préstamo
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <div className="text-center p-8 text-muted-foreground">
+                <CheckCircle2 className="h-10 w-10 mx-auto text-emerald-500 mb-3 opacity-80" />
+                No hay cuotas en mora
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
