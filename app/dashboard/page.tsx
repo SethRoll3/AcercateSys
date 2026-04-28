@@ -645,9 +645,9 @@ export default function DashboardPage() {
   return (
     <>
       {/* ── HEADER ─────────────────────────────────────────────── */}
-      <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="mb-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div className="min-w-0">
-          <h2 className="text-2xl sm:text-3xl font-bold text-foreground mb-1 truncate">
+          <h2 className="text-2xl sm:text-3xl font-bold text-foreground mb-1">
             {userData.role === 'admin' || userData.role === 'contador' ? 'Panel de Administración' : userData.role === 'asesor' ? 'Panel del Asesor' : 'Mis Préstamos'}
           </h2>
           <p className="text-muted-foreground text-sm">

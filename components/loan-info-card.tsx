@@ -27,12 +27,10 @@ export function LoanInfoCard({ loan, totalPaid, remainingBalance, schedule }: Lo
   const firstScheduleBase = schedule.length > 0
     ? Number(schedule[0].principal || 0) + Number(schedule[0].interest || 0) + Number(schedule[0].admin_fees ?? 20)
     : 0
-    //console.log(firstScheduleBase)
   const firstScheduleAmount = schedule.length > 0 ? Number(schedule[0].amount || 0) : 0
   const displayedMonthlyPayment = firstScheduleBase > 0
     ? firstScheduleBase
     : (firstScheduleAmount > 0 ? firstScheduleAmount : Number(loan.monthlyPayment || 0))
-    console.log(displayedMonthlyPayment)
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("es-GT", {
@@ -104,14 +102,14 @@ export function LoanInfoCard({ loan, totalPaid, remainingBalance, schedule }: Lo
   return (
     <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
       <CardHeader>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
             <CardTitle className="text-2xl text-foreground">Préstamo {loan.loanNumber}</CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
               Cliente: {loan.client ? `${loan.client.first_name} ${loan.client.last_name}` : "No disponible"}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
             {getStatusBadge(loan.status)}
             <Button variant="outline" size="sm" onClick={handleDownloadSchedule} className="gap-2 bg-transparent">
               <Download className="h-4 w-4" />

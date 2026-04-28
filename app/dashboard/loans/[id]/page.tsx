@@ -321,9 +321,9 @@ export default function LoanDetailPage() {
 
           <TabsContent value="schedule" className="mt-6">
             <div className="space-y-4">
-              <div className="flex justify-between items-center">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <h3 className="text-xl font-semibold text-foreground">Plan de Pagos</h3>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                   {loan?.status === 'active' && (schedule || []).some((s: any) => s.status !== 'paid') && (() => {
                     const remaining = (schedule || []).filter((s: any) => s.status !== 'paid')
                     const nextSchedule = remaining[0]

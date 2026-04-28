@@ -1,7 +1,7 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
-import { LogOut, User, Menu, Sun, Moon, Loader2, Bell } from "lucide-react"
+import { LogOut, User, Menu, Sun, Moon, Loader2, Bell, Home } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet"
@@ -128,12 +128,20 @@ export function DashboardHeader({ userRole, userEmail }: DashboardHeaderProps) {
             <Menu className="h-5 w-5" />
           </button>
           <img src="/logoCooperativaSinTextoSinFondo.png" alt="acercate" className="h-12 w-12" />
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">acercate</h1>
-            <p className="text-sm text-muted-foreground">Sistema de Gestión de Préstamos</p>
+          <div className="hidden sm:block">
+            <h1 className="text-2xl font-bold text-foreground leading-none">acercate</h1>
+            <p className="text-xs text-muted-foreground mt-1">Sistema de Gestión de Préstamos</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <button
+            type="button"
+            aria-label="Ir al inicio"
+            className="inline-flex items-center justify-center rounded-md border px-2 py-1 bg-transparent hover:bg-muted transition-colors"
+            onClick={() => router.push('/dashboard')}
+          >
+            <Home className="h-4 w-4" />
+          </button>
           <button
             type="button"
             aria-label="Cambiar tema"
