@@ -5,14 +5,17 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, Tooltip } from 'recharts'
-import { ArrowUpRight, ArrowDownRight, Users, Wallet, AlertTriangle, CheckCircle2, BadgeDollarSign } from "lucide-react"
+import { ArrowUpRight, ArrowDownRight, Users, Wallet, AlertTriangle, CheckCircle2, BadgeDollarSign, History } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { useState } from "react"
+import { LoadingSpinner } from "@/components/loading-spinner"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
 interface CommissionData {
   total: number
   onTime: number
-  late1to3: number
-  late3to5: number
-  lateOver5: number
+  late1to30: number
+  lateOver30: number
   paymentCount: number
   breakdown: { label: string; amount: number; pct: string; color: string }[]
 }
@@ -66,6 +69,26 @@ export function AdvisorPerformanceCard({ advisor, stats, onViewDetails }: Adviso
     .toUpperCase()
 
   const commission = stats.commission
+
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false)
+  const [historyData, setHistoryData] = useState<any[]>([])
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+
+  const handleOpenHistory = async () => {
+    setIsHistoryOpen(true)
+    setIsLoadingHistory(true)
+    try {
+      const res = await fetch(`/api/advisors/commissions/history?advisor_id=${advisor.id}`)
+      if (res.ok) {
+        const data = await res.json()
+        setHistoryData(data || [])
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setIsLoadingHistory(false)
+    }
+  }
 
   return (
     <Card className="overflow-hidden border-border/50 bg-card/50 backdrop-blur-sm hover:bg-card/80 transition-all duration-300 group">
@@ -138,11 +161,16 @@ export function AdvisorPerformanceCard({ advisor, stats, onViewDetails }: Adviso
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <BadgeDollarSign className="h-4 w-4 text-emerald-500" />
-                <span className="text-xs font-semibold uppercase text-muted-foreground">Comisión por puntualidad</span>
+                <span className="text-xs font-semibold uppercase text-muted-foreground">Comisión (Periodo Actual)</span>
               </div>
-              <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
-                {commission.paymentCount} pagos
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary" onClick={handleOpenHistory} title="Ver historial de pagos">
+                  <History className="h-3 w-3" />
+                </Button>
+                <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                  {commission.paymentCount} pagos
+                </Badge>
+              </div>
             </div>
             <div className="text-2xl font-bold text-emerald-500">
               {formatCurrency(commission.total)}
@@ -253,6 +281,49 @@ export function AdvisorPerformanceCard({ advisor, stats, onViewDetails }: Adviso
           Ver desglose detallado
         </Button>
       </CardContent>
+
+      <Dialog open={isHistoryOpen} onOpenChange={setIsHistoryOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Historial de Cortes - {advisor.name}</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            {isLoadingHistory ? (
+              <div className="flex justify-center py-8"><LoadingSpinner /></div>
+            ) : historyData.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">No hay historial de cortes para este asesor.</div>
+            ) : (
+              <div className="rounded-md border overflow-hidden">
+                <Table>
+                  <TableHeader className="bg-muted/30">
+                    <TableRow>
+                      <TableHead>Fecha de Corte</TableHead>
+                      <TableHead>Periodo</TableHead>
+                      <TableHead className="text-right">Monto Pagado</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {historyData.map((record) => {
+                      const createDate = new Date(record.created_at)
+                      const start = new Date(record.start_date)
+                      const end = new Date(record.end_date)
+                      const fmtDate = (d: Date) => Number.isNaN(d.getTime()) ? '' : new Intl.DateTimeFormat('es-GT', { timeZone: 'America/Guatemala', day: '2-digit', month: 'short', year: 'numeric' }).format(d)
+                      
+                      return (
+                        <TableRow key={record.id}>
+                          <TableCell className="font-medium">{fmtDate(createDate)}</TableCell>
+                          <TableCell className="text-muted-foreground">Del {fmtDate(start)} al {fmtDate(end)}</TableCell>
+                          <TableCell className="text-right font-bold text-emerald-500">{formatCurrency(Number(record.amount))}</TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }

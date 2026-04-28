@@ -40,110 +40,109 @@ export async function POST(req: NextRequest) {
       if (!rows.length) continue
 
       const isPaidStatus = (s: string) => ['paid', 'confirmed', 'pending_confirmation', 'pending-confirmation'].includes(s)
-      let lastPaidIdx = -1
-      for (let i = rows.length - 1; i >= 0; i--) {
-        const st = String(rows[i].status || '')
-        if (isPaidStatus(st)) { lastPaidIdx = i; break }
-      }
-      const nextIdx = lastPaidIdx + 1
-      if (nextIdx < 0 || nextIdx >= rows.length) continue
-      const next = rows[nextIdx]
+      
+      for (const next of rows) {
+        const st = String(next.status || '')
+        if (isPaidStatus(st)) continue
 
-      const due = parseYMDToUTC(String(next.due_date))
-      const overdueDays = Math.max(0, Math.round((today.getTime() - due.getTime()) / 86400000))
-      const currentMora = Number(next.mora || 0)
-      const desiredMora = overdueDays * moraAmount
-      if (desiredMora > currentMora) {
-        const { error } = await admin
-          .from('payment_schedule')
-          .update({ mora: desiredMora })
-          .eq('id', next.id)
-        if (error) {
-          results.push({ loanId: loan.id, scheduleId: next.id, status: 'error', message: error.message })
-        } else {
-          results.push({ loanId: loan.id, scheduleId: next.id, status: currentMora === 0 ? 'mora_applied' : 'mora_incremented', mora: desiredMora })
-          try {
-            const { data: loanRow } = await admin
-              .from('loans')
-              .select('id, loan_number, client:clients(id, first_name, last_name, email, advisor:users!advisor_id(email, role))')
-              .eq('id', loan.id)
-              .limit(1)
-              .single()
-            const clientRaw: any = loanRow?.client as any
-            const clientObj: any = Array.isArray(clientRaw) ? clientRaw[0] : clientRaw
-            const advisorRaw: any = clientObj?.advisor as any
-            const advisorObj: any = Array.isArray(advisorRaw) ? advisorRaw[0] : advisorRaw
-            const clientEmail: string | null = clientObj?.email ?? null
-            const advisorEmail: string | null = advisorObj?.email ?? null
-            const advisorRole: string | null = advisorObj?.role ?? null
-            const loanNumber: string | null = (loanRow as any)?.loan_number ?? null
-            const actionUrl = `/dashboard/loans/${loan.id}`
-
-            const rows: any[] = []
-            if (currentMora === 0) {
-              if (clientEmail) {
-                rows.push({
-                  recipient_email: clientEmail,
-                  recipient_role: 'cliente',
-                  title: 'Tu pago está en mora',
-                  body: `Tu cuota ${next.payment_number} del préstamo ${loanNumber || loan.id} está en mora. Se aplicó mora de Q${moraAmount}.`,
-                  type: 'overdue_alert',
-                  status: 'unread',
-                  related_entity_type: 'schedule',
-                  related_entity_id: next.id,
-                  action_url: actionUrl,
-                  meta_json: { loan_id: loan.id, loan_number: loanNumber, schedule_id: next.id },
-                })
-              }
-              if (advisorEmail) {
-                rows.push({
-                  recipient_email: advisorEmail,
-                  recipient_role: advisorRole || 'asesor',
-                  title: 'Cliente con mora',
-                  body: `El cliente ${clientObj?.first_name || ''} ${clientObj?.last_name || ''} tiene mora en la cuota ${next.payment_number} del préstamo ${loanNumber || loan.id}.`,
-                  type: 'advisor_overdue_alert',
-                  status: 'unread',
-                  related_entity_type: 'schedule',
-                  related_entity_id: next.id,
-                  action_url: actionUrl,
-                  meta_json: { loan_id: loan.id, loan_number: loanNumber, schedule_id: next.id },
-                })
-              }
-              rows.push({
-                recipient_role: 'admin',
-                recipient_email: null,
-                title: 'Mora aplicada a cuota',
-                body: `Se aplicó mora a la cuota ${next.payment_number} del préstamo ${loanNumber || loan.id}, perteneciente al cliente ${clientObj?.first_name || ''} ${clientObj?.last_name || ''}.`,
-                type: 'admin_overdue_alert',
-                status: 'unread',
-                related_entity_type: 'schedule',
-                related_entity_id: next.id,
-                action_url: actionUrl,
-                meta_json: { loan_id: loan.id, loan_number: loanNumber, schedule_id: next.id },
-              })
-            }
-
-            // Simple de-dup: avoid duplicate unread for same schedule/type/recipient
-            for (const row of rows) {
-              const orFilter = row.recipient_email ? `recipient_email.eq.${row.recipient_email},recipient_role.eq.${row.recipient_role}` : `recipient_role.eq.${row.recipient_role}`
-              const { data: existing } = await admin
-                .from('notifications')
-                .select('id')
-                .eq('type', row.type)
-                .eq('related_entity_id', row.related_entity_id)
-                .eq('status', 'unread')
-                .or(orFilter)
+        const due = parseYMDToUTC(String(next.due_date))
+        const overdueDays = Math.max(0, Math.round((today.getTime() - due.getTime()) / 86400000))
+        const currentMora = Number(next.mora || 0)
+        const desiredMora = overdueDays * moraAmount
+        
+        if (desiredMora > currentMora) {
+          const { error } = await admin
+            .from('payment_schedule')
+            .update({ mora: desiredMora })
+            .eq('id', next.id)
+            
+          if (error) {
+            results.push({ loanId: loan.id, scheduleId: next.id, status: 'error', message: error.message })
+          } else {
+            results.push({ loanId: loan.id, scheduleId: next.id, status: currentMora === 0 ? 'mora_applied' : 'mora_incremented', mora: desiredMora })
+            try {
+              const { data: loanRow } = await admin
+                .from('loans')
+                .select('id, loan_number, client:clients(id, first_name, last_name, email, advisor:users!advisor_id(email, role))')
+                .eq('id', loan.id)
                 .limit(1)
-              if (!Array.isArray(existing) || existing.length === 0) {
-                await admin.from('notifications').insert(row)
+                .single()
+              const clientRaw: any = loanRow?.client as any
+              const clientObj: any = Array.isArray(clientRaw) ? clientRaw[0] : clientRaw
+              const advisorRaw: any = clientObj?.advisor as any
+              const advisorObj: any = Array.isArray(advisorRaw) ? advisorRaw[0] : advisorRaw
+              const clientEmail: string | null = clientObj?.email ?? null
+              const advisorEmail: string | null = advisorObj?.email ?? null
+              const advisorRole: string | null = advisorObj?.role ?? null
+              const loanNumber: string | null = (loanRow as any)?.loan_number ?? null
+              const actionUrl = `/dashboard/loans/${loan.id}`
+
+              const notifRows: any[] = []
+              if (currentMora === 0) {
+                if (clientEmail) {
+                  notifRows.push({
+                    recipient_email: clientEmail,
+                    recipient_role: 'cliente',
+                    title: 'Tu pago está en mora',
+                    body: `Tu cuota ${next.payment_number} del préstamo ${loanNumber || loan.id} está en mora. Se aplicó mora de Q${moraAmount}.`,
+                    type: 'overdue_alert',
+                    status: 'unread',
+                    related_entity_type: 'schedule',
+                    related_entity_id: next.id,
+                    action_url: actionUrl,
+                    meta_json: { loan_id: loan.id, loan_number: loanNumber, schedule_id: next.id },
+                  })
+                }
+                if (advisorEmail) {
+                  notifRows.push({
+                    recipient_email: advisorEmail,
+                    recipient_role: advisorRole || 'asesor',
+                    title: 'Cliente con mora',
+                    body: `El cliente ${clientObj?.first_name || ''} ${clientObj?.last_name || ''} tiene mora en la cuota ${next.payment_number} del préstamo ${loanNumber || loan.id}.`,
+                    type: 'advisor_overdue_alert',
+                    status: 'unread',
+                    related_entity_type: 'schedule',
+                    related_entity_id: next.id,
+                    action_url: actionUrl,
+                    meta_json: { loan_id: loan.id, loan_number: loanNumber, schedule_id: next.id },
+                  })
+                }
+                notifRows.push({
+                  recipient_role: 'admin',
+                  recipient_email: null,
+                  title: 'Mora aplicada a cuota',
+                  body: `Se aplicó mora a la cuota ${next.payment_number} del préstamo ${loanNumber || loan.id}, perteneciente al cliente ${clientObj?.first_name || ''} ${clientObj?.last_name || ''}.`,
+                  type: 'admin_overdue_alert',
+                  status: 'unread',
+                  related_entity_type: 'schedule',
+                  related_entity_id: next.id,
+                  action_url: actionUrl,
+                  meta_json: { loan_id: loan.id, loan_number: loanNumber, schedule_id: next.id },
+                })
               }
+
+              // Simple de-dup: avoid duplicate unread for same schedule/type/recipient
+              for (const row of notifRows) {
+                const orFilter = row.recipient_email ? `recipient_email.eq.${row.recipient_email},recipient_role.eq.${row.recipient_role}` : `recipient_role.eq.${row.recipient_role}`
+                const { data: existing } = await admin
+                  .from('notifications')
+                  .select('id')
+                  .eq('type', row.type)
+                  .eq('related_entity_id', row.related_entity_id)
+                  .eq('status', 'unread')
+                  .or(orFilter)
+                  .limit(1)
+                if (!Array.isArray(existing) || existing.length === 0) {
+                  await admin.from('notifications').insert(row)
+                }
+              }
+            } catch (e) {
+              try { console.error('[IN-APP NOTIFS] mora run insert failed', e) } catch {}
             }
-          } catch (e) {
-            try { console.error('[IN-APP NOTIFS] mora run insert failed', e) } catch {}
           }
+        } else {
+          results.push({ loanId: loan.id, scheduleId: next.id, status: 'skipped', reason: overdueDays === 0 ? 'not_overdue' : 'up_to_date' })
         }
-      } else {
-        results.push({ loanId: loan.id, scheduleId: next.id, status: 'skipped', reason: overdueDays === 0 ? 'not_overdue' : 'up_to_date' })
       }
     }
 

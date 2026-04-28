@@ -4,21 +4,21 @@ import { NextResponse } from 'next/server'
 /**
  * Calcula la tasa de comisión sobre el interés basada en la puntualidad del pago.
  * 
- *   - Puntual o antes de la fecha:  50%
- *   - 1–3 días después:             20%
- *   - 3–5 días después (día 4 y 5): 5%
- *   - Más de 5 días:                 0%
+ *   - Pago puntual (en fecha o antes): 40%
+ *   - 1–30 días de atraso:              20%
+ *   - Más de 30 días de atraso:          5%
+ *
+ * Las comisiones se acreditan el 15 de cada mes (sobre el mes anterior).
  */
-function getCommissionRate(paymentDateStr: string, dueDateStr: string): { rate: number; bucket: 'onTime' | 'late1to3' | 'late3to5' | 'lateOver5' } {
+function getCommissionRate(paymentDateStr: string, dueDateStr: string): { rate: number; bucket: 'onTime' | 'late1to30' | 'lateOver30' } {
   const pay = parseYMD(paymentDateStr)
   const due = parseYMD(dueDateStr)
   const diffMs = pay.getTime() - due.getTime()
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
 
-  if (diffDays <= 0) return { rate: 0.50, bucket: 'onTime' }
-  if (diffDays <= 3) return { rate: 0.20, bucket: 'late1to3' }
-  if (diffDays <= 5) return { rate: 0.05, bucket: 'late3to5' }
-  return { rate: 0.00, bucket: 'lateOver5' }
+  if (diffDays <= 0) return { rate: 0.40, bucket: 'onTime' }
+  if (diffDays <= 30) return { rate: 0.20, bucket: 'late1to30' }
+  return { rate: 0.05, bucket: 'lateOver30' }
 }
 
 function parseYMD(ymd: string): Date {
@@ -33,9 +33,8 @@ function parseYMD(ymd: string): Date {
 interface AdvisorCommission {
   total: number
   onTime: number
-  late1to3: number
-  late3to5: number
-  lateOver5: number
+  late1to30: number
+  lateOver30: number
   paymentCount: number
   breakdown: { label: string; amount: number; pct: string; color: string }[]
 }
@@ -66,6 +65,7 @@ export async function GET() {
       .from('payment_schedule')
       .select('id, loan_id, due_date, interest, status, paid_amount')
       .eq('status', 'paid')
+      .is('commission_paid_at', null)
 
     if (schedError) {
       console.error('[commissions] Error fetching payment_schedule:', schedError)
@@ -136,7 +136,7 @@ export async function GET() {
     }
 
     // ─── 5. Calcular comisiones por asesor ───
-    const commissions: Record<string, { total: number; onTime: number; late1to3: number; late3to5: number; lateOver5: number; paymentCount: number }> = {}
+    const commissions: Record<string, { total: number; onTime: number; late1to30: number; lateOver30: number; paymentCount: number }> = {}
 
     let processed = 0
     let usedFallbackDate = 0
@@ -184,7 +184,7 @@ export async function GET() {
       const commissionAmount = Math.round(interest * rate * 100) / 100
 
       if (!commissions[advisorId]) {
-        commissions[advisorId] = { total: 0, onTime: 0, late1to3: 0, late3to5: 0, lateOver5: 0, paymentCount: 0 }
+        commissions[advisorId] = { total: 0, onTime: 0, late1to30: 0, lateOver30: 0, paymentCount: 0 }
       }
 
       commissions[advisorId].total += commissionAmount
@@ -210,22 +210,19 @@ export async function GET() {
         const round = (n: number) => Math.round(n * 100) / 100
         const total = round(data.total)
         const onTime = round(data.onTime)
-        const late1to3 = round(data.late1to3)
-        const late3to5 = round(data.late3to5)
-        const lateOver5 = round(data.lateOver5)
+        const late1to30 = round(data.late1to30)
+        const lateOver30 = round(data.lateOver30)
 
         result[advisorId] = {
           total,
           onTime,
-          late1to3,
-          late3to5,
-          lateOver5,
+          late1to30,
+          lateOver30,
           paymentCount: data.paymentCount,
           breakdown: [
-            { label: 'Puntual (50%)', amount: onTime, pct: total > 0 ? `${Math.round((onTime / total) * 100)}%` : '0%', color: '#22c55e' },
-            { label: '1-3 días (20%)', amount: late1to3, pct: total > 0 ? `${Math.round((late1to3 / total) * 100)}%` : '0%', color: '#facc15' },
-            { label: '3-5 días (5%)', amount: late3to5, pct: total > 0 ? `${Math.round((late3to5 / total) * 100)}%` : '0%', color: '#f97316' },
-            { label: '+5 días (0%)', amount: lateOver5, pct: '0%', color: '#ef4444' },
+            { label: 'Puntual (40%)', amount: onTime, pct: total > 0 ? `${Math.round((onTime / total) * 100)}%` : '0%', color: '#22c55e' },
+            { label: '1-30 días (20%)', amount: late1to30, pct: total > 0 ? `${Math.round((late1to30 / total) * 100)}%` : '0%', color: '#facc15' },
+            { label: '+30 días (5%)', amount: lateOver30, pct: total > 0 ? `${Math.round((lateOver30 / total) * 100)}%` : '0%', color: '#f97316' },
           ],
         }
       } else {
@@ -248,12 +245,11 @@ export async function GET() {
 
 function buildEmptyCommission(): AdvisorCommission {
   return {
-    total: 0, onTime: 0, late1to3: 0, late3to5: 0, lateOver5: 0, paymentCount: 0,
+    total: 0, onTime: 0, late1to30: 0, lateOver30: 0, paymentCount: 0,
     breakdown: [
-      { label: 'Puntual (50%)', amount: 0, pct: '0%', color: '#22c55e' },
-      { label: '1-3 días (20%)', amount: 0, pct: '0%', color: '#facc15' },
-      { label: '3-5 días (5%)', amount: 0, pct: '0%', color: '#f97316' },
-      { label: '+5 días (0%)', amount: 0, pct: '0%', color: '#ef4444' },
+      { label: 'Puntual (40%)', amount: 0, pct: '0%', color: '#22c55e' },
+      { label: '1-30 días (20%)', amount: 0, pct: '0%', color: '#facc15' },
+      { label: '+30 días (5%)', amount: 0, pct: '0%', color: '#f97316' },
     ],
   }
 }

@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/advisors/commissions/cutoff",
+      "schedule": "0 6 15 * *"
+    }
+  ]
+}

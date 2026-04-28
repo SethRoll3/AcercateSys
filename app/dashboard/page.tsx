@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Users, TrendingUp, FileText, Download, Calculator, ArrowUpRight, ArrowDownRight, Wallet, AlertTriangle, CheckCircle2, Hourglass } from "lucide-react"
+import { Users, TrendingUp, FileText, Download, Calculator, ArrowUpRight, ArrowDownRight, Wallet, AlertTriangle, CheckCircle2, Hourglass, Loader2 } from "lucide-react"
 import { LoanCalculatorModal } from "@/components/loan-calculator-modal"
 const QuetzalIcon = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
@@ -33,13 +33,13 @@ const readCache = (key: string) => {
     if (!obj || typeof obj.ts !== 'number') return null
     if (Date.now() - obj.ts > CACHE_TTL_MS) return null
     return obj.data ?? null
-  } catch {}
+  } catch { }
   return null
 }
 const writeCache = (key: string, data: any) => {
   try {
     sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }))
-  } catch {}
+  } catch { }
 }
 const K = {
   user: 'dashboard:user',
@@ -71,10 +71,10 @@ export default function DashboardPage() {
   const [groupsError, setGroupsError] = useState<string | null>(null)
   const [activeLoanDetails, setActiveLoanDetails] = useState<Record<string, any>>({})
   const [selectedLoanId, setSelectedLoanId] = useState<string | null>(null)
-  const [advisorFilter, setAdvisorFilter] = useState<'all'|'aldia'|'mora'>('all')
+  const [advisorFilter, setAdvisorFilter] = useState<'all' | 'aldia' | 'mora'>('all')
   const [paymentsAgg, setPaymentsAgg] = useState<Record<string, number>>({})
   const [paymentsConfirmedCounts, setPaymentsConfirmedCounts] = useState<Record<string, number>>({})
-  const [advisorSelectedView, setAdvisorSelectedView] = useState<'all'|'active'|'aldia'|'mora'|'pending'|'paid'|'asesores_stats'|null>(null)
+  const [advisorSelectedView, setAdvisorSelectedView] = useState<'all' | 'active' | 'aldia' | 'mora' | 'pending' | 'paid' | 'asesores_stats' | null>(null)
   const [groupsTabVisited, setGroupsTabVisited] = useState(false)
   const [advisors, setAdvisors] = useState<any[]>([])
   const [advisorClientsView, setAdvisorClientsView] = useState<{ id: string, name: string, email: string } | null>(null)
@@ -84,6 +84,9 @@ export default function DashboardPage() {
   const [explanationOpen, setExplanationOpen] = useState(false)
   const [isMoraModalOpen, setIsMoraModalOpen] = useState(false)
   const [moraModalData, setMoraModalData] = useState<any[]>([])
+
+  const [isCutoffModalOpen, setIsCutoffModalOpen] = useState(false)
+  const [isCutoffLoading, setIsCutoffLoading] = useState(false)
 
   // REFERENCIA PARA EL SCROLL 
   const resultsSectionRef = useRef<HTMLDivElement>(null)
@@ -129,7 +132,7 @@ export default function DashboardPage() {
         setLoanGroupMap(map)
         writeCache(K.loanGroupMap, map)
       }
-    } catch {}
+    } catch { }
   }, [])
 
   const revalidateAll = useCallback(async () => {
@@ -182,6 +185,24 @@ export default function DashboardPage() {
       if (['admin', 'contador'].includes(role)) {
         promises.push(fetchWithTimeout('/api/advisors/commissions', { timeoutMs: 12000 }).then(r => r.ok ? r.json() : null))
         keys.push('commissions')
+      }
+
+      const handleExecuteCutoff = async () => {
+        setIsCutoffLoading(true)
+        try {
+          const res = await fetch('/api/advisors/commissions/cutoff', { method: 'POST' })
+          if (!res.ok) throw new Error('Error al ejecutar el corte')
+          const data = await res.json()
+          alert(`Corte realizado con éxito.\nSe procesaron ${data.cutoffsCreated} cortes de asesores y se actualizaron ${data.schedulesUpdated} cuotas.`)
+          setIsCutoffModalOpen(false)
+          // Refrescar datos
+          revalidateAll()
+        } catch (error) {
+          console.error(error)
+          alert('Hubo un error al ejecutar el corte de comisiones. Inténtalo de nuevo.')
+        } finally {
+          setIsCutoffLoading(false)
+        }
       }
 
       const results = await Promise.all(promises)
@@ -267,7 +288,7 @@ export default function DashboardPage() {
             totalInteresesPorPagar: Number(ist.totalInteresesPorPagar || 0)
           })
         }
-      } catch {}
+      } catch { }
       setIsLoading(false)
       inFlightRef.current = false
     }
@@ -297,13 +318,13 @@ export default function DashboardPage() {
       if (uc && uc.id) return uc
       const udc = readCache(K.userData)
       if (udc && udc.id) return { id: udc.id, email: udc.email }
-    } catch {}
+    } catch { }
     const supabase = createClient()
     for (const ms of [200, 400, 800]) {
       try {
         const { data } = await supabase.auth.getUser()
         if (data?.user) return data.user
-      } catch {}
+      } catch { }
       await delay(ms)
     }
     return null
@@ -332,12 +353,12 @@ export default function DashboardPage() {
       if (pa && typeof pa === 'object') setPaymentsAgg(pa)
       if (typeof asv === 'string') setAdvisorSelectedView(asv as any)
       if (udc) setIsLoading(false)
-    } catch {}
+    } catch { }
     revalidateAll()
     return () => {
       const arr = abortControllersRef.current.splice(0)
       for (const c of arr) {
-        try { if (!c.signal?.aborted) c.abort('cleanup') } catch {}
+        try { if (!c.signal?.aborted) c.abort('cleanup') } catch { }
       }
       inFlightRef.current = false
     }
@@ -345,11 +366,11 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const onFocus = () => {
-      revalidateAll().catch(() => {})
+      revalidateAll().catch(() => { })
     }
     const onVisibility = () => {
       if (document.visibilityState === 'visible') {
-        revalidateAll().catch(() => {})
+        revalidateAll().catch(() => { })
       }
     }
     window.addEventListener('focus', onFocus)
@@ -372,11 +393,11 @@ export default function DashboardPage() {
         if (!selectedLoanId && activeLoans[0]?.id) {
           setSelectedLoanId(activeLoans[0].id);
         }
-        
+
         const loanToFetch = selectedLoanId ? activeLoans.find(l => l.id === selectedLoanId) : activeLoans[0];
 
         if (loanToFetch?.id && !activeLoanDetails[loanToFetch.id]) {
-          ;(async () => {
+          ; (async () => {
             try {
               const res = await fetch(`/api/loans?id=${loanToFetch.id}`, { credentials: 'include' as any })
               if (res.ok) {
@@ -387,7 +408,7 @@ export default function DashboardPage() {
                   return next
                 })
               }
-            } catch {}
+            } catch { }
           })()
         }
       } else {
@@ -399,7 +420,7 @@ export default function DashboardPage() {
   if (isLoading) {
     return <LoadingSpinner />;
   }
-  
+
   if (!userData) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -550,7 +571,7 @@ export default function DashboardPage() {
     } else if (advisorSelectedView === 'mora') {
       filtered = list.filter((l: any) => Boolean((l as any).hasOverdue))
     }
-    try { writeCache(K.advisorLoansViewPrefix + advisorSelectedView, filtered) } catch {}
+    try { writeCache(K.advisorLoansViewPrefix + advisorSelectedView, filtered) } catch { }
     return filtered
   })()
 
@@ -601,19 +622,19 @@ export default function DashboardPage() {
 
 
   // FUNCIÓN DE SCROLL ROBUSTA (ScrollIntoView)
-  const handleAdvisorCardClick = (view: 'all'|'active'|'aldia'|'mora'|'pending'|'paid'|'asesores_stats') => {
+  const handleAdvisorCardClick = (view: 'all' | 'active' | 'aldia' | 'mora' | 'pending' | 'paid' | 'asesores_stats') => {
     setAdvisorSelectedView(view)
     writeCache(K.advisorSelectedView, view)
-    
+
     // Le damos un pequeño respiro para que React renderice el cambio de estado (filtros)
     // y luego ejecutamos el scroll sobre la referencia.
     setTimeout(() => {
-        if (resultsSectionRef.current) {
-            resultsSectionRef.current.scrollIntoView({ 
-                behavior: 'smooth',
-                block: 'start' // Alinea el elemento al inicio del área visible
-            });
-        }
+      if (resultsSectionRef.current) {
+        resultsSectionRef.current.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start' // Alinea el elemento al inicio del área visible
+        });
+      }
     }, 150);
   }
 
@@ -633,11 +654,17 @@ export default function DashboardPage() {
             {userData.role === 'admin' || userData.role === 'contador'
               ? 'Resumen general del sistema de préstamos'
               : userData.role === 'asesor'
-              ? 'Gestiona tus clientes y sus préstamos'
-              : 'Gestiona y revisa tus préstamos activos'}
+                ? 'Gestiona tus clientes y sus préstamos'
+                : 'Gestiona y revisa tus préstamos activos'}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {userData.role === 'admin' && (
+            <Button variant="destructive" size="sm" className="gap-2" onClick={() => setIsCutoffModalOpen(true)}>
+              <Wallet className="h-4 w-4" />
+              Corte de Comisiones
+            </Button>
+          )}
           {(userData.role === 'admin' || userData.role === 'contador') && (
             <Button variant="outline" size="sm" className="gap-2 bg-transparent" asChild>
               <a href="/api/reports/loans-excel" target="_blank" rel="noopener noreferrer">
@@ -724,10 +751,10 @@ export default function DashboardPage() {
           {/* Mora actual */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Card 
+              <Card
                 onClick={() => {
                   const allOverdue = kpiMoraLoans.flatMap((l: any) => (l.overdueInstallments || []).map((s: any) => ({ ...s, loan_id: l.id, loan_number: l.loanNumber, clientName: `${l.client?.firstName || ''} ${l.client?.lastName || ''}` })))
-                  setMoraModalData(allOverdue.sort((a,b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime()))
+                  setMoraModalData(allOverdue.sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime()))
                   setIsMoraModalOpen(true)
                 }}
                 className={`border-border/50 backdrop-blur-sm transition-all duration-300 hover:-translate-y-0.5 cursor-pointer hover:shadow-md ${kpiMoraAmount > 0 ? 'bg-gradient-to-br from-rose-500/10 to-rose-500/5 hover:from-rose-500/15 hover:to-rose-500/10 border-rose-500/20' : 'bg-gradient-to-br from-emerald-500/5 to-card/60 hover:bg-card/80 border-emerald-500/20'}`}>
@@ -828,16 +855,14 @@ export default function DashboardPage() {
             <button
               key={key}
               onClick={() => handleAdvisorCardClick(key as any)}
-              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-150 ${
-                advisorSelectedView === key
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-150 ${advisorSelectedView === key
                   ? 'bg-primary text-primary-foreground border-primary shadow-sm'
                   : 'bg-muted/40 text-muted-foreground border-border/50 hover:bg-muted/80 hover:text-foreground'
-              }`}
+                }`}
             >
               {label}
-              <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] text-[10px] rounded-full px-1 ${
-                advisorSelectedView === key ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-muted text-muted-foreground'
-              }`}>{count}</span>
+              <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] text-[10px] rounded-full px-1 ${advisorSelectedView === key ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-muted text-muted-foreground'
+                }`}>{count}</span>
             </button>
           ))}
         </div>
@@ -940,7 +965,7 @@ export default function DashboardPage() {
                   try {
                     const res = await fetchWithTimeout('/api/loans', { timeoutMs: 12000 })
                     if (res.ok) { const data = await res.json(); setLoans(data || []); setLoansError(null) }
-                  } catch {}
+                  } catch { }
                 }}>Reintentar</Button>
               </div>
             )}
@@ -1148,7 +1173,7 @@ export default function DashboardPage() {
                                       { name: 'Pagados', value: paidLoansCount, color: '#3b82f6' },
                                     ].filter(d => d.value > 0)
                                     const recoveryProgress = totalRepayable > 0 ? (recoveredAmount / totalRepayable) * 100 : 0
-                                    const defaultCommission = { total: 0, onTime: 0, late1to3: 0, late3to5: 0, lateOver5: 0, paymentCount: 0, breakdown: [{ label: 'Puntual (50%)', amount: 0, pct: '0%', color: '#22c55e' }, { label: '1-3 días (20%)', amount: 0, pct: '0%', color: '#facc15' }, { label: '3-5 días (5%)', amount: 0, pct: '0%', color: '#f97316' }, { label: '+5 días (0%)', amount: 0, pct: '0%', color: '#ef4444' }] }
+                                    const defaultCommission = { total: 0, onTime: 0, late1to30: 0, lateOver30: 0, paymentCount: 0, breakdown: [{ label: 'Puntual (40%)', amount: 0, pct: '0%', color: '#22c55e' }, { label: '1-30 días (20%)', amount: 0, pct: '0%', color: '#facc15' }, { label: '+30 días (5%)', amount: 0, pct: '0%', color: '#f97316' }] }
                                     // Try all possible keys: users.id, users.auth_id, clients.advisor_id value
                                     const advisorCommission = advisorCommissions[advisor.id]
                                       || advisorCommissions[advisor.authId]
@@ -1195,7 +1220,7 @@ export default function DashboardPage() {
                         setLoanGroupMap(map)
                         setGroupsError(null)
                       }
-                    } catch {}
+                    } catch { }
                   }}>Reintentar</Button>
                 </div>
               )}
@@ -1366,6 +1391,48 @@ export default function DashboardPage() {
                 No hay cuotas en mora
               </div>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cutoff Confirmation Modal */}
+      <Dialog open={isCutoffModalOpen} onOpenChange={setIsCutoffModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Ejecutar Corte de Comisiones</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <p className="text-sm text-muted-foreground">
+              ¿Estás seguro que deseas ejecutar el corte de comisiones de forma manual?
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Esto calculará las comisiones pendientes, las guardará en el historial y reiniciará el acumulado actual de todos los asesores a cero.
+            </p>
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" onClick={() => setIsCutoffModalOpen(false)} disabled={isCutoffLoading}>Cancelar</Button>
+            <Button variant="destructive" onClick={() => {
+              const handleExecuteCutoff = async () => {
+                setIsCutoffLoading(true)
+                try {
+                  const res = await fetch('/api/advisors/commissions/cutoff', { method: 'POST' })
+                  if (!res.ok) throw new Error('Error al ejecutar el corte')
+                  const data = await res.json()
+                  alert(`Corte realizado con éxito.\nSe procesaron ${data.cutoffsCreated} cortes de asesores y se actualizaron ${data.schedulesUpdated} cuotas.`)
+                  setIsCutoffModalOpen(false)
+                  revalidateAll()
+                } catch (error) {
+                  console.error(error)
+                  alert('Hubo un error al ejecutar el corte de comisiones. Inténtalo de nuevo.')
+                } finally {
+                  setIsCutoffLoading(false)
+                }
+              }
+              handleExecuteCutoff()
+            }} disabled={isCutoffLoading}>
+              {isCutoffLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              Confirmar Corte
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
