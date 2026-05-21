@@ -1,10 +1,11 @@
 'use client'
 
 import { AppSidebar } from "@/components/app-sidebar";
+import { BetterwareSidebar } from "@/components/betterware-sidebar";
 import { DashboardHeader } from "@/components/dashboard-header";
 
 import { createClient } from "@/lib/supabase/client";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useState, Suspense, useCallback } from "react";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { RoleProvider, UserRole } from "@/contexts/role-context";
@@ -13,6 +14,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const router = useRouter()
+  const pathname = usePathname()
+
+  const isBetterwareRoute = pathname.startsWith('/dashboard/betterware')
 
   const CACHE_TTL_MS = Number.MAX_SAFE_INTEGER
   const readCache = (key: string) => {
@@ -96,17 +100,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <RoleProvider>
       <div className="flex h-screen bg-background">
         <div className="hidden md:flex">
-          <AppSidebar />
+          {isBetterwareRoute ? <BetterwareSidebar /> : <AppSidebar />}
         </div>
         <div className="relative flex flex-1 flex-col overflow-hidden">
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[-1]">
             <img
               src="/logoCooperativaTextoSinFondo.png"
               alt="Watermark"
               className="h-1/2 w-1/2 object-contain opacity-25"
             />
           </div>
-          <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden z-10 relative">
+          <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden relative">
             <DashboardHeader userRole={userRole ?? ""} userEmail={userEmail ?? ""} />
             <main className="flex-1 p-4 md:p-8 w-full max-w-full overflow-x-hidden">
               <Suspense fallback={<LoadingSpinner />}>

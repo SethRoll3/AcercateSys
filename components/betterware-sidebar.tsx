@@ -2,60 +2,34 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Home, Users, LogOut, CreditCard, FileText, Settings, UserCheck, Calculator, Loader2, History, ShoppingBag } from "lucide-react"
+import { Home, Users, FileText, ArrowLeft, ShoppingBag, Loader2, LogOut, UserCheck, Calculator } from "lucide-react"
 import { useState } from "react"
 import { LoanCalculatorModal } from "@/components/loan-calculator-modal"
 import { createClient } from "@/lib/supabase/client"
-import { useRole, RolePermissions } from "@/contexts/role-context"
+import { useRole } from "@/contexts/role-context"
 
-// Define menu items with their required permissions
 interface MenuItem {
   name: string
   href: string
   icon: React.ComponentType<{ className?: string }>
-  permission: keyof RolePermissions | null
 }
 
-const menuItems: MenuItem[] = [
-  { name: "Dashboard", href: "/dashboard", icon: Home, permission: null }, // Siempre visible
-  { name: "Clientes", href: "/dashboard/clients", icon: Users, permission: null }, // Visible para roles con acceso a la ruta (admin/asesor)
-  { name: "Historial", href: "/dashboard/historial", icon: History, permission: null }, // Historial de préstamos
-  { name: "Reportería", href: "/dashboard/reporteria", icon: FileText, permission: "canViewFinancialReports" },
-  { name: "Usuarios", href: "/dashboard/users", icon: UserCheck, permission: "canManageUsers" },
-  { name: "Logs", href: "/dashboard/logs", icon: FileText, permission: "canAccessSystemSettings" },
-  { name: "Betterware", href: "/dashboard/betterware", icon: ShoppingBag, permission: null },
-  { name: "Configuración", href: "/dashboard/settings", icon: Settings, permission: null },
+const betterwareMenuItems: MenuItem[] = [
+  { name: "Dashboard", href: "/dashboard/betterware", icon: Home },
+  { name: "Clientes", href: "/dashboard/betterware/clientes", icon: Users },
+  { name: "Reportes", href: "/dashboard/betterware/reportes", icon: FileText },
 ]
 
-export function AppSidebar({ variant = "desktop" }: { variant?: "desktop" | "mobile" }) {
+export function BetterwareSidebar({ variant = "desktop" }: { variant?: "desktop" | "mobile" }) {
   const pathname = usePathname()
   const supabase = createClient()
-  const { user, role, hasPermission, canAccessRoute } = useRole()
+  const { role } = useRole()
   const [calcOpen, setCalcOpen] = useState(false)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
-
-  // Filter menu items based on user permissions
-  const hiddenForAdmin = new Set(["/dashboard/loans","/dashboard/payments","/dashboard/reports","/dashboard/grupos"]) 
-  const visibleMenuItems = menuItems.filter(item => {
-    if (role === 'admin' && hiddenForAdmin.has(item.href)) {
-      return false;
-    }
-    // Primero, validar que el rol actual puede acceder a la ruta definida
-    const canAccess = canAccessRoute(item.href);
-    if (!canAccess) return false;
-    // Elementos sin permisos específicos se muestran si la ruta es accesible
-    if (item.permission === null) {
-      return true;
-    }
-    // Para el resto, se requiere permiso explícito
-    const hasPerm = hasPermission(item.permission);
-    return hasPerm;
-  })
 
   const handleLogout = async () => {
     setIsLoggingOut(true)
     try {
-      //localStorage.clear()
       sessionStorage.clear()
     } catch {}
     await supabase.auth.signOut()
@@ -65,6 +39,13 @@ export function AppSidebar({ variant = "desktop" }: { variant?: "desktop" | "mob
   const Container = variant === "desktop" ? "aside" : "div"
   const containerClass = variant === "desktop" ? "flex h-screen w-64 flex-col overflow-y-auto border-r bg-card/50 backdrop-blur-sm px-4 py-8" : "flex w-64 flex-col overflow-y-auto bg-card/50 backdrop-blur-sm px-4 py-6"
 
+  const isActive = (href: string) => {
+    if (href === "/dashboard/betterware") {
+      return pathname === href
+    }
+    return pathname.startsWith(href)
+  }
+
   return (
     <Container className={containerClass}>
       <Link href="/" className="flex items-center gap-3 px-4 mb-6">
@@ -73,18 +54,37 @@ export function AppSidebar({ variant = "desktop" }: { variant?: "desktop" | "mob
       </Link>
 
       <div className="flex flex-1 flex-col justify-between">
-        <nav className="-mx-3 space-y-2">
-          {visibleMenuItems.map(item => (
-            <Link
-              key={item.name}
-              href={item.href}
-              className={`flex items-center rounded-lg px-3 py-2 text-base font-medium transition-colors duration-200 ${pathname === item.href ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
-            >
-              <item.icon className="mr-3 h-5 w-5" />
-              {item.name}
-            </Link>
-          ))}
-        </nav>
+        <div className="-mx-3 space-y-2">
+          {/* Back to main menu */}
+          <Link
+            href="/dashboard"
+            className="flex items-center rounded-lg px-3 py-2 text-base font-medium text-muted-foreground hover:bg-muted transition-colors duration-200 mb-4 border-b border-border/50 pb-4"
+          >
+            <ArrowLeft className="mr-3 h-5 w-5" />
+            Volver al Menú
+          </Link>
+
+          {/* Betterware section label */}
+          <div className="flex items-center gap-2 px-3 py-1 mb-1">
+            <ShoppingBag className="h-4 w-4 text-primary" />
+            <span className="text-xs font-semibold text-primary uppercase tracking-wider">Betterware</span>
+          </div>
+
+          {/* Betterware menu items */}
+          <nav className="space-y-1">
+            {betterwareMenuItems.map(item => (
+              <Link
+                key={item.name}
+                href={item.href}
+                className={`flex items-center rounded-lg px-3 py-2 text-base font-medium transition-colors duration-200 ${isActive(item.href) ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
+              >
+                <item.icon className="mr-3 h-5 w-5" />
+                {item.name}
+              </Link>
+            ))}
+          </nav>
+        </div>
+
         {(role === 'admin' || role === 'asesor') && (
           <button
             onClick={() => setCalcOpen(true)}

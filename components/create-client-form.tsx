@@ -164,7 +164,7 @@ export function CreateClientForm({ onClientAdded, isOpen, onClose }: CreateClien
           Nuevo Cliente
         </Button>
       </DialogTrigger> */}
-      <DialogContent className="sm:max-w-[700px] bg-card border-border">
+      <DialogContent className="sm:max-w-[700px] bg-card border-border max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-foreground">Crear Nuevo Cliente</DialogTitle>
           <DialogDescription className="text-muted-foreground">

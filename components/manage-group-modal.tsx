@@ -103,7 +103,7 @@ export function ManageGroupModal({ isOpen, onClose, onGroupSaved, group }: Manag
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{group ? "Editar Grupo" : "Crear Nuevo Grupo"}</DialogTitle>
         </DialogHeader>

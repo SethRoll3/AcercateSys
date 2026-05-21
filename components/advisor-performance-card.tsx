@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, Tooltip } from 'recharts'
-import { ArrowUpRight, ArrowDownRight, Users, Wallet, AlertTriangle, CheckCircle2, BadgeDollarSign, History } from "lucide-react"
+import { ArrowUpRight, ArrowDownRight, Users, Wallet, AlertTriangle, CheckCircle2, BadgeDollarSign, History, ChevronDown, ChevronRight, ExternalLink } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useState } from "react"
 import { LoadingSpinner } from "@/components/loading-spinner"
@@ -74,6 +74,12 @@ export function AdvisorPerformanceCard({ advisor, stats, onViewDetails }: Adviso
   const [historyData, setHistoryData] = useState<any[]>([])
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
 
+  // Breakdown modal state
+  const [isBreakdownOpen, setIsBreakdownOpen] = useState(false)
+  const [breakdownData, setBreakdownData] = useState<any>(null)
+  const [isLoadingBreakdown, setIsLoadingBreakdown] = useState(false)
+  const [expandedLoans, setExpandedLoans] = useState<Set<string>>(new Set())
+
   const handleOpenHistory = async () => {
     setIsHistoryOpen(true)
     setIsLoadingHistory(true)
@@ -88,6 +94,46 @@ export function AdvisorPerformanceCard({ advisor, stats, onViewDetails }: Adviso
     } finally {
       setIsLoadingHistory(false)
     }
+  }
+
+  const handleOpenBreakdown = async () => {
+    setIsBreakdownOpen(true)
+    setIsLoadingBreakdown(true)
+    setExpandedLoans(new Set())
+    try {
+      const res = await fetch(`/api/advisors/commissions/breakdown?advisor_id=${advisor.id}`)
+      if (res.ok) {
+        const data = await res.json()
+        setBreakdownData(data)
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setIsLoadingBreakdown(false)
+    }
+  }
+
+  const toggleLoanExpanded = (loanId: string) => {
+    setExpandedLoans(prev => {
+      const next = new Set(prev)
+      if (next.has(loanId)) next.delete(loanId)
+      else next.add(loanId)
+      return next
+    })
+  }
+
+  const bucketColors: Record<string, string> = {
+    onTime: '#22c55e',
+    late1to30: '#facc15',
+    lateOver30: '#f97316'
+  }
+
+  const fmtDate = (d: string) => {
+    try {
+      const date = new Date(d + 'T12:00:00Z')
+      if (Number.isNaN(date.getTime())) return d
+      return new Intl.DateTimeFormat('es-GT', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'America/Guatemala' }).format(date)
+    } catch { return d }
   }
 
   return (
@@ -276,7 +322,7 @@ export function AdvisorPerformanceCard({ advisor, stats, onViewDetails }: Adviso
         <Button 
           variant="outline" 
           className="w-full text-xs h-8 bg-transparent hover:bg-primary/5 hover:text-primary border-dashed"
-          onClick={onViewDetails}
+          onClick={handleOpenBreakdown}
         >
           Ver desglose detallado
         </Button>
@@ -322,6 +368,148 @@ export function AdvisorPerformanceCard({ advisor, stats, onViewDetails }: Adviso
               </div>
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Breakdown Modal */}
+      <Dialog open={isBreakdownOpen} onOpenChange={setIsBreakdownOpen}>
+        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col p-0 overflow-hidden border-border/50 bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/60 shadow-2xl">
+          <DialogHeader className="p-6 pb-3 border-b border-border/50 bg-card/40 shrink-0">
+            <DialogTitle className="flex items-center gap-2 text-xl">
+              <BadgeDollarSign className="h-5 w-5 text-emerald-500" />
+              Desglose de Comisión — {advisor.name}
+            </DialogTitle>
+            {breakdownData && (
+              <div className="flex items-center gap-4 mt-2">
+                <Badge variant="secondary" className="text-xs">{breakdownData.totalPayments} pagos</Badge>
+                <Badge variant="secondary" className="text-xs">{breakdownData.loans?.length || 0} préstamos</Badge>
+              </div>
+            )}
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-muted-foreground/20 scrollbar-track-transparent">
+            {isLoadingBreakdown ? (
+              <div className="flex justify-center py-12"><LoadingSpinner /></div>
+            ) : !breakdownData || (breakdownData.loans || []).length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <CheckCircle2 className="h-10 w-10 mx-auto text-muted-foreground/30 mb-3" />
+                No hay comisiones pendientes para este asesor.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {(breakdownData.loans || []).map((loan: any) => {
+                  const isExpanded = expandedLoans.has(loan.loan_id)
+                  const stClass = loan.status === 'active'
+                    ? 'bg-emerald-500/20 text-emerald-400'
+                    : loan.status === 'paid'
+                      ? 'bg-blue-500/20 text-blue-400'
+                      : 'bg-muted text-muted-foreground'
+
+                  return (
+                    <div key={loan.loan_id} className="rounded-lg border border-border/50 overflow-hidden bg-card/30 transition-all duration-200 hover:bg-card/50">
+                      {/* Loan Header — clickable to expand */}
+                      <button
+                        onClick={() => toggleLoanExpanded(loan.loan_id)}
+                        className="w-full flex items-center gap-3 p-4 text-left hover:bg-muted/20 transition-colors"
+                      >
+                        <div className="shrink-0 text-muted-foreground">
+                          {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold text-sm text-foreground">#{loan.loan_number}</span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${stClass}`}>{loan.status}</span>
+                            <span className="text-xs text-muted-foreground">{loan.paid_installments}/{loan.total_installments} pagadas</span>
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-0.5 truncate">
+                            {loan.client_name} · {loan.client_email}
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="text-sm font-bold text-emerald-500">{formatCurrency(loan.commission)}</div>
+                          <div className="text-[10px] text-muted-foreground">comisión</div>
+                        </div>
+                      </button>
+
+                      {/* Expanded: installment details */}
+                      {isExpanded && (
+                        <div className="border-t border-border/30 bg-background/40">
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="border-b border-border/30 bg-muted/20">
+                                  <th className="text-left px-4 py-2 font-semibold text-muted-foreground">Cuota</th>
+                                  <th className="text-left px-4 py-2 font-semibold text-muted-foreground">Vencimiento</th>
+                                  <th className="text-left px-4 py-2 font-semibold text-muted-foreground">Fecha Pago</th>
+                                  <th className="text-right px-4 py-2 font-semibold text-muted-foreground">Interés</th>
+                                  <th className="text-center px-4 py-2 font-semibold text-muted-foreground">Tasa</th>
+                                  <th className="text-right px-4 py-2 font-semibold text-muted-foreground">Comisión</th>
+                                  <th className="text-center px-4 py-2 font-semibold text-muted-foreground">Acción</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {loan.installments.map((inst: any, idx: number) => (
+                                  <tr key={inst.schedule_id} className={`border-b border-border/20 ${idx % 2 === 0 ? 'bg-muted/5' : ''} hover:bg-muted/15 transition-colors`}>
+                                    <td className="px-4 py-2 font-medium text-foreground">#{inst.payment_number}</td>
+                                    <td className="px-4 py-2 text-muted-foreground">{fmtDate(inst.due_date)}</td>
+                                    <td className="px-4 py-2 text-muted-foreground">{fmtDate(inst.payment_date)}</td>
+                                    <td className="px-4 py-2 text-right tabular-nums text-foreground">{formatCurrency(inst.interest)}</td>
+                                    <td className="px-4 py-2 text-center">
+                                      <span
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium"
+                                        style={{ backgroundColor: `${bucketColors[inst.bucket]}20`, color: bucketColors[inst.bucket] }}
+                                      >
+                                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: bucketColors[inst.bucket] }} />
+                                        {inst.rate_label}
+                                      </span>
+                                    </td>
+                                    <td className="px-4 py-2 text-right tabular-nums font-semibold text-emerald-500">{formatCurrency(inst.commission_amount)}</td>
+                                    <td className="px-4 py-2 text-center">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-6 text-[10px] px-2 hover:bg-primary/10 hover:text-primary"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          window.location.href = `/dashboard/loans/${loan.loan_id}`
+                                        }}
+                                      >
+                                        <ExternalLink className="h-3 w-3 mr-1" />
+                                        Ver
+                                      </Button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          {/* Loan subtotal */}
+                          <div className="flex items-center justify-between px-4 py-2.5 bg-muted/15 border-t border-border/30">
+                            <span className="text-xs text-muted-foreground font-medium">Subtotal préstamo #{loan.loan_number}</span>
+                            <span className="text-sm font-bold text-emerald-500">{formatCurrency(loan.commission)}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Footer: Grand Total */}
+          {breakdownData && breakdownData.totalCommission > 0 && (
+            <div className="border-t border-border/50 bg-card/60 px-6 py-4 shrink-0">
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-muted-foreground">
+                  Total comisión del periodo ({breakdownData.totalPayments} pagos en {breakdownData.loans?.length || 0} préstamos)
+                </div>
+                <div className="text-xl font-bold text-emerald-500">
+                  {formatCurrency(breakdownData.totalCommission)}
+                </div>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </Card>

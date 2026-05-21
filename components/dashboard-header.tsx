@@ -151,7 +151,7 @@ export function DashboardHeader({ userRole, userEmail }: DashboardHeaderProps) {
           >
             {mounted ? (theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />) : <span className="h-4 w-4" />}
           </button>
-          <DropdownMenu>
+          <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <button className="relative inline-flex items-center justify-center rounded-md border px-2 py-1" aria-label="Notificaciones">
                 <Bell className="h-4 w-4" />
@@ -199,7 +199,7 @@ export function DashboardHeader({ userRole, userEmail }: DashboardHeaderProps) {
               </div>
             </DropdownMenuContent>
           </DropdownMenu>
-          <DropdownMenu>
+          <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <button className="inline-flex items-center justify-center rounded-md border px-2 py-1" aria-label="Cuenta">
                 <User className="h-4 w-4" />
