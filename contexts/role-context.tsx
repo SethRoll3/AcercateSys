@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { User, AuthChangeEvent, Session } from '@supabase/supabase-js'
 
 // Definición de roles del sistema
-export type UserRole = 'admin' | 'cliente' | 'asesor' | 'contador' | 'betterware_supervisor'
+export type UserRole = 'admin' | 'cliente' | 'asesor' | 'contador'
 
 // Definición de permisos por rol
 export interface RolePermissions {
@@ -43,9 +43,6 @@ export interface RolePermissions {
   // Configuración del sistema
   canAccessSystemSettings: boolean
 
-  // Betterware
-  canViewBetterware: boolean
-  canManageBetterware: boolean
 }
 
 // Configuración de permisos por rol
@@ -71,8 +68,6 @@ const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canViewFinancialReports: true,
     canExportData: true,
     canAccessSystemSettings: true,
-    canViewBetterware: true,
-    canManageBetterware: true,
   },
   asesor: {
     canViewAllClients: false, // Solo sus clientes asignados
@@ -95,8 +90,6 @@ const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canViewFinancialReports: true, // Solo de sus clientes
     canExportData: true, // Solo de sus clientes
     canAccessSystemSettings: false,
-    canViewBetterware: true,
-    canManageBetterware: true,
   },
   cliente: {
     canViewAllClients: false,
@@ -119,8 +112,6 @@ const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canViewFinancialReports: false,
     canExportData: false,
     canAccessSystemSettings: false,
-    canViewBetterware: false,
-    canManageBetterware: false,
   },
   contador: {
     canViewAllClients: true,
@@ -143,32 +134,6 @@ const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canViewFinancialReports: true,
     canExportData: true,
     canAccessSystemSettings: false,
-    canViewBetterware: true,
-    canManageBetterware: false,
-  },
-  betterware_supervisor: {
-    canViewAllClients: false,
-    canCreateClients: false,
-    canEditClients: false,
-    canDeleteClients: false,
-    canViewGroups: false,
-    canCreateGroups: false,
-    canEditGroups: false,
-    canDeleteGroups: false,
-    canViewAllLoans: false,
-    canCreateLoans: false,
-    canEditLoans: false,
-    canDeleteLoans: false,
-    canViewAllPayments: false,
-    canProcessPayments: false,
-    canViewPaymentReports: false,
-    canManageUsers: false,
-    canAssignAdvisors: false,
-    canViewFinancialReports: false,
-    canExportData: false,
-    canAccessSystemSettings: false,
-    canViewBetterware: true,
-    canManageBetterware: true,
   },
 }
 
@@ -211,9 +176,7 @@ const PROTECTED_ROUTES: Record<string, UserRole[]> = {
   '/dashboard/users': ['admin'],
   '/dashboard/logs': ['admin'],
   '/dashboard/settings': ['admin', 'asesor', 'cliente'],
-  '/dashboard/betterware': ['admin', 'asesor', 'contador', 'betterware_supervisor'],
-  '/dashboard/betterware/clientes': ['admin', 'asesor', 'contador', 'betterware_supervisor'],
-  '/dashboard/betterware/reportes': ['admin', 'asesor', 'contador', 'betterware_supervisor'],
+
   '/client-portal': ['cliente'],
 }
 

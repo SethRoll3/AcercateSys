@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Home, Users, LogOut, CreditCard, FileText, Settings, UserCheck, Calculator, Loader2, History, ShoppingBag } from "lucide-react"
+import { Home, Users, LogOut, CreditCard, FileText, Settings, UserCheck, Calculator, Loader2, History } from "lucide-react"
 import { useState } from "react"
 import { LoanCalculatorModal } from "@/components/loan-calculator-modal"
 import { createClient } from "@/lib/supabase/client"
@@ -23,7 +23,7 @@ const menuItems: MenuItem[] = [
   { name: "Reportería", href: "/dashboard/reporteria", icon: FileText, permission: "canViewFinancialReports" },
   { name: "Usuarios", href: "/dashboard/users", icon: UserCheck, permission: "canManageUsers" },
   { name: "Logs", href: "/dashboard/logs", icon: FileText, permission: "canAccessSystemSettings" },
-  { name: "Betterware", href: "/dashboard/betterware", icon: ShoppingBag, permission: null },
+
   { name: "Configuración", href: "/dashboard/settings", icon: Settings, permission: null },
 ]
 

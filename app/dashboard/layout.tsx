@@ -1,7 +1,6 @@
 'use client'
 
 import { AppSidebar } from "@/components/app-sidebar";
-import { BetterwareSidebar } from "@/components/betterware-sidebar";
 import { DashboardHeader } from "@/components/dashboard-header";
 
 import { createClient } from "@/lib/supabase/client";
@@ -16,7 +15,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter()
   const pathname = usePathname()
 
-  const isBetterwareRoute = pathname.startsWith('/dashboard/betterware')
+
 
   const CACHE_TTL_MS = Number.MAX_SAFE_INTEGER
   const readCache = (key: string) => {
@@ -100,7 +99,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <RoleProvider>
       <div className="flex h-screen bg-background">
         <div className="hidden md:flex">
-          {isBetterwareRoute ? <BetterwareSidebar /> : <AppSidebar />}
+          <AppSidebar />
         </div>
         <div className="relative flex flex-1 flex-col overflow-hidden">
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[-1]">
