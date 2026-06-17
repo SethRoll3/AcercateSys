@@ -15,6 +15,9 @@ interface ReceiptUploadProps {
   maxSizeMB?: number
   acceptedTypes?: string[]
   disabled?: boolean
+  title?: string
+  description?: string
+  buttonText?: string
 }
 
 export function ReceiptUpload({
@@ -22,7 +25,10 @@ export function ReceiptUpload({
   onUploadError,
   maxSizeMB = 5,
   acceptedTypes = ['image/jpeg', 'image/png', 'image/webp'],
-  disabled = false
+  disabled = false,
+  title = "Subir Boleta de Pago",
+  description = "Sube una foto de tu boleta de pago para confirmar la transacción",
+  buttonText = "Subir Boleta"
 }: ReceiptUploadProps) {
   const [uploading, setUploading] = useState(false)
   const [preview, setPreview] = useState<string | null>(null)
@@ -85,7 +91,7 @@ export function ReceiptUpload({
         .getPublicUrl(filePath)
 
       onUploadComplete(publicUrl)
-      toast.success('Boleta subida exitosamente')
+      toast.success(`${title} subida exitosamente`)
       
       // Limpiar estado
       setSelectedFile(null)
@@ -97,7 +103,7 @@ export function ReceiptUpload({
     } catch (error) {
       console.error('Error uploading file:', error)
       const errorMessage = error instanceof Error ? error.message : 'Error desconocido'
-      toast.error(`Error al subir la boleta: ${errorMessage}`)
+      toast.error(`Error al subir ${title.toLowerCase()}: ${errorMessage}`)
       onUploadError?.(errorMessage)
     } finally {
       setUploading(false)
@@ -117,10 +123,10 @@ export function ReceiptUpload({
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <FileImage className="h-5 w-5" />
-          Subir Boleta de Pago
+          {title}
         </CardTitle>
         <CardDescription>
-          Sube una foto de tu boleta de pago para confirmar la transacción
+          {description}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -143,11 +149,18 @@ export function ReceiptUpload({
         {preview && (
           <div className="space-y-3">
             <div className="relative">
-              <img
-                src={preview}
-                alt="Vista previa de la boleta"
-                className="w-full max-w-md h-48 object-cover rounded-lg border"
-              />
+              {selectedFile?.type === 'application/pdf' ? (
+                <div className="w-full max-w-md h-48 flex flex-col items-center justify-center bg-muted rounded-lg border">
+                  <span className="text-4xl">📄</span>
+                  <span className="mt-2 text-sm text-muted-foreground">{selectedFile.name}</span>
+                </div>
+              ) : (
+                <img
+                  src={preview}
+                  alt="Vista previa del archivo"
+                  className="w-full max-w-md h-48 object-cover rounded-lg border"
+                />
+              )}
               <Button
                 type="button"
                 variant="destructive"
@@ -174,7 +187,7 @@ export function ReceiptUpload({
                 ) : (
                   <>
                     <Upload className="mr-2 h-4 w-4" />
-                    Subir Boleta
+                    {buttonText}
                   </>
                 )}
               </Button>

@@ -8,6 +8,8 @@ import { Checkbox } from "@/components/ui/checkbox"
 import type { Loan, PaymentSchedule } from "@/lib/types"
 import { toast } from "sonner"
 import { BrandSpinner } from "@/components/brand-spinner"
+import { ReceiptUpload } from "@/components/receipt-upload"
+import { Download } from "lucide-react"
 
 interface ActivateLoanDialogProps {
   loan: Loan
@@ -25,11 +27,10 @@ export function ActivateLoanDialog({ loan, onActivated, trigger }: ActivateLoanD
   const [c1, setC1] = useState(false)
   const [c2, setC2] = useState(false)
   const [c3, setC3] = useState(false)
+  const [uploadedActaUrl, setUploadedActaUrl] = useState<string | null>(null)
   const [step, setStep] = useState<1|2|3>(1)
 
-  
-
-  const isReady = useMemo(() => c1 && c2 && c3, [c1, c2, c3])
+  const isReady = useMemo(() => c1 && c2 && c3 && !!uploadedActaUrl, [c1, c2, c3, uploadedActaUrl])
 
   useEffect(() => {
     if (!open) return
@@ -269,6 +270,39 @@ export function ActivateLoanDialog({ loan, onActivated, trigger }: ActivateLoanD
               <div className="flex items-center gap-2">
                 <Checkbox id="c3" checked={c3} onCheckedChange={(v: any) => setC3(Boolean(v))} />
                 <Label htmlFor="c3">Confirmo plan de pagos verificado</Label>
+              </div>
+
+              <div className="border rounded-md p-4 mt-4 space-y-4">
+                <div className="flex flex-col gap-2">
+                  <span className="text-sm font-medium">1. Descargar Acta de Comité</span>
+                  <Button 
+                    variant="outline" 
+                    className="w-full justify-start"
+                    onClick={() => window.open(`/api/loans/${loan.id}/acta-pdf`, "_blank")}
+                  >
+                    <Download className="mr-2 h-4 w-4" />
+                    Generar y Descargar Acta PDF
+                  </Button>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <span className="text-sm font-medium">2. Subir Acta Firmada *</span>
+                  {!uploadedActaUrl ? (
+                    <ReceiptUpload 
+                      onUploadComplete={(url) => setUploadedActaUrl(url)}
+                      maxSizeMB={5}
+                      acceptedTypes={['application/pdf', 'image/jpeg', 'image/png', 'image/webp']}
+                      title="Subir Acta de Comité"
+                      description="Sube el archivo PDF o una imagen del acta firmada"
+                      buttonText="Subir Acta"
+                    />
+                  ) : (
+                    <div className="flex items-center justify-between bg-muted p-2 rounded-md border">
+                      <span className="text-sm truncate">Acta subida correctamente</span>
+                      <Button variant="ghost" size="sm" onClick={() => setUploadedActaUrl(null)}>Eliminar</Button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}

@@ -43,6 +43,7 @@ export interface Loan {
 
 // Cliente asociado a un préstamo
 export interface Client {
+  address: string
   advisor_id: string
   id: string
   first_name: string
@@ -55,8 +56,10 @@ export interface Client {
   updatedAt: string
   group_id?: string | null
   in_group?: boolean
-  address?: string | null
   emergency_phone?: string | null
+  dpi?: string | null
+  actividad_economica?: string | null
+  score_buro?: string | null
 }
 
 export type PaymentScheduleStatus =

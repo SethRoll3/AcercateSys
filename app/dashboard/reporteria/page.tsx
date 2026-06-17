@@ -10,7 +10,7 @@ import { LoadingSpinner } from "@/components/loading-spinner"
 import { toast } from "@/hooks/use-toast"
 import { useEffect } from "react"
 
-type ReportKey = "payments_general" | "delinquent_portfolio" | "aged_receivables" | "portfolio_total" | "client_payments" | null
+type ReportKey = "payments_general" | "delinquent_portfolio" | "aged_receivables" | "portfolio_total" | "client_payments" | "loans_granted" | "interest_receivable" | "loan_statement" | null
 
 const REPORTS: { key: Exclude<ReportKey, null>; title: string; description: string; excelUrl: string; pdfUrl: string; dateField: string; }[] = [
   {
@@ -54,6 +54,30 @@ const REPORTS: { key: Exclude<ReportKey, null>; title: string; description: stri
   //   pdfUrl: "/api/reports/client-payments/pdf",
   //   dateField: "payment_date",
   // },
+  {
+    key: "loans_granted",
+    title: "Préstamos Otorgados",
+    description: "Reporte mensual de todos los préstamos otorgados en el período seleccionado.",
+    excelUrl: "/api/reports/loans-granted/excel",
+    pdfUrl: "/api/reports/loans-granted/pdf",
+    dateField: "start_date",
+  },
+  {
+    key: "interest_receivable",
+    title: "Intereses por Cobrar",
+    description: "Detalle de intereses generados, cobrados y pendientes por cada préstamo activo.",
+    excelUrl: "/api/reports/interest-receivable/excel",
+    pdfUrl: "/api/reports/interest-receivable/pdf",
+    dateField: "due_date",
+  },
+  {
+    key: "loan_statement",
+    title: "Estado de Cuenta de Préstamos",
+    description: "Saldo inicial, pagos a capital, intereses, gastos administrativos y saldo actual por préstamo.",
+    excelUrl: "/api/reports/loan-statement/excel",
+    pdfUrl: "/api/reports/loan-statement/pdf",
+    dateField: "start_date",
+  },
 ]
 
 export default function ReporteriaPage() {

@@ -54,6 +54,9 @@ export function CreateClientForm({ onClientAdded, isOpen, onClose }: CreateClien
     emergency_phone: '',
     advisor_id: '',
     gender: '',
+    dpi: '',
+    actividad_economica: '',
+    score_buro: '',
   })
   
   const { role, permissions } = useRole()
@@ -142,6 +145,9 @@ export function CreateClientForm({ onClientAdded, isOpen, onClose }: CreateClien
           emergency_phone: '',
           advisor_id: '',
           gender: '',
+          dpi: '',
+          actividad_economica: '',
+          score_buro: '',
         })
         onClientAdded()
         toast.success('Cliente creado con éxito')
@@ -203,6 +209,51 @@ export function CreateClientForm({ onClientAdded, isOpen, onClose }: CreateClien
                 className="bg-background/50"
               />
             </div>
+          </div>
+          <div className="flex gap-4">
+            <div className="space-y-2 w-1/2">
+              <Label htmlFor="dpi" className="text-foreground">
+                DPI *
+              </Label>
+              <Input
+                id="dpi"
+                placeholder="1234 56789 0101"
+                value={formData.dpi}
+                onChange={(e) =>
+                  setFormData({ ...formData, dpi: e.target.value })
+                }
+                required
+                className="bg-background/50"
+              />
+            </div>
+            <div className="space-y-2 w-1/2">
+              <Label htmlFor="actividad_economica" className="text-foreground">
+                Actividad Económica
+              </Label>
+              <Input
+                id="actividad_economica"
+                placeholder="Ej. Comerciante"
+                value={formData.actividad_economica}
+                onChange={(e) =>
+                  setFormData({ ...formData, actividad_economica: e.target.value })
+                }
+                className="bg-background/50"
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="score_buro" className="text-foreground">
+              Score de Buró
+            </Label>
+            <Input
+              id="score_buro"
+              placeholder="Ej. A, B, 700"
+              value={formData.score_buro}
+              onChange={(e) =>
+                setFormData({ ...formData, score_buro: e.target.value })
+              }
+              className="bg-background/50"
+            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="gender" className="text-foreground">
