@@ -290,6 +290,9 @@ export async function GET(
       endDate: loan.end_date,
       createdAt: loan.created_at,
       updatedAt: loan.updated_at,
+      actaUrl: (loan as any).acta_url || null,
+      actaUploadedAt: (loan as any).acta_uploaded_at || null,
+      actaUploadedBy: (loan as any).acta_uploaded_by || null,
       client: {
         id: loan.client.id,
         email: loan.client.email,

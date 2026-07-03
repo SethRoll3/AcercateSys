@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { createClient as createSupabaseClient } from "@supabase/supabase-js"
-import { generatePaymentReceipt } from "@/lib/pdf-generator"
+import { generatePaymentReceiptBlank } from "@/lib/pdf-generator"
 import puppeteer from "puppeteer"
-import path from "path"
-import { promises as fs } from "fs"
 import { computeETag, formatHttpDate } from "@/lib/http-cache"
 
 export async function GET(request: Request, { params }: { params: Promise<{ paymentId: string }> }) {
@@ -210,39 +208,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ paym
       },
     }
 
-    // Leer logos desde /public y convertir a dataURL para incrustar en el PDF
-    const publicDir = path.join(process.cwd(), "public")
-    const logoPath = path.join(publicDir, "logoCooperativa.jpg")
-    const logoIconPath = path.join(publicDir, "logoCooperativaSinTexto.jpg")
-
-    async function fileToDataUrl(p: string): Promise<string | null> {
-      try {
-        const data = await fs.readFile(p)
-        const base64 = Buffer.from(data).toString("base64")
-        const ext = path.extname(p).toLowerCase()
-        const mime = ext === ".png" ? "image/png" : "image/jpeg"
-        return `data:${mime};base64,${base64}`
-      return `data:${mime};base64,${base64}`
-    } catch {
-      return null
-    }
-  }
-
-  const [logoDataUrl, logoIconDataUrl] = await Promise.all([
-    fileToDataUrl(logoPath),
-    fileToDataUrl(logoIconPath),
-  ])
-
-  const brandedHtml = generatePaymentReceipt(transformedPayment, transformedLoan, {
-    coopName: "acercate",
-    logo: logoDataUrl,
-    logoIcon: logoIconDataUrl,
-    colors: {
-      primary: "#0ea5e9",
-      secondary: "#38bdf8",
-      text: "#0f172a",
-    },
-  })
+    // Generar HTML del recibo en blanco (solo datos dinámicos sobre papel pre-impreso)
+    const blankHtml = generatePaymentReceiptBlank(transformedPayment, transformedLoan as any)
 
   // Generate PDF using headless browser, compatible with Vercel Serverless
   let browser
@@ -263,12 +230,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ paym
 
   try {
     const page = await browser.newPage()
-    await page.setContent(brandedHtml, { waitUntil: 'networkidle0' })
+    await page.setContent(blankHtml, { waitUntil: 'networkidle0' })
     const pdfBuffer = await page.pdf({
-      format: 'Letter',
+      width: '8.5in',
+      height: '5.5in',
       printBackground: true,
-        margin: { top: '8mm', right: '8mm', bottom: '8mm', left: '8mm' }
-      })
+      margin: { top: '0', right: '0', bottom: '0', left: '0' }
+    })
       // Usar Uint8Array para garantizar BodyInit válido (evita SharedArrayBuffer)
       const pdfBytes = new Uint8Array(pdfBuffer)
 

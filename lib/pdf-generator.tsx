@@ -387,3 +387,73 @@ export function generatePaymentReceipt(
 
   return html
 }
+
+export function generatePaymentReceiptBlank(
+  payment: Payment,
+  loan: Loan & { client: Client },
+): string {
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(amount)
+
+  const formatDate = (date: string) => {
+    if (!date) return '—'
+    const isYMD = /^\d{4}-\d{2}-\d{2}$/.test(date)
+    const dt = isYMD ? parseYMDToUTC(date) : new Date(date)
+    const d = dt.getUTCDate().toString().padStart(2, '0')
+    const m = (dt.getUTCMonth() + 1).toString().padStart(2, '0')
+    const y = dt.getUTCFullYear()
+    return `${d}/${m}/${y}`
+  }
+
+  const safe = (value: string | number | null | undefined) => {
+    if (value === null || value === undefined) return '—'
+    if (typeof value === 'string' && value.trim() === '') return '—'
+    return String(value)
+  }
+
+  const clientName = `${safe(loan.client?.first_name)} ${safe(loan.client?.last_name)}`.trim()
+  const boletas = payment.boletas || []
+  const firstBoleta = boletas[0]
+  const refBoleta = firstBoleta
+    ? [safe(firstBoleta.banco), safe(firstBoleta.referencia), firstBoleta.numeroBoleta ? `N° ${safe(firstBoleta.numeroBoleta)}` : ''].filter(s => s && s !== '—').join(' · ')
+    : '—'
+  const obsText = payment.notes ? safe(payment.notes) : '—'
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    @page { size: 8.5in 5.5in; margin: 0; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 9px; color: #000; }
+    .field { position: absolute; background: #fff; }
+    .lbl { font-size: 7px; color: #555; display: block; margin-bottom: 1px; }
+    .f-fecha      { top: 50mm; left: 28mm; }
+    .f-prestamo   { top: 50mm; left: 130mm; }
+    .f-cliente    { top: 60mm; left: 28mm; width: 160mm; }
+    .f-forma-pago { top: 60mm; left: 130mm; width: 58mm; }
+    .f-monto      { top: 73mm; left: 28mm; width: 160mm; text-align: center; }
+    .f-monto .val { font-size: 16px; font-weight: 700; letter-spacing: 0.5px; }
+    .f-ref        { top: 88mm; left: 28mm; width: 160mm; }
+    .f-obs        { top: 97mm; left: 28mm; width: 160mm; }
+    .f-firma-1    { top: 112mm; left: 28mm; width: 70mm; border-top: 1px solid #000; padding-top: 3px; text-align: center; font-size: 7px; color: #555; }
+    .f-firma-2    { top: 112mm; left: 128mm; width: 70mm; border-top: 1px solid #000; padding-top: 3px; text-align: center; font-size: 7px; color: #555; }
+    .f-firma-1 .lbl, .f-firma-2 .lbl { display: inline; margin: 0; color: #555; }
+  </style>
+</head>
+<body>
+  <div class="field f-fecha"><span class="lbl">Fecha</span>${formatDate(payment.paymentDate || '')}</div>
+  <div class="field f-prestamo"><span class="lbl">N° Préstamo</span>${safe(loan.loanNumber)}</div>
+  <div class="field f-cliente"><span class="lbl">Cliente</span>${clientName}</div>
+  <div class="field f-forma-pago"><span class="lbl">Forma de pago</span>${safe(payment.paymentMethod)}</div>
+  <div class="field f-monto"><span class="lbl">Monto recibido</span><span class="val">${formatCurrency(Number(payment.amount) || 0)}</span></div>
+  <div class="field f-ref"><span class="lbl">Referencia</span>${refBoleta}</div>
+  <div class="field f-obs"><span class="lbl">Observaciones</span>${obsText}</div>
+  <div class="field f-firma-1"><span class="lbl">Firma del Socio / Cliente</span></div>
+  <div class="field f-firma-2"><span class="lbl">Firma y Sello Autorizado</span></div>
+</body>
+</html>`
+
+  return html
+}

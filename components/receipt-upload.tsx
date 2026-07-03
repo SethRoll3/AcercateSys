@@ -18,6 +18,7 @@ interface ReceiptUploadProps {
   title?: string
   description?: string
   buttonText?: string
+  folderPath?: string
 }
 
 export function ReceiptUpload({
@@ -28,7 +29,8 @@ export function ReceiptUpload({
   disabled = false,
   title = "Subir Boleta de Pago",
   description = "Sube una foto de tu boleta de pago para confirmar la transacción",
-  buttonText = "Subir Boleta"
+  buttonText = "Subir Boleta",
+  folderPath
 }: ReceiptUploadProps) {
   const [uploading, setUploading] = useState(false)
   const [preview, setPreview] = useState<string | null>(null)
@@ -68,10 +70,10 @@ export function ReceiptUpload({
 
     setUploading(true)
     try {
-      // Generar nombre único para el archivo
-      const fileExt = selectedFile.name.split('.').pop()
-      const fileName = `receipt_${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`
-      const filePath = `receipts/${fileName}`
+    // Generar nombre único para el archivo
+    const fileExt = selectedFile.name.split('.').pop()
+    const fileName = `receipt_${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`
+    const filePath = `${folderPath || 'receipts'}/${fileName}`
 
       // Subir archivo a Supabase Storage
       const { data, error } = await supabase.storage

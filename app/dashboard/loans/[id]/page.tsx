@@ -8,11 +8,16 @@ import { PaymentScheduleTable } from "@/components/payment-schedule-table"
 import { PaymentHistoryTable } from "@/components/payment-history-table"
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { Loan, User, PaymentSchedule, Payment } from "@/lib/types"
-import { ArrowLeft, LogOut } from "lucide-react"
+import { ArrowLeft, LogOut, Download, FileText, Trash2, Loader2 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
+import { ReceiptUpload } from "@/components/receipt-upload"
+import { ActaComiteTab } from "@/components/acta-comite-tab"
+import { toast } from "sonner"
 
 const CACHE_TTL_MS = Number.MAX_SAFE_INTEGER
 const readCache = (key: string) => {
@@ -314,9 +319,10 @@ export default function LoanDetailPage() {
         <LoanInfoCard loan={loan} totalPaid={totalPaid} remainingBalance={remainingBalance} schedule={schedule} />
 
         <Tabs defaultValue="schedule" className="w-full">
-          <TabsList className="grid w-full max-w-md grid-cols-2 bg-muted/50">
+          <TabsList className="grid w-full max-w-2xl grid-cols-3 bg-muted/50">
             <TabsTrigger value="schedule">Plan de Pagos</TabsTrigger>
             <TabsTrigger value="history">Historial de Pagos</TabsTrigger>
+            <TabsTrigger value="acta">Acta de Comité</TabsTrigger>
           </TabsList>
 
           <TabsContent value="schedule" className="mt-6">
@@ -382,12 +388,21 @@ export default function LoanDetailPage() {
           <TabsContent value="history" className="mt-6">
             <div className="space-y-4">
               <h3 className="text-xl font-semibold text-foreground">Historial de Pagos</h3>
-              <PaymentHistoryTable 
-                payments={payments} 
+              <PaymentHistoryTable
+                payments={payments}
                 onDownloadReceipt={handleDownloadReceipt}
                 onPaymentUpdate={handlePaymentUpdate}
               />
             </div>
+          </TabsContent>
+
+          <TabsContent value="acta" className="mt-6">
+            <ActaComiteTab
+              loanId={params.id as string}
+              actaUrl={(loan as any)?.actaUrl || null}
+              actaUploadedAt={(loan as any)?.actaUploadedAt || null}
+              onActaChanged={handleScheduleUpdate}
+            />
           </TabsContent>
         </Tabs>
       </div>

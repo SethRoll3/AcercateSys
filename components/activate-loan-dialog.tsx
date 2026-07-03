@@ -5,10 +5,10 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Input } from "@/components/ui/input"
 import type { Loan, PaymentSchedule } from "@/lib/types"
 import { toast } from "sonner"
 import { BrandSpinner } from "@/components/brand-spinner"
-import { ReceiptUpload } from "@/components/receipt-upload"
 import { Download } from "lucide-react"
 
 interface ActivateLoanDialogProps {
@@ -27,10 +27,11 @@ export function ActivateLoanDialog({ loan, onActivated, trigger }: ActivateLoanD
   const [c1, setC1] = useState(false)
   const [c2, setC2] = useState(false)
   const [c3, setC3] = useState(false)
-  const [uploadedActaUrl, setUploadedActaUrl] = useState<string | null>(null)
+  const [actaDate, setActaDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
+  const [actaInfo, setActaInfo] = useState<{ url: string | null; uploadedAt: string | null }>({ url: null, uploadedAt: null })
   const [step, setStep] = useState<1|2|3>(1)
 
-  const isReady = useMemo(() => c1 && c2 && c3 && !!uploadedActaUrl, [c1, c2, c3, uploadedActaUrl])
+  const isReady = useMemo(() => c1 && c2 && c3, [c1, c2, c3])
 
   useEffect(() => {
     if (!open) return
@@ -43,6 +44,10 @@ export function ActivateLoanDialog({ loan, onActivated, trigger }: ActivateLoanD
           setSchedule(data.schedule || [])
           setClientDetails(data.loan?.client || null)
           setActivationApprovals(data.activationApprovals || { count: 0, required: 2, approvedBy: [] })
+          setActaInfo({
+            url: data.loan?.actaUrl || null,
+            uploadedAt: data.loan?.actaUploadedAt || null,
+          })
         }
       } catch {}
       finally {
@@ -272,37 +277,41 @@ export function ActivateLoanDialog({ loan, onActivated, trigger }: ActivateLoanD
                 <Label htmlFor="c3">Confirmo plan de pagos verificado</Label>
               </div>
 
+              <div className="rounded-md border border-amber-500/40 bg-amber-50 dark:bg-amber-950/20 p-3 text-xs flex items-start gap-2">
+                <span className="text-amber-600 dark:text-amber-400 font-bold">!</span>
+                <div className="text-amber-900 dark:text-amber-200">
+                  <strong>Importante:</strong> descarga el acta de comité, imprímela, hazla firmar y luego sube el archivo firmado desde el detalle del préstamo. La subida del acta ya no es requisito para activar.
+                </div>
+              </div>
+
               <div className="border rounded-md p-4 mt-4 space-y-4">
                 <div className="flex flex-col gap-2">
-                  <span className="text-sm font-medium">1. Descargar Acta de Comité</span>
-                  <Button 
-                    variant="outline" 
+                  <span className="text-sm font-medium">Descargar Acta de Comité</span>
+                  <div className="flex flex-col gap-1">
+                    <Label htmlFor="acta-date">Fecha del acta</Label>
+                    <Input
+                      id="acta-date"
+                      type="date"
+                      value={actaDate}
+                      onChange={(e) => setActaDate(e.target.value)}
+                      className="w-full"
+                    />
+                  </div>
+                  <Button
+                    variant="outline"
                     className="w-full justify-start"
-                    onClick={() => window.open(`/api/loans/${loan.id}/acta-pdf`, "_blank")}
+                    onClick={() => window.open(`/api/loans/${loan.id}/acta-pdf?date=${actaDate}`, "_blank")}
                   >
                     <Download className="mr-2 h-4 w-4" />
                     Generar y Descargar Acta PDF
                   </Button>
                 </div>
-
-                <div className="flex flex-col gap-2">
-                  <span className="text-sm font-medium">2. Subir Acta Firmada *</span>
-                  {!uploadedActaUrl ? (
-                    <ReceiptUpload 
-                      onUploadComplete={(url) => setUploadedActaUrl(url)}
-                      maxSizeMB={5}
-                      acceptedTypes={['application/pdf', 'image/jpeg', 'image/png', 'image/webp']}
-                      title="Subir Acta de Comité"
-                      description="Sube el archivo PDF o una imagen del acta firmada"
-                      buttonText="Subir Acta"
-                    />
-                  ) : (
-                    <div className="flex items-center justify-between bg-muted p-2 rounded-md border">
-                      <span className="text-sm truncate">Acta subida correctamente</span>
-                      <Button variant="ghost" size="sm" onClick={() => setUploadedActaUrl(null)}>Eliminar</Button>
-                    </div>
-                  )}
-                </div>
+                {actaInfo.url && (
+                  <div className="text-xs text-muted-foreground border-t pt-2">
+                    ✓ Acta firmada subida el {actaInfo.uploadedAt ? new Date(actaInfo.uploadedAt).toLocaleString('es-GT') : '—'}.
+                    Puedes reemplazarla desde el detalle del préstamo.
+                  </div>
+                )}
               </div>
             </div>
           )}

@@ -135,10 +135,10 @@ export default function DashboardPage() {
     } catch { }
   }, [])
 
-  const revalidateAll = useCallback(async () => {
+  const revalidateAll = useCallback(async (showLoading = true) => {
     if (inFlightRef.current) return
     inFlightRef.current = true
-    setIsLoading(true)
+    if (showLoading) setIsLoading(true)
     try {
       const supabase = createClient()
       const u = await getUserWithRetry()
@@ -366,11 +366,11 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const onFocus = () => {
-      revalidateAll().catch(() => { })
+      revalidateAll(false).catch(() => { })
     }
     const onVisibility = () => {
       if (document.visibilityState === 'visible') {
-        revalidateAll().catch(() => { })
+        revalidateAll(false).catch(() => { })
       }
     }
     window.addEventListener('focus', onFocus)
