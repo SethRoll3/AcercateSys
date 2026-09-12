@@ -232,8 +232,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ paym
     const page = await browser.newPage()
     await page.setContent(blankHtml, { waitUntil: 'networkidle0' })
     const pdfBuffer = await page.pdf({
-      width: '8.5in',
-      height: '5.5in',
+      width: '150mm',
+      height: '100mm',
       printBackground: true,
       margin: { top: '0', right: '0', bottom: '0', left: '0' }
     })

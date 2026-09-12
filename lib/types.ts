@@ -84,6 +84,14 @@ export interface PaymentSchedule {
   admin_fees?: number
   paid_amount?: number
   paidAmount?: number
+  waived_interest?: number
+  waivedInterest?: number
+  waived_mora?: number
+  waivedMora?: number
+  waived_admin_fees?: number
+  waivedAdminFees?: number
+  extra_capital?: number
+  extraCapital?: number
   status: PaymentScheduleStatus
   createdAt: string
 }

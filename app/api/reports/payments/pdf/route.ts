@@ -58,6 +58,23 @@ export async function GET(request: Request) {
     const loansMap = new Map((loansData || []).map((l: any) => [l.id, l]))
     const scheduleMap = new Map((schedules || []).map((s: any) => [s.id, s]))
 
+    // Fetch boleta numbers for each schedule
+    const { data: cuotaBoletas } = await admin
+      .from("cuota_boletas")
+      .select("payment_schedule_id, boleta:boletas(numero_boleta)")
+      .in("payment_schedule_id", scheduleIds)
+
+    const boletasMap = new Map<string, string[]>()
+    cuotaBoletas?.forEach((cb: any) => {
+      const schedId = cb.payment_schedule_id
+      const num = cb.boleta?.numero_boleta
+      if (schedId && num) {
+        const existing = boletasMap.get(schedId) || []
+        existing.push(num)
+        boletasMap.set(schedId, existing)
+      }
+    })
+
     // Group by client
     const clientsMap = new Map<string, { name: string; email: string; phone: string; rows: any[] }>()
     let totalPaid = 0, totalMora = 0, totalScheduled = 0, totalCapital = 0
@@ -76,7 +93,7 @@ export async function GET(request: Request) {
       const adminFees = sched ? Number(sched.admin_fees || 0) : 0
       const interest = sched ? Math.max(0, Number(sched.amount || 0) - capital - adminFees) : 0
       totalPaid += paid; totalMora += mora; totalScheduled += scheduled; totalCapital += capital
-      clientsMap.get(key)!.rows.push({ loanNumber: loan.loan_number, payDate: p.payment_date, method: p.payment_method, scheduled, capital, interest, paid, mora, adminFees: sched ? Number(sched.admin_fees || 0) : 0, dueDate: sched?.due_date || '', status: translateStatus(sched?.status || ''), notes: p.notes || '' })
+      clientsMap.get(key)!.rows.push({ loanNumber: loan.loan_number, payDate: p.payment_date, method: p.payment_method, scheduled, capital, interest, paid, mora, adminFees: sched ? Number(sched.admin_fees || 0) : 0, dueDate: sched?.due_date || '', status: translateStatus(sched?.status || ''), notes: p.notes || '', boletaNumber: (boletasMap.get(p.schedule_id) || []).join(', ') || '—' })
     }
 
     const clients = Array.from(clientsMap.values()).sort((a, b) => a.name.localeCompare(b.name))
@@ -85,7 +102,7 @@ export async function GET(request: Request) {
 
     let tableRows = ''
     for (const c of clients) {
-      tableRows += `<tr><td colspan="13" class="client-bar">${c.name} — ${c.email || 'N/A'} — Tel: ${c.phone || 'N/A'}</td></tr>`
+      tableRows += `<tr><td colspan="14" class="client-bar">${c.name} — ${c.email || 'N/A'} — Tel: ${c.phone || 'N/A'}</td></tr>`
       for (const r of c.rows) {
         tableRows += `<tr>
           <td>${r.loanNumber}</td><td class="text-center">${fmtDateGT(r.payDate)}</td><td>${r.method}</td>
@@ -93,6 +110,7 @@ export async function GET(request: Request) {
           <td class="currency">${fmtQ(r.interest)}</td><td class="currency">${fmtQ(r.paid)}</td>
           <td class="currency">${fmtQ(r.mora)}</td><td class="currency">${fmtQ(r.adminFees)}</td>
           <td class="text-center">${fmtDateGT(r.dueDate)}</td><td class="text-center">${r.status}</td>
+          <td>${r.boletaNumber}</td>
           <td>${r.notes}</td>
         </tr>`
       }
@@ -105,7 +123,7 @@ export async function GET(request: Request) {
       <div class="divider"></div>
       <div class="meta"><strong>Reporte General de Pagos</strong> — ${dateRangeLabel(startDate, endDate)} — Generado el: ${now.toLocaleDateString('es-GT')} a las ${now.toLocaleTimeString('es-GT')}</div>
       <table>
-        <thead><tr><th>Préstamo</th><th>Fecha Pago</th><th>Método</th><th>Programado</th><th>Capital</th><th>Intereses</th><th>Pagado</th><th>Mora</th><th>Gastos Adm.</th><th>Vencimiento</th><th>Estado</th><th>Notas</th></tr></thead>
+        <thead><tr><th>Préstamo</th><th>Fecha Pago</th><th>Método</th><th>Programado</th><th>Capital</th><th>Intereses</th><th>Pagado</th><th>Mora</th><th>Gastos Adm.</th><th>Vencimiento</th><th>Estado</th><th>N° Boleta</th><th>Notas</th></tr></thead>
         <tbody>${tableRows}</tbody>
       </table>
       <div class="summary-box">RESUMEN EJECUTIVO</div>

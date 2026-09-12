@@ -419,27 +419,66 @@ export function generatePaymentReceiptBlank(
     : '—'
   const obsText = payment.notes ? safe(payment.notes) : '—'
 
+  // ── PDF: 150mm x 100mm LANDSCAPE — matches printer's 100x150mm in horizontal ──
+  // ── Printer rotates90° to fit portrait paper (94mm x 216mm) ──
+  // ── Fields BIG with real widths ──
+
   const html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
   <style>
-    @page { size: 8.5in 5.5in; margin: 0; }
+    @page { size: 150mm 100mm; margin: 0; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: Arial, Helvetica, sans-serif; font-size: 9px; color: #000; }
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #000; }
+
     .field { position: absolute; background: #fff; }
-    .lbl { font-size: 7px; color: #555; display: block; margin-bottom: 1px; }
-    .f-fecha      { top: 50mm; left: 28mm; }
-    .f-prestamo   { top: 50mm; left: 130mm; }
-    .f-cliente    { top: 60mm; left: 28mm; width: 160mm; }
-    .f-forma-pago { top: 60mm; left: 130mm; width: 58mm; }
-    .f-monto      { top: 73mm; left: 28mm; width: 160mm; text-align: center; }
-    .f-monto .val { font-size: 16px; font-weight: 700; letter-spacing: 0.5px; }
-    .f-ref        { top: 88mm; left: 28mm; width: 160mm; }
-    .f-obs        { top: 97mm; left: 28mm; width: 160mm; }
-    .f-firma-1    { top: 112mm; left: 28mm; width: 70mm; border-top: 1px solid #000; padding-top: 3px; text-align: center; font-size: 7px; color: #555; }
-    .f-firma-2    { top: 112mm; left: 128mm; width: 70mm; border-top: 1px solid #000; padding-top: 3px; text-align: center; font-size: 7px; color: #555; }
-    .f-firma-1 .lbl, .f-firma-2 .lbl { display: inline; margin: 0; color: #555; }
+    .lbl { font-size: 10px; font-weight: 700; color: #1a3a6b; display: block; margin-bottom: 1px; }
+
+    /* Row 1: Fecha + No. Préstamo */
+    .f-fecha      { top: 10mm; left: 37mm; width: 50mm; }
+    .f-prestamo   { top: 10mm; left: 92mm; width: 50mm; }
+
+    /* Row 2: Cliente */
+    .f-cliente    { top: 25mm; left: 37mm; width: 105mm; }
+
+    /* Row 3: Forma de pago + Estado */
+    .f-forma-pago { top: 40mm; left: 37mm; width: 50mm; }
+    .f-estado     { top: 40mm; left: 92mm; width: 50mm; }
+
+    /* Row 4: Monto recibido */
+    .f-monto {
+      top: 55mm; left: 37mm; width: 105mm;
+      text-align: center;
+      padding: 1mm 0;
+    }
+    .f-monto .lbl { font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; }
+    .f-monto .val { font-size: 28px; font-weight: 900; color: #1a3a6b; letter-spacing: 0.5px; }
+
+    /* Row 5: Referencia / Boletas */
+    .f-ref        { top: 72mm; left: 37mm; width: 105mm; font-size: 10px; }
+
+    /* Row 6: Observaciones */
+    .f-obs        { top: 80mm; left: 37mm; width: 105mm; font-size: 10px; }
+
+    /* Row 7: Firmas */
+    .f-firma-1 {
+      top: 88mm; left: 37mm; width: 50mm;
+      border-top: 1px solid #000;
+      padding-top: 1mm;
+      text-align: center;
+      font-size: 9px;
+      color: #555;
+    }
+    .f-firma-2 {
+      top: 88mm; left: 92mm; width: 50mm;
+      border-top: 1px solid #000;
+      padding-top: 1mm;
+      text-align: center;
+      font-size: 9px;
+      color: #555;
+    }
+    .f-firma-1 .lbl, .f-firma-2 .lbl { display: inline; margin: 0; color: #555; font-weight: 400; }
   </style>
 </head>
 <body>
@@ -447,6 +486,7 @@ export function generatePaymentReceiptBlank(
   <div class="field f-prestamo"><span class="lbl">N° Préstamo</span>${safe(loan.loanNumber)}</div>
   <div class="field f-cliente"><span class="lbl">Cliente</span>${clientName}</div>
   <div class="field f-forma-pago"><span class="lbl">Forma de pago</span>${safe(payment.paymentMethod)}</div>
+  <div class="field f-estado"><span class="lbl">Estado</span>${safe(payment.confirmationStatus === 'aprobado' ? 'Aprobado' : payment.confirmationStatus === 'rechazado' ? 'Rechazado' : 'Pendiente')}</div>
   <div class="field f-monto"><span class="lbl">Monto recibido</span><span class="val">${formatCurrency(Number(payment.amount) || 0)}</span></div>
   <div class="field f-ref"><span class="lbl">Referencia</span>${refBoleta}</div>
   <div class="field f-obs"><span class="lbl">Observaciones</span>${obsText}</div>

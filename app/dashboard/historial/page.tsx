@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, useCallback } from "react"
 import { useRole } from "@/contexts/role-context"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { LoadingSpinner } from "@/components/loading-spinner"
 import { Search, ExternalLink, Calendar, Filter } from "lucide-react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 
 interface LoanResult {
   id: string
@@ -60,16 +60,26 @@ function formatDate(d: string | null | undefined) {
 export default function LoanHistoryPage() {
   const { role } = useRole()
   const router = useRouter()
+  const searchParams = useSearchParams()
 
-  const [search, setSearch] = useState("")
-  const [statusFilter, setStatusFilter] = useState<string>("all")
-  const [fromDate, setFromDate] = useState("")
-  const [toDate, setToDate] = useState("")
+  const [search, setSearch] = useState(searchParams.get("q") || "")
+  const [statusFilter, setStatusFilter] = useState<string>(searchParams.get("status") || "all")
+  const [fromDate, setFromDate] = useState(searchParams.get("from") || "")
+  const [toDate, setToDate] = useState(searchParams.get("to") || "")
   const [results, setResults] = useState<LoanResult[]>([])
   const [allLoans, setAllLoans] = useState<LoanResult[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const debounceRef = useRef<NodeJS.Timeout | null>(null)
+
+  const pushParams = useCallback((params: Record<string, string>) => {
+    const sp = new URLSearchParams(searchParams.toString())
+    for (const [k, v] of Object.entries(params)) {
+      if (v) sp.set(k, v)
+      else sp.delete(k)
+    }
+    router.replace(`/dashboard/historial?${sp.toString()}`, { scroll: false })
+  }, [router, searchParams])
 
   // Load all loans on mount
   useEffect(() => {
@@ -85,7 +95,6 @@ export default function LoanHistoryPage() {
         if (!res.ok) throw new Error("Error cargando historial")
         const data = await res.json()
         setAllLoans(data || [])
-        setResults(data || [])
       } catch (e: any) {
         setError(e?.message || "Error desconocido")
       } finally {
@@ -95,7 +104,7 @@ export default function LoanHistoryPage() {
     fetchAll()
   }, [role])
 
-  // Filter whenever search/status/dates change
+  // Filter and sort whenever search/status/dates change
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
@@ -116,6 +125,14 @@ export default function LoanHistoryPage() {
 
         return matchesSearch && matchesStatus && matchesFrom && matchesTo
       })
+
+      // Sort chronologically: oldest first
+      filtered.sort((a, b) => {
+        const dateA = a.startDate || a.createdAt
+        const dateB = b.startDate || b.createdAt
+        return dateA.localeCompare(dateB)
+      })
+
       setResults(filtered)
     }, 250)
   }, [search, statusFilter, fromDate, toDate, allLoans])
@@ -147,7 +164,10 @@ export default function LoanHistoryPage() {
                 id="loan-history-search"
                 placeholder="Nombre, DPI o No. préstamo..."
                 value={search}
-                onChange={e => setSearch(e.target.value)}
+                onChange={e => {
+                  setSearch(e.target.value)
+                  pushParams({ q: e.target.value })
+                }}
                 className="pl-9"
               />
             </div>
@@ -156,7 +176,10 @@ export default function LoanHistoryPage() {
             <select
               id="loan-history-status"
               value={statusFilter}
-              onChange={e => setStatusFilter(e.target.value)}
+              onChange={e => {
+                setStatusFilter(e.target.value)
+                pushParams({ status: e.target.value === "all" ? "" : e.target.value })
+              }}
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 text-foreground"
             >
               <option value="all">Todos los estados</option>
@@ -173,7 +196,10 @@ export default function LoanHistoryPage() {
                 id="loan-history-from"
                 type="date"
                 value={fromDate}
-                onChange={e => setFromDate(e.target.value)}
+                onChange={e => {
+                  setFromDate(e.target.value)
+                  pushParams({ from: e.target.value })
+                }}
                 className="pl-9"
                 placeholder="Desde"
               />
@@ -186,7 +212,10 @@ export default function LoanHistoryPage() {
                 id="loan-history-to"
                 type="date"
                 value={toDate}
-                onChange={e => setToDate(e.target.value)}
+                onChange={e => {
+                  setToDate(e.target.value)
+                  pushParams({ to: e.target.value })
+                }}
                 className="pl-9"
                 placeholder="Hasta"
               />
@@ -197,7 +226,10 @@ export default function LoanHistoryPage() {
           {(search || statusFilter !== "all" || fromDate || toDate) && (
             <div className="flex items-center gap-2 mt-3 flex-wrap">
               <span className="text-xs text-muted-foreground">Mostrando {results.length} de {allLoans.length} préstamos</span>
-              <Button variant="ghost" size="sm" className="h-6 text-xs px-2" onClick={() => { setSearch(""); setStatusFilter("all"); setFromDate(""); setToDate("") }}>
+              <Button variant="ghost" size="sm" className="h-6 text-xs px-2" onClick={() => {
+                setSearch(""); setStatusFilter("all"); setFromDate(""); setToDate("")
+                router.replace("/dashboard/historial", { scroll: false })
+              }}>
                 Limpiar filtros
               </Button>
             </div>

@@ -13,10 +13,12 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { Loan, User, PaymentSchedule, Payment } from "@/lib/types"
-import { ArrowLeft, LogOut, Download, FileText, Trash2, Loader2 } from "lucide-react"
+import { ArrowLeft, LogOut, Download, FileText, Trash2, Loader2, Banknote } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { ReceiptUpload } from "@/components/receipt-upload"
 import { ActaComiteTab } from "@/components/acta-comite-tab"
+import { AbonoForm } from "@/components/abono-form"
+import { BitacoraTab } from "@/components/bitacora-tab"
 import { toast } from "sonner"
 
 const CACHE_TTL_MS = Number.MAX_SAFE_INTEGER
@@ -55,6 +57,7 @@ export default function LoanDetailPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isRegenerating, setIsRegenerating] = useState(false)
   const [confirmRegenerateOpen, setConfirmRegenerateOpen] = useState(false)
+  const [abonoOpen, setAbonoOpen] = useState(false)
   const [userEmail, setUserEmail] = useState("")
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const { role } = useRole()
@@ -293,8 +296,8 @@ export default function LoanDetailPage() {
       <div className="flex items-center justify-center h-full">
         <div className="text-center">
           <p className="text-muted-foreground">Préstamo no encontrado</p>
-          <Button onClick={() => router.push("/dashboard")} className="mt-4">
-            Volver al Dashboard
+          <Button onClick={() => router.back()} className="mt-4">
+            Volver
           </Button>
         </div>
       </div>
@@ -307,7 +310,7 @@ export default function LoanDetailPage() {
         <Button 
           variant="outline" 
           size="sm" 
-          onClick={() => router.push("/dashboard")} 
+          onClick={() => router.back()} 
           className="mr-2"
         >
           <ArrowLeft className="h-4 w-4 mr-2" />
@@ -319,9 +322,10 @@ export default function LoanDetailPage() {
         <LoanInfoCard loan={loan} totalPaid={totalPaid} remainingBalance={remainingBalance} schedule={schedule} />
 
         <Tabs defaultValue="schedule" className="w-full">
-          <TabsList className="grid w-full max-w-2xl grid-cols-3 bg-muted/50">
+          <TabsList className="grid w-full max-w-3xl grid-cols-4 bg-muted/50">
             <TabsTrigger value="schedule">Plan de Pagos</TabsTrigger>
             <TabsTrigger value="history">Historial de Pagos</TabsTrigger>
+            <TabsTrigger value="bitacora">Atrasos</TabsTrigger>
             <TabsTrigger value="acta">Acta de Comité</TabsTrigger>
           </TabsList>
 
@@ -347,6 +351,17 @@ export default function LoanDetailPage() {
                       </Button>
                     )
                   })()}
+                  {loan?.status === 'active' && (schedule || []).some((s: any) => s.status !== 'paid') && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAbonoOpen(true)}
+                      className="bg-transparent mr-2"
+                    >
+                      <Banknote className="h-4 w-4 mr-1" />
+                      Registrar Abono
+                    </Button>
+                  )}
                   {loan?.status === 'active' && (schedule || []).some((s: any) => s.status !== 'paid') && (() => {
                     const nextSchedule = (schedule || []).find((s: any) => s.status !== 'paid')
                     const nextHasPending = !!(nextSchedule && (payments || []).some((p: any) => p.scheduleId === nextSchedule.id && String((p as any).confirmationStatus || (p as any).confirmation_status || '') === 'pending_confirmation'))
@@ -396,6 +411,13 @@ export default function LoanDetailPage() {
             </div>
           </TabsContent>
 
+          <TabsContent value="bitacora" className="mt-6">
+            <div className="space-y-4">
+              <h3 className="text-xl font-semibold text-foreground">Bitácora de Atrasos</h3>
+              <BitacoraTab loanId={params.id as string} />
+            </div>
+          </TabsContent>
+
           <TabsContent value="acta" className="mt-6">
             <ActaComiteTab
               loanId={params.id as string}
@@ -421,6 +443,13 @@ export default function LoanDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <AbonoForm
+        loanId={params.id as string}
+        schedule={schedule as any}
+        open={abonoOpen}
+        onOpenChange={setAbonoOpen}
+        onSuccess={handleScheduleUpdate}
+      />
     </div>
   )
 }

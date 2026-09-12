@@ -139,6 +139,23 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Failed to fetch schedules" }, { status: 500 })
     }
 
+    // Get boleta numbers for each schedule
+    const { data: cuotaBoletas } = await supabase
+      .from("cuota_boletas")
+      .select("payment_schedule_id, boleta:boletas(numero_boleta)")
+      .in("payment_schedule_id", scheduleIds)
+
+    const boletasMap = new Map<string, string[]>()
+    cuotaBoletas?.forEach((cb: any) => {
+      const schedId = cb.payment_schedule_id
+      const num = cb.boleta?.numero_boleta
+      if (schedId && num) {
+        const existing = boletasMap.get(schedId) || []
+        existing.push(num)
+        boletasMap.set(schedId, existing)
+      }
+    })
+
     // Create maps for quick lookup
     const loansMap = new Map()
     loansData?.forEach(loan => {
@@ -206,7 +223,8 @@ export async function GET(request: Request) {
         adminFees: adminFees,
         paymentStatus: paymentStatus,
         dueDate: schedule ? schedule.due_date : null,
-        notes: payment.notes || ""
+        notes: payment.notes || "",
+        boletaNumber: (boletasMap.get(payment.schedule_id) || []).join(", ") || "—"
       })
 
       totalPaidAmount += paidAmount

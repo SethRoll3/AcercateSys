@@ -240,12 +240,12 @@ export default function ReporteriaPage() {
         ? `Período: ${new Date(startDate).toLocaleDateString('es-GT')} - ${new Date(endDate).toLocaleDateString('es-GT')}`
         : 'Todos los datos (sin filtro de fecha)'
 
-      excelData.push(["COOPERATIVA - REPORTE GENERAL DE PAGOS", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""])
-      excelData.push([rangeLabel, "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""])
-      excelData.push([`Generado el: ${new Date().toLocaleDateString("es-GT")} a las ${new Date().toLocaleTimeString("es-GT")}`, "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""])
+      excelData.push(["COOPERATIVA - REPORTE GENERAL DE PAGOS", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""])
+      excelData.push([rangeLabel, "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""])
+      excelData.push([`Generado el: ${new Date().toLocaleDateString("es-GT")} a las ${new Date().toLocaleTimeString("es-GT")}`, "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""])
       excelData.push([])
       excelData.push([])
-      const headers = ["Cliente", "Email", "Teléfono", "Préstamo", "Monto Préstamo", "Fecha Pago", "Método", "Programado", "Capital", "Intereses", "Pagado", "Estado", "Mora", "Gastos Admin.", "Vencimiento", "Notas"]
+      const headers = ["Cliente", "Email", "Teléfono", "Préstamo", "Monto Préstamo", "Fecha Pago", "Método", "Programado", "Capital", "Intereses", "Pagado", "Estado", "Mora", "Gastos Admin.", "Vencimiento", "N° Boleta", "Notas"]
       excelData.push(headers)
 
       let dataRowIndex = 6
@@ -255,7 +255,7 @@ export default function ReporteriaPage() {
           excelData.push([
             i === 0 ? client.clientName : "", i === 0 ? client.clientEmail : "", i === 0 ? client.clientPhone : "",
             p.loanNumber, p.loanAmount, new Date(p.paymentDate), p.paymentMethod,
-            p.scheduledAmount, p.capital, interest, p.paidAmount, p.paymentStatus, p.mora, Number(p.adminFees || 0), new Date(p.dueDate), p.notes || ""
+            p.scheduledAmount, p.capital, interest, p.paidAmount, p.paymentStatus, p.mora, Number(p.adminFees || 0), new Date(p.dueDate), p.boletaNumber || "—", p.notes || ""
           ])
           dataRowIndex++
         })
@@ -277,16 +277,16 @@ export default function ReporteriaPage() {
       excelData.push(["Total Mora:", reportData.totals.totalMora])
 
       const worksheet = XLSX.utils.aoa_to_sheet(excelData)
-      worksheet['!cols'] = [{ wch: 25 }, { wch: 30 }, { wch: 15 }, { wch: 18 }, { wch: 18 }, { wch: 15 }, { wch: 18 }, { wch: 18 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 18 }, { wch: 12 }, { wch: 18 }, { wch: 18 }, { wch: 25 }]
+      worksheet['!cols'] = [{ wch: 25 }, { wch: 30 }, { wch: 15 }, { wch: 18 }, { wch: 18 }, { wch: 15 }, { wch: 18 }, { wch: 18 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 18 }, { wch: 12 }, { wch: 18 }, { wch: 18 }, { wch: 20 }, { wch: 25 }]
 
       // Styles
-      for (let col = 0; col <= 15; col++) {
+      for (let col = 0; col <= 16; col++) {
         const c0 = XLSX.utils.encode_cell({ r: 0, c: col }); if (worksheet[c0]) worksheet[c0].s = styles.mainTitle
         for (let row = 1; row <= 2; row++) { const cr = XLSX.utils.encode_cell({ r: row, c: col }); if (worksheet[cr]) worksheet[cr].s = styles.subTitle }
         const c5 = XLSX.utils.encode_cell({ r: 5, c: col }); if (worksheet[c5]) worksheet[c5].s = styles.columnHeader
       }
       for (let row = summaryHeaderRowIndex; row <= summaryHeaderRowIndex; row++) {
-        for (let col = 0; col <= 15; col++) {
+        for (let col = 0; col <= 16; col++) {
           const cr = XLSX.utils.encode_cell({ r: row, c: col }); if (worksheet[cr]) worksheet[cr].s = styles.summaryHeader
         }
       }
@@ -296,10 +296,10 @@ export default function ReporteriaPage() {
       }
 
       worksheet['!merges'] = [
-        { s: { r: 0, c: 0 }, e: { r: 0, c: 15 } },
-        { s: { r: 1, c: 0 }, e: { r: 1, c: 15 } },
-        { s: { r: 2, c: 0 }, e: { r: 2, c: 15 } },
-        { s: { r: summaryHeaderRowIndex, c: 0 }, e: { r: summaryHeaderRowIndex, c: 15 } },
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 16 } },
+        { s: { r: 1, c: 0 }, e: { r: 1, c: 16 } },
+        { s: { r: 2, c: 0 }, e: { r: 2, c: 16 } },
+        { s: { r: summaryHeaderRowIndex, c: 0 }, e: { r: summaryHeaderRowIndex, c: 16 } },
       ]
       worksheet['!rows'] = [{ hpt: 30 }, { hpt: 20 }, { hpt: 20 }, { hpt: 15 }, { hpt: 15 }, { hpt: 25 }]
 

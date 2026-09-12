@@ -49,6 +49,24 @@ export async function GET(request: Request) {
     const { data: payments, error } = await paymentsQuery
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+    // Fetch boleta numbers for each schedule
+    const scheduleIds = Array.from(new Set((payments || []).map((p: any) => p.schedule_id).filter(Boolean)))
+    const { data: cuotaBoletas } = await admin
+      .from("cuota_boletas")
+      .select("payment_schedule_id, boleta:boletas(numero_boleta)")
+      .in("payment_schedule_id", scheduleIds)
+
+    const boletasMap = new Map<string, string[]>()
+    cuotaBoletas?.forEach((cb: any) => {
+      const schedId = cb.payment_schedule_id
+      const num = cb.boleta?.numero_boleta
+      if (schedId && num) {
+        const existing = boletasMap.get(schedId) || []
+        existing.push(num)
+        boletasMap.set(schedId, existing)
+      }
+    })
+
     const workbook = new ExcelJS.Workbook()
     const ws = workbook.addWorksheet('Reporte de Pagos')
 
@@ -93,7 +111,7 @@ export async function GET(request: Request) {
     const headers = [
       'Cliente', 'Email', 'Teléfono', 'Número de Préstamo', 'Monto del Préstamo',
       'Fecha de Pago', 'Método de Pago', 'Monto Programado', 'Capital', 'Intereses', 'Monto Pagado',
-      'Estado del Pago', 'Mora', 'Gastos Administrativos', 'Fecha de Vencimiento', 'Notas'
+      'Estado del Pago', 'Mora', 'Gastos Administrativos', 'Fecha de Vencimiento', 'N° Boleta', 'Notas'
     ]
     ws.addRow([])
     const headerRow = ws.addRow(headers)
@@ -154,6 +172,7 @@ export async function GET(request: Request) {
         mora,
         adminFees,
         p.schedule?.due_date ? new Date(p.schedule?.due_date) : null,
+        (boletasMap.get(p.schedule_id) || []).join(', ') || '—',
         p.notes || ''
       ])
       ;[6,15].forEach((idx) => { const c = row.getCell(idx); c.numFmt = dateFmt })
@@ -186,7 +205,7 @@ export async function GET(request: Request) {
     ws.columns = [
       { width: 25 }, { width: 30 }, { width: 15 }, { width: 18 }, { width: 18 },
       { width: 15 }, { width: 18 }, { width: 18 }, { width: 15 }, { width: 15 },
-      { width: 15 }, { width: 18 }, { width: 12 }, { width: 18 }, { width: 18 }, { width: 25 },
+      { width: 15 }, { width: 18 }, { width: 12 }, { width: 18 }, { width: 18 }, { width: 20 }, { width: 25 },
     ]
 
     const buffer = await workbook.xlsx.writeBuffer()
