@@ -76,7 +76,8 @@ export function translateStatus(status: string | null | undefined): string {
     'active': 'Activo',
     'rejected': 'Rechazado',
     'partially_paid': 'Pago Parcial',
-    'overdue': 'En Mora'
+    'overdue': 'En Mora',
+    'cancelled': 'Cancelado'
   }
   return map[status] || status
 }

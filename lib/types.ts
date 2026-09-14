@@ -9,7 +9,7 @@ export interface User {
   updatedAt: string
 }
 
-export type LoanStatus = "pending" | "active" | "paid"
+export type LoanStatus = "pending" | "active" | "paid" | "cancelled"
 
 export interface Loan {
   id: string
