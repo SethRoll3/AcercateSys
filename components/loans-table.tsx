@@ -63,13 +63,11 @@ export function LoansTable({ loans, userRole, onLoanUpdated, groupMap }: LoansTa
 
     setIsCancelling(true)
     try {
-      const res = await fetch("/api/loans", {
-        method: "PATCH",
+      const res = await fetch(`/api/loans/${loanToCancel.id}/cancel`, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          loanId: loanToCancel.id,
-          action: "cancel",
           reason: cancelReason.trim() || undefined,
         }),
       })
