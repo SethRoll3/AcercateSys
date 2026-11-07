@@ -1,7 +1,7 @@
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
-export async function GET(request: Request, context: { params: { id: string } }) {
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await Promise.resolve(context.params);
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -27,7 +27,7 @@ export async function GET(request: Request, context: { params: { id: string } })
   return NextResponse.json(group);
 }
 
-export async function PUT(request: Request, context: { params: { id: string } }) {
+export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await Promise.resolve(context.params);
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -99,7 +99,7 @@ export async function PUT(request: Request, context: { params: { id: string } })
   return NextResponse.json(group);
 }
 
-export async function DELETE(request: Request, context: { params: { id: string } }) {
+export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await Promise.resolve(context.params);
   const supabase = await createClient();
   const admin = createAdminClient();

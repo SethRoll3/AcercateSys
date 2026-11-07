@@ -42,8 +42,16 @@ export function PaymentScheduleTable({ schedule, onPaymentClick, onReviewClick, 
     return formatYMDGT(date, { year: "numeric", month: "short", day: "numeric" })
   }
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, paidAmount = 0) => {
     // Mostrar únicamente estados válidos del flujo de pagos
+    if ((status === "partially_paid" || status === "pending") && paidAmount > 0) {
+      return (
+        <Badge variant="outline" className="gap-1">
+          <Clock className="h-3 w-3" />
+          Pagado parcial
+        </Badge>
+      )
+    }
     switch (status) {
       case "pending_confirmation":
         return (
@@ -190,7 +198,7 @@ export function PaymentScheduleTable({ schedule, onPaymentClick, onReviewClick, 
                 <TableCell className="text-muted-foreground">{formatCurrency(mora)}</TableCell>
                 <TableCell className="text-muted-foreground">{formatCurrency(adminFees)}</TableCell>
                 <TableCell className="text-muted-foreground">{formatCurrency(saldoPorPagar)}</TableCell>
-                <TableCell>{getStatusBadge(item.status)}</TableCell>
+                <TableCell>{getStatusBadge(item.status, Number(item.paid_amount || item.paidAmount || 0))}</TableCell>
                 {(onPaymentClick || onReviewClick) && (
                   <TableCell className="space-x-2">
                     {onPaymentClick && item.status === "pending" && (

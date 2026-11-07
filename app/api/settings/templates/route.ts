@@ -25,7 +25,7 @@ export async function GET() {
 export async function PATCH(req: NextRequest) {
   try {
     const supabase = await createClient()
-    const admin = await createClient({ admin: true })
+    const admin = await createAdminClient()
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

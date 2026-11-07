@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 
-export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const paymentId = params.id
+    const { id: paymentId } = await params
     const supabase = await createClient()
 
     // 1) Auth user
@@ -57,6 +57,10 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       return NextResponse.json({ error: "Payment not found" }, { status: 404 })
     }
 
+    if (paymentRow.confirmation_status === "aprobado") {
+      return NextResponse.json({ error: "Un pago aprobado no se puede editar" }, { status: 409 })
+    }
+
     // 5) Role-based access: cliente -> own email; asesor -> assigned client; admin -> any
     const client = paymentRow.loan?.client
     if (userData.role === "cliente") {
@@ -76,13 +80,15 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     const updateData: any = {
       // keep confirmation pending while edited
       confirmation_status: "pending_confirmation",
-      has_been_edited: has_been_edited ? true : true,
+      has_been_edited: true,
       rejection_reason: null,
+      confirmed_by: null,
+      confirmed_at: null,
     }
 
     if (amount !== undefined) {
       const roundedAmount = Math.round(Number(amount) * 100) / 100
-      if (roundedAmount <= 0) {
+      if (!Number.isFinite(roundedAmount) || roundedAmount <= 0) {
         return NextResponse.json({ error: "El monto debe ser mayor a 0" }, { status: 400 })
       }
       updateData.amount = roundedAmount
@@ -96,12 +102,60 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       .from("payments")
       .update(updateData)
       .eq("id", paymentId)
+      .in("confirmation_status", ["pending_confirmation", "rechazado"])
       .select()
       .single()
 
     if (updateError) {
       console.error("Error updating payment:", updateError)
       return NextResponse.json({ error: "Failed to update payment" }, { status: 500 })
+    }
+
+    // Editing a rejected payment sends it back to review. Rebuild the schedule's
+    // paid amount from approved payments only so a previously rejected submission
+    // cannot remain counted as money received.
+    const notesText = String(updated.notes || "")
+    let scheduleIds = [updated.schedule_id]
+    if (notesText.startsWith("[FULL_PAYMENT]")) {
+      const left = notesText.indexOf("{")
+      const right = notesText.lastIndexOf("}")
+      if (left !== -1 && right > left) {
+        try {
+          const parsed = JSON.parse(notesText.slice(left, right + 1))
+          if (Array.isArray(parsed?.scheduleIds)) {
+            scheduleIds = Array.from(new Set([updated.schedule_id, ...parsed.scheduleIds.filter((value: unknown) => typeof value === "string")]))
+          }
+        } catch {
+          // Keep the payment's own schedule if legacy full-payment notes are malformed.
+        }
+      }
+    }
+
+    const { data: targetSchedules, error: targetSchedulesError } = await serviceSupabase
+      .from("payment_schedule")
+      .select("id")
+      .in("id", scheduleIds)
+      .eq("loan_id", updated.loan_id)
+
+    if (targetSchedulesError) {
+      console.error("Error loading schedules for payment resubmission:", targetSchedulesError)
+      return NextResponse.json({ error: "No se pudo devolver el pago a revisión" }, { status: 500 })
+    }
+
+    const validScheduleIds = (targetSchedules || []).map((schedule: any) => schedule.id)
+    // Pending and rejected payments never change the paid balance. Abonos and
+    // other approved payments may already be reflected in paid_amount.
+    for (const scheduleId of validScheduleIds) {
+      const { error: scheduleUpdateError } = await serviceSupabase
+        .from("payment_schedule")
+        .update({ status: "pending_confirmation" })
+        .eq("id", scheduleId)
+        .eq("loan_id", updated.loan_id)
+
+      if (scheduleUpdateError) {
+        console.error("Error resubmitting payment schedule:", scheduleUpdateError)
+        return NextResponse.json({ error: "No se pudo devolver el pago a revisión" }, { status: 500 })
+      }
     }
 
     // 8) Return transformed payment (frontend shape)

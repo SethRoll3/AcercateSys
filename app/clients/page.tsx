@@ -2,17 +2,8 @@
 
 import { CreateClientForm } from '@/components/create-client-form';
 import { EditClientForm } from '@/components/edit-client-form';
+import type { Client } from '@/lib/types';
 import { useEffect, useState } from 'react';
-
-interface Client {
-  id: string;
-  first_name: string;
-  last_name: string;
-  email: string;
-  address: string;
-  phone: string;
-  emergency_phone: string;
-}
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([]);
@@ -23,7 +14,11 @@ export default function ClientsPage() {
   const fetchClients = async () => {
     const res = await fetch('/api/clients');
     const data = await res.json();
-    setClients(data);
+    setClients((Array.isArray(data) ? data : []).map((client: any) => ({
+      ...client,
+      createdAt: client.created_at,
+      updatedAt: client.updated_at,
+    })));
   };
 
   useEffect(() => {
@@ -53,15 +48,11 @@ export default function ClientsPage() {
         <button onClick={() => setIsCreateModalOpen(true)} className="px-4 py-2 text-white bg-blue-500 rounded-md hover:bg-blue-700">Añadir Cliente</button>
       </div>
 
-      {isCreateModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center">
-          <div className="bg-gray-800 p-8 rounded-lg w-1/2">
-            <h2 className="text-xl font-bold mb-4">Añadir Nuevo Cliente</h2>
-            <CreateClientForm onClientAdded={fetchClients} />
-            <button onClick={() => setIsCreateModalOpen(false)} className="mt-4 px-4 py-2 text-white bg-red-500 rounded-md hover:bg-red-700">Cerrar</button>
-          </div>
-        </div>
-      )}
+      <CreateClientForm
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onClientAdded={() => { void fetchClients(); setIsCreateModalOpen(false) }}
+      />
 
       {isEditModalOpen && selectedClient && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center">

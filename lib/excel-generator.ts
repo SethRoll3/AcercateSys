@@ -1,10 +1,34 @@
-import type { Loan, Payment, PaymentSchedule, Client } from "./types"
+type ReportLoan = {
+  loanNumber: string
+  amount: number
+  interestRate: number
+  termMonths: number
+  monthlyPayment: number
+  status: string
+  startDate: string
+  endDate: string
+  client: { first_name: string; last_name: string; phone?: string | null }
+}
+
+type ReportSchedule = {
+  id: string
+  paymentNumber: number
+  dueDate: string
+  amount: number
+  principal: number
+  interest: number
+  mora?: number
+  admin_fees?: number
+  status: string
+}
+
+type ReportPayment = { scheduleId: string | null; paymentDate: string; receiptNumber: string }
 import * as XLSX from "xlsx"
 import { parseYMDToUTC, translateStatus } from "./utils"
 import * as fs from "fs"
 import * as path from "path"
 
-export function generateLoansExcel(loans: (Loan & { client: Client })[]): Buffer {
+export function generateLoansExcel(loans: ReportLoan[]): Buffer {
   const workbook = XLSX.utils.book_new();
   const worksheet = XLSX.utils.aoa_to_sheet([]);
 
@@ -99,9 +123,9 @@ export function generateLoansExcel(loans: (Loan & { client: Client })[]): Buffer
 }
 
 export function generatePaymentScheduleExcel(
-  loan: Loan & { client: Client },
-  schedule: PaymentSchedule[],
-  payments: Payment[],
+  loan: ReportLoan,
+  schedule: ReportSchedule[],
+  payments: ReportPayment[],
 ): Buffer {
   const workbook = XLSX.utils.book_new();
   const worksheet = XLSX.utils.aoa_to_sheet([]);

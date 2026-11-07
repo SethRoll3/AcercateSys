@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient, createAdminClient } from "@/lib/supabase/server"
 import { stableJsonStringify, buildCacheHeaders, latestUpdatedAt, isNotModified } from "@/lib/http-cache"
 
 export async function POST(req: NextRequest) {
@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 })
     }
 
-    const admin = await createClient({ admin: true })
+    const admin = await createAdminClient()
     const { data, error } = await admin
       .from("loans_groups")
       .insert({ group_id, loans, total_amount })
@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url)
     const groupId = url.searchParams.get("groupId")
 
-    const admin = await createClient({ admin: true })
+    const admin = await createAdminClient()
     let query = admin
       .from("loans_groups")
       .select("id, group_id, loans, total_amount, created_at, group:grupos(nombre)")

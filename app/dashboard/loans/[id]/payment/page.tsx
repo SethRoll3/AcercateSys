@@ -111,7 +111,10 @@ export default function PaymentPage() {
             })
             const ids = targets.map((s: any) => s.id)
             const sum = targets.reduce((acc: number, s: any) => {
-              const total = Number(s.amount || 0) + Number(s.mora || 0)
+              const base = s.principal != null || s.interest != null
+                ? Number(s.principal || 0) + Number(s.interest || 0)
+                : Number(s.amount || 0)
+              const total = base + Number(s.mora || 0) + Number(s.admin_fees || s.adminFees || 0) - Number(s.waived_amount || s.waivedAmount || 0)
               const paid = Number(s.paid_amount || s.paidAmount || 0)
               return acc + Math.max(0, total - paid)
             }, 0)

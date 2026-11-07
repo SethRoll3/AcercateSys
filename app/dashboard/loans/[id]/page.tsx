@@ -351,7 +351,7 @@ export default function LoanDetailPage() {
                       </Button>
                     )
                   })()}
-                  {loan?.status === 'active' && (schedule || []).some((s: any) => s.status !== 'paid') && (
+                  {(role === 'admin' || role === 'asesor') && loan?.status === 'active' && (schedule || []).some((s: any) => s.status !== 'paid') && (
                     <Button
                       variant="outline"
                       size="sm"

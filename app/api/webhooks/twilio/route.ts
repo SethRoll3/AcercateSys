@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 
 function parseForm(body: string) {
   const params = new URLSearchParams(body)
@@ -10,7 +10,7 @@ function parseForm(body: string) {
 
 export async function POST(req: NextRequest) {
   try {
-    const admin = await createClient({ admin: true })
+    const admin = await createAdminClient()
     const text = await req.text()
     const data = parseForm(text)
     const sid = data['MessageSid'] || data['SmsSid']

@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 
 export type TemplateKey =
   | 'reminder_D15'
@@ -12,7 +12,7 @@ export type TemplateKey =
   | 'payment_rejected'
 
 export async function getTemplate(key: TemplateKey, channel: 'sms' | 'whatsapp', locale = 'es-GT') {
-  const admin = await createClient({ admin: true })
+  const admin = await createAdminClient()
   const { data } = await admin
     .from('notifications_templates')
     .select('*')
@@ -41,7 +41,7 @@ export async function getTemplate(key: TemplateKey, channel: 'sms' | 'whatsapp',
 }
 
 export async function getTemplateRow(key: TemplateKey, channel: 'sms' | 'whatsapp', locale = 'es-GT') {
-  const admin = await createClient({ admin: true })
+  const admin = await createAdminClient()
   const { data } = await admin
     .from('notifications_templates')
     .select('*')

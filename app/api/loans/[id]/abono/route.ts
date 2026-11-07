@@ -104,7 +104,7 @@ function isCuotaPaid(sched: any, newPaidAmount: number, type: AbonoType): boolea
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id: loanId } = await params
@@ -133,14 +133,23 @@ export async function POST(
       return NextResponse.json({ error: "Tipo de abono inválido" }, { status: 400 })
     }
 
+    const { data: userData, error: userError } = await supabase.from("users")
+      .select("id, role").eq("auth_id", user.id).single()
+    if (userError || !userData || !["admin", "asesor"].includes(userData.role)) {
+      return NextResponse.json({ error: "No autorizado para registrar abonos" }, { status: 403 })
+    }
+
     const { data: loan, error: loanError } = await admin
       .from("loans")
-      .select("id, status, amount")
+      .select("id, status, amount, client:clients!loans_client_id_fkey(advisor_id)")
       .eq("id", loanId)
       .single()
 
     if (loanError || !loan) {
       return NextResponse.json({ error: "Préstamo no encontrado" }, { status: 404 })
+    }
+    if (userData.role === "asesor" && (loan.client as any)?.advisor_id !== userData.id) {
+      return NextResponse.json({ error: "No autorizado para este préstamo" }, { status: 403 })
     }
     if (loan.status !== "active") {
       return NextResponse.json({ error: "El préstamo no está activo" }, { status: 400 })
@@ -214,122 +223,81 @@ export async function POST(
       return NextResponse.json({ error: "No se pudo distribuir el abono en cuotas pendientes" }, { status: 400 })
     }
 
+    if (remaining > 0) {
+      return NextResponse.json({ error: "El abono excede el saldo pendiente" }, { status: 400 })
+    }
+
     const { count } = await admin.from("payments").select("*", { count: "exact", head: true })
     const receiptPrefix = `REC-${String((count || 0) + 1).padStart(6, "0")}`
     const randomSegment = Math.random().toString(36).slice(2, 8).toUpperCase()
-    const receiptNumber = `${receiptPrefix}-${randomSegment}`
-
-    const createdPayments: any[] = []
     const typeLabel = TYPE_LABELS[type]
 
-    // Crear pagos para cada cuota afectada
-    for (const item of distribution) {
-      const paymentNotes = `[ABONO] (${typeLabel}) ${notes || ""}`.trim()
-      const { data: newPayment, error: payErr } = await admin
-        .from("payments")
-        .insert({
-          loan_id: loanId,
-          schedule_id: item.scheduleId,
-          amount: item.appliedAmount,
-          payment_date: paymentDate,
-          payment_method: paymentMethod,
-          notes: paymentNotes,
-          receipt_number: receiptNumber,
-          confirmation_status: "pending_confirmation",
-          has_been_edited: false,
-        })
-        .select()
-        .single()
-
-      if (payErr) {
-        console.error("Error creating abono payment:", payErr)
-        continue
-      }
-
-      createdPayments.push(newPayment)
-
-      await admin
-        .from("payment_schedule")
-        .update({
-          status: item.status,
-          paid_amount: item.newPaidAmount,
-          waived_interest: item.waivedInterest,
-          waived_mora: item.waivedMora,
-          waived_admin_fees: item.waivedAdminFees,
-        })
-        .eq("id", item.scheduleId)
-    }
-
-    // Aplicar capital extra a la siguiente cuota
+    // Insert all payment rows in one statement. Each row needs its own receipt
+    // number because payments.receipt_number is unique.
+    const paymentRows = distribution.map((item, index) => ({
+      loan_id: loanId,
+      schedule_id: item.scheduleId,
+      amount: item.appliedAmount,
+      payment_date: paymentDate,
+      payment_method: paymentMethod,
+      notes: `[ABONO] (${typeLabel}) ${notes || ""}`.trim(),
+      receipt_number: `${receiptPrefix}-${randomSegment}-${index + 1}`,
+      confirmation_status: "pending_confirmation",
+      has_been_edited: false,
+    }))
     if (extraCapitalApplied > 0 && extraCapitalScheduleId) {
-      const { data: extraSched } = await admin
-        .from("payment_schedule")
-        .select("paid_amount, extra_capital")
-        .eq("id", extraCapitalScheduleId)
-        .single()
-
-      const currentPaid = Number(extraSched?.paid_amount) || 0
-      const currentExtra = Number(extraSched?.extra_capital) || 0
-
-      await admin
-        .from("payment_schedule")
-        .update({
-          extra_capital: Math.round((currentExtra + extraCapitalApplied) * 100) / 100,
-          paid_amount: Math.round((currentPaid + extraCapitalApplied) * 100) / 100,
-        })
-        .eq("id", extraCapitalScheduleId)
-
-      // Crear registro de pago para el capital extra
-      const extraPaymentNotes = `[ABONO] (${typeLabel}) Capital extra de abono anterior: Q${extraCapitalApplied.toFixed(2)}`
-      const { data: extraPayment } = await admin
-        .from("payments")
-        .insert({
-          loan_id: loanId,
-          schedule_id: extraCapitalScheduleId,
-          amount: extraCapitalApplied,
-          payment_date: paymentDate,
-          payment_method: paymentMethod,
-          notes: extraPaymentNotes,
-          receipt_number: receiptNumber,
-          confirmation_status: "pending_confirmation",
-          has_been_edited: false,
-        })
-        .select()
-        .single()
-
-      if (extraPayment) {
-        createdPayments.push(extraPayment)
-      }
+      paymentRows.push({
+        loan_id: loanId,
+        schedule_id: extraCapitalScheduleId,
+        amount: extraCapitalApplied,
+        payment_date: paymentDate,
+        payment_method: paymentMethod,
+        notes: `[ABONO] (${typeLabel}) Capital extra de abono anterior: Q${extraCapitalApplied.toFixed(2)}`,
+        receipt_number: `${receiptPrefix}-${randomSegment}-${paymentRows.length + 1}`,
+        confirmation_status: "pending_confirmation",
+        has_been_edited: false,
+      })
+    }
+    const { data: createdPayments, error: paymentsError } = await admin
+      .from("payments").insert(paymentRows).select()
+    if (paymentsError || !createdPayments || createdPayments.length !== paymentRows.length) {
+      console.error("Error creating abono payments:", paymentsError)
+      return NextResponse.json({ error: "No se pudo registrar el abono" }, { status: 500 })
     }
 
-    // Asignar boletas a la primera cuota afectada
+    const { error: metadataError } = await admin.from("payment_abono_metadata").insert(
+      createdPayments.map((payment: any, index: number) => ({
+        payment_id: payment.id,
+        waiver_type: index < distribution.length ? type : "full",
+      }))
+    )
+    if (metadataError) {
+      console.error("Error saving abono metadata:", metadataError)
+      await admin.from("payments").delete().in("id", createdPayments.map((payment: any) => payment.id))
+      return NextResponse.json({ error: "No se pudo registrar la condonación del abono" }, { status: 500 })
+    }
+
+    // Balances and waivers are posted only when an administrator approves each
+    // payment. This keeps rejected abonos out of paid_amount.
+    const scheduleIds = Array.from(new Set(paymentRows.map(row => row.schedule_id)))
+    const { error: scheduleError } = await admin.from("payment_schedule")
+      .update({ status: "pending_confirmation" }).in("id", scheduleIds).eq("loan_id", loanId)
+    if (scheduleError) {
+      console.error("Error flagging abono schedules:", scheduleError)
+      await admin.from("payments").delete().in("id", createdPayments.map((payment: any) => payment.id))
+      return NextResponse.json({ error: "No se pudo registrar el abono" }, { status: 500 })
+    }
+
     if (boletaIds.length > 0 && distribution.length > 0) {
-      const firstScheduleId = distribution[0].scheduleId
       const insertData = boletaIds.map((boletaId: string) => ({
-        payment_schedule_id: firstScheduleId,
+        payment_schedule_id: distribution[0].scheduleId,
         boleta_id: boletaId,
       }))
-      const { error: assignError } = await admin
-        .from("cuota_boletas")
-        .insert(insertData)
-
-      if (assignError) {
-        console.error("Error assigning boletas to abono schedule:", assignError)
-      }
+      const { error: assignError } = await admin.from("cuota_boletas").insert(insertData)
+      if (assignError) console.error("Error assigning abono boletas:", assignError)
     }
 
-    // Verificar si todas las cuotas están pagadas
-    const { data: allSchedules } = await admin
-      .from("payment_schedule")
-      .select("status")
-      .eq("loan_id", loanId)
-
-    const allPaid = (allSchedules || []).length > 0 &&
-      (allSchedules || []).every((s: any) => String(s.status).toLowerCase() === "paid")
-
-    if (allPaid) {
-      await admin.from("loans").update({ status: "paid" }).eq("id", loanId)
-    }
+    const allPaid = false
 
     // Log
     const totalWaivedInterest = distribution.reduce((sum, d) => sum + d.waivedInterest, 0)

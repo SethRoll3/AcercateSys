@@ -50,13 +50,13 @@ export async function POST(request: Request) {
     }
 
     // Calculate amounts with proper rounding
-  const newPaymentAmount = Math.round(Number.parseFloat(amount) * 100) / 100
+  const newPaymentAmount = Math.round(Number(amount) * 100) / 100
   const currentPaidAmount = Math.round((Number(scheduleData.paid_amount) || 0) * 100) / 100
   const totalPaidAmount = Math.round((currentPaidAmount + newPaymentAmount) * 100) / 100
   const scheduledAmount = Math.round((Number(scheduleData.amount) + (Number(scheduleData.mora) || 0) + (Number(scheduleData.admin_fees) || 0)) * 100) / 100
 
     // Only validate that payment amount is positive and not excessively large
-    if (newPaymentAmount <= 0) {
+    if (!Number.isFinite(newPaymentAmount) || newPaymentAmount <= 0) {
       return NextResponse.json({ 
         error: "El monto del pago debe ser mayor a 0" 
       }, { status: 400 })
@@ -77,21 +77,51 @@ export async function POST(request: Request) {
     let receiptNumber = `${receiptPrefix}-${randomSegment}`
 
     // Insert payment
-  let insertAmount = totalPaidAmount
+  // A payment row stores this transaction's amount, not the schedule's
+  // cumulative paid amount. The cumulative figure is updated only after approval.
+  const insertAmount = newPaymentAmount
   if (isFull && Array.isArray(fullScheduleIds) && fullScheduleIds.length > 0) {
+    const ids = Array.from(new Set(fullScheduleIds))
+    if (ids.length !== fullScheduleIds.length || !ids.includes(paymentScheduleId)) {
+      return NextResponse.json({ error: "Las cuotas del pago completo no son válidas" }, { status: 400 })
+    }
+    try {
+      const notesText = String(notes || "")
+      if (!notesText.startsWith("[FULL_PAYMENT]")) throw new Error("Missing full payment marker")
+      const metadata = JSON.parse(notesText.slice(notesText.indexOf("{"), notesText.indexOf("}") + 1))
+      if (!Array.isArray(metadata.scheduleIds) ||
+        metadata.scheduleIds.length !== ids.length ||
+        !ids.every((id) => metadata.scheduleIds.includes(id))) {
+        throw new Error("Mismatched full payment schedules")
+      }
+    } catch {
+      return NextResponse.json({ error: "Los datos del pago completo no son válidos" }, { status: 400 })
+    }
     const admin = await createAdminClient()
-    const { data: targets } = await admin
+    const { data: targets, error: targetsError } = await admin
       .from("payment_schedule")
-      .select("id, amount, mora, paid_amount, loan_id, status")
-      .in("id", fullScheduleIds)
+      .select("id, amount, principal, interest, mora, admin_fees, waived_amount, paid_amount, loan_id, status")
+      .in("id", ids)
       .eq("loan_id", scheduleData.loan_id)
+    if (targetsError || targets?.length !== ids.length) {
+      return NextResponse.json({ error: "Las cuotas del pago completo no pertenecen al préstamo" }, { status: 400 })
+    }
     const sum = (targets || []).reduce((acc: number, s: any) => {
-      const schedAmt = Math.round((Number(s.amount || 0) + Number(s.mora || 0)) * 100) / 100
+      const base = s.principal != null || s.interest != null
+        ? Number(s.principal || 0) + Number(s.interest || 0)
+        : Number(s.amount || 0)
+      const schedAmt = Math.round((base + Number(s.mora || 0) + Number(s.admin_fees || 0) - Number(s.waived_amount || 0)) * 100) / 100
       const paid = Math.round((Number(s.paid_amount || 0)) * 100) / 100
       const remaining = Math.max(0, schedAmt - paid)
       return acc + remaining
     }, 0)
-    insertAmount = Math.round(sum * 100) / 100
+    if (Math.abs(insertAmount - Math.round(sum * 100) / 100) > 1) {
+      return NextResponse.json({ error: "El monto no coincide con el saldo pendiente del préstamo" }, { status: 400 })
+    }
+  } else if (isFull) {
+    return NextResponse.json({ error: "El pago completo requiere cuotas válidas" }, { status: 400 })
+  } else if (String(notes || "").startsWith("[FULL_PAYMENT]")) {
+    return NextResponse.json({ error: "El pago completo requiere cuotas válidas" }, { status: 400 })
   }
 
   let newPayment: any = null
@@ -131,9 +161,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Error al crear el pago" }, { status: 500 })
     }
 
-    // Insert log for payment creation
-    const adminClient = await createAdminClient()
-    await adminClient.from("logs").insert({
+    const admin = createAdminClient()
+    const targetIds = isFull ? fullScheduleIds : [paymentScheduleId]
+    const { error: scheduleUpdateError } = await admin
+      .from("payment_schedule")
+      .update({ status: "pending_confirmation" })
+      .in("id", targetIds)
+      .eq("loan_id", scheduleData.loan_id)
+    if (scheduleUpdateError) {
+      console.error("Error updating schedules for new payment:", scheduleUpdateError)
+      await admin.from("payments").delete().eq("id", newPayment.id)
+      return NextResponse.json({ error: "No se pudo registrar el pago" }, { status: 500 })
+    }
+
+    await admin.from("logs").insert({
       actor_user_id: user.id,
       action_type: "CREATE",
       entity_name: "payment",
@@ -148,40 +189,7 @@ export async function POST(request: Request) {
       },
     })
 
-    // Actualizar el estado y el monto pagado en el cronograma de pagos
-    // Requerimiento: SIEMPRE pasa a "pending_confirmation" al registrar el pago.
-    const newStatus = "pending_confirmation"
-    // Usar cliente admin para evitar bloqueos de RLS cuando el usuario es cliente
-  const admin = await createAdminClient()
-  if (isFull && Array.isArray(fullScheduleIds) && fullScheduleIds.length > 0) {
-    const { data: targets } = await admin
-      .from("payment_schedule")
-      .select("id, amount, mora")
-      .in("id", fullScheduleIds)
-    const updates = (targets || []).map((t: any) => ({
-      id: t.id,
-      status: newStatus,
-      paid_amount: Math.round((Number(t.amount || 0) + Number(t.mora || 0)) * 100) / 100,
-    }))
-    for (const up of updates) {
-      await admin.from("payment_schedule").update({ status: up.status, paid_amount: up.paid_amount }).eq("id", up.id)
-    }
-  } else {
-    const { error: scheduleUpdateError } = await admin
-      .from("payment_schedule")
-      .update({
-        status: newStatus,
-        paid_amount: totalPaidAmount,
-      })
-      .eq("id", paymentScheduleId)
-    if (scheduleUpdateError) {
-      console.error("Error updating schedule:", scheduleUpdateError)
-    }
-  }
-
-  // No devolver el error si ocurre durante updates adicionales
-
-  return NextResponse.json(newPayment)
+    return NextResponse.json(newPayment)
   } catch (error) {
     console.error("Error in POST /api/payments:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

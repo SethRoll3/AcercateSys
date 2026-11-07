@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { getTemplate, renderTemplate } from '@/lib/messaging/templates'
 import { getSystemSettings } from '@/lib/messaging/settings'
 
 export async function GET(req: NextRequest) {
   try {
     const supabase = await createClient()
-    const admin = await createClient({ admin: true })
+    const admin = await createAdminClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const { data: me } = await supabase.from('users').select('role').eq('auth_id', user.id).single()

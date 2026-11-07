@@ -7,7 +7,7 @@ import { getTemplate, renderTemplate, getTemplateRow } from "@/lib/messaging/tem
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     let loanFinalized = false
@@ -20,6 +20,10 @@ export async function PATCH(
     const action = rawAction === 'confirm' ? 'aprobar' : rawAction === 'reject' ? 'rechazar' : rawAction;
     const rejectionReason: string | null = body.rejection_reason ?? body.rejectionReason ?? null;
     console.log(`[PAYMENT_CONFIRM_API] Action(normalized): ${action}, Reason: ${rejectionReason}`);
+
+    if (action !== "aprobar" && action !== "rechazar") {
+      return NextResponse.json({ error: "Acción de revisión no válida" }, { status: 400 });
+    }
 
     // 1. Get the current user
     const {
@@ -108,122 +112,28 @@ export async function PATCH(
       );
     }
 
-    // 7. Prepare update data
-    const updateData: any = {
-      confirmation_status: action === "aprobar" ? "aprobado" : "rechazado",
-      confirmed_by: user.id,
-      confirmed_at: new Date().toISOString(),
-    };
+    // The database function locks the payment and schedules, then applies the
+    // review in one transaction. A failure leaves the payment unchanged.
+    const { data: review, error: reviewError } = await serviceSupabase.rpc(
+      "review_payment_atomically",
+      {
+        p_payment_id: id,
+        p_reviewer_id: user.id,
+        p_action: action,
+        p_rejection_reason: rejectionReason,
+      }
+    );
 
-    if (action === "rechazar") {
-      updateData.rejection_reason = rejectionReason;
-      // Permitir que el cliente vuelva a editar después de un rechazo
-      updateData.has_been_edited = false;
-    } else {
-      updateData.rejection_reason = null;
-    }
-
-    // 8. Update the payment using service client
-    const { data: updatedPayment, error: updateError } = await serviceSupabase
-      .from("payments")
-      .update(updateData)
-      .eq("id", id)
-      .select()
-      .single();
-
-    if (updateError) {
-      console.error("Error updating payment:", updateError);
+    if (reviewError || !review?.payment) {
+      console.error("Error reviewing payment atomically:", reviewError);
       return NextResponse.json(
-        { error: "Failed to update payment" },
-        { status: 500 }
+        { error: reviewError?.message || "No se pudo revisar el pago" },
+        { status: 409 }
       );
     }
 
-    // 9. Update the payment schedule status
-    if (action === "aprobar") {
-      let fullScheduleIds: string[] = []
-      const notesText = String(payment.notes || updatedPayment.notes || "")
-      if (notesText.startsWith("[FULL_PAYMENT]")) {
-        const l = notesText.indexOf("{")
-        const r = notesText.lastIndexOf("}")
-        if (l !== -1 && r !== -1 && r > l) {
-          try {
-            const obj = JSON.parse(notesText.substring(l, r + 1))
-            const arr = Array.isArray(obj?.scheduleIds) ? obj.scheduleIds : []
-            fullScheduleIds = arr.filter((x: any) => typeof x === "string")
-          } catch {}
-        }
-      }
-      const { data: scheduleData, error: scheduleError } =
-        await serviceSupabase
-          .from("payment_schedule")
-          .select("amount, paid_amount, mora, admin_fees")
-          .eq("id", payment.schedule_id)
-          .single();
-
-      if (!scheduleError && scheduleData) {
-        const currentPaidAmount = Number(scheduleData.paid_amount) || 0;
-        const paymentAmount = Number(payment.amount);
-        const totalPaidAmount = currentPaidAmount + paymentAmount;
-        const scheduledAmount =
-          Number(scheduleData.amount) +
-          (Number(scheduleData.mora) || 0) +
-          (Number(scheduleData.admin_fees) || 0);
-
-        let scheduleStatus = "pending";
-        if (totalPaidAmount >= scheduledAmount) {
-          scheduleStatus = "paid";
-        } else if (totalPaidAmount > 0) {
-          scheduleStatus = "partially_paid";
-        }
-
-        await serviceSupabase
-          .from("payment_schedule")
-          .update({
-            status: scheduleStatus,
-            paid_amount: totalPaidAmount,
-          })
-          .eq("id", payment.schedule_id);
-
-        if (fullScheduleIds.length > 0) {
-          const { data: targets } = await serviceSupabase
-            .from("payment_schedule")
-            .select("id, amount, mora, admin_fees")
-            .in("id", fullScheduleIds)
-          for (const t of targets || []) {
-            const schedAmt = Number(t.amount || 0) + (Number(t.mora || 0) || 0) + (Number(t.admin_fees || 0) || 0)
-            await serviceSupabase
-              .from("payment_schedule")
-              .update({
-                status: "paid",
-                paid_amount: Math.round(schedAmt * 100) / 100,
-              })
-              .eq("id", t.id)
-          }
-        }
-
-        // After approving and updating the schedule, if all schedules of the loan are paid, mark loan as paid
-        const { data: schedules } = await serviceSupabase
-          .from('payment_schedule')
-          .select('status')
-          .eq('loan_id', updatedPayment.loan_id)
-        const allPaid = (schedules || []).length > 0 && (schedules || []).every((s: any) => String(s.status).toLowerCase() === 'paid')
-        if (allPaid) {
-          await serviceSupabase
-            .from('loans')
-            .update({ status: 'paid' })
-            .eq('id', updatedPayment.loan_id)
-          loanFinalized = true
-        }
-      }
-    } else if (action === "rechazar") {
-      await serviceSupabase
-        .from("payment_schedule")
-        .update({
-          status: "rejected",
-        })
-        .eq("id", payment.schedule_id);
-    }
+    const updatedPayment = review.payment;
+    loanFinalized = Boolean(review.loanFinalized);
 
     // 10. Transform and return response
     const transformedPayment = {
