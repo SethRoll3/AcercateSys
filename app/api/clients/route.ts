@@ -39,7 +39,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { first_name, last_name, email, phone, phone_country_code, emergency_phone, address, advisor_id, gender } = body;
+    const { first_name, last_name, email, phone, phone_country_code, emergency_phone, address, advisor_id, gender, dpi, actividad_economica, score_buro } = body;
 
     if (!first_name || !last_name || !email || !phone) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -61,6 +61,9 @@ export async function POST(request: Request) {
           address,
           advisor_id,
           gender,
+          dpi,
+          actividad_economica,
+          score_buro,
         },
       ])
       .select()

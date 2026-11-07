@@ -153,7 +153,7 @@ export function CreateClientForm({ onClientAdded, isOpen, onClose }: CreateClien
         toast.success('Cliente creado con éxito')
       } else {
         const errorData = await response.json()
-        toast.error(`Error al crear el cliente: ${errorData.message}`)
+        toast.error(`Error al crear el cliente: ${errorData.error || errorData.message || 'Error desconocido'}`)
       }
     } catch (error) {
       toast.error('No se pudo conectar con el servidor. Inténtalo de nuevo.')

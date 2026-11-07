@@ -24,6 +24,9 @@ interface Client {
   phone: string | null
   emergency_phone: string | null
   gender?: string | null
+  dpi?: string | null
+  actividad_economica?: string | null
+  score_buro?: string | null
   advisor_id?: string
   advisor_email?: string | null
   advisor_name?: string | null
@@ -56,6 +59,7 @@ export default function ClientDetailPage() {
   const [isCreateUserOpen, setIsCreateUserOpen] = useState(false)
   const [linkedUserStatus, setLinkedUserStatus] = useState<string | null>(null)
   const [linkedUserId, setLinkedUserId] = useState<string | null>(null)
+  const [refreshVersion, setRefreshVersion] = useState(0)
 
   useEffect(() => {
     const run = async () => {
@@ -65,7 +69,7 @@ export default function ClientDetailPage() {
 
         const { data: row, error } = await supabase
           .from('clients')
-          .select('id, first_name, last_name, email, address, phone, phone_country_code, emergency_phone, advisor_id, group_id, status, gender')
+          .select('id, first_name, last_name, email, address, phone, phone_country_code, emergency_phone, advisor_id, group_id, status, gender, dpi, actividad_economica, score_buro')
           .eq('id', id)
           .single()
 
@@ -120,6 +124,9 @@ export default function ClientDetailPage() {
           phone_country_code: row.phone_country_code,
           emergency_phone: row.emergency_phone,
           gender: row.gender ?? null,
+          dpi: row.dpi ?? null,
+          actividad_economica: row.actividad_economica ?? null,
+          score_buro: row.score_buro ?? null,
           advisor_id: row.advisor_id,
           advisor_email: advisorEmail,
           advisor_name: advisorName,
@@ -150,7 +157,7 @@ export default function ClientDetailPage() {
       }
     }
     run()
-  }, [params.id])
+  }, [params.id, refreshVersion])
 
   const confirmDelete = async () => {
     if (!client) return
@@ -238,6 +245,10 @@ export default function ClientDetailPage() {
               </div>
             </div>
             <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">DPI</span>
+                <span>{client.dpi || 'No especificado'}</span>
+              </div>
               <div className="flex items-center gap-2 text-sm">
                 <Mail className="h-4 w-4 text-muted-foreground" />
                 {client.email ? (
@@ -346,7 +357,7 @@ export default function ClientDetailPage() {
             onClose={() => setIsEditOpen(false)}
             onSuccess={() => {
               setIsEditOpen(false)
-              router.refresh()
+              setRefreshVersion((version) => version + 1)
             }}
           />
         </DialogContent>

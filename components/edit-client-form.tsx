@@ -121,7 +121,7 @@ export function EditClientForm({ client, onClose, onClientUpdated, onSuccess }: 
         toast.success('Cliente actualizado con éxito')
       } else {
         const errorData = await response.json()
-        toast.error(`Error al actualizar el cliente: ${errorData.message}`)
+        toast.error(`Error al actualizar el cliente: ${errorData.error || errorData.message || 'Error desconocido'}`)
       }
     } catch (error) {
       toast.error('No se pudo conectar con el servidor. Inténtalo de nuevo.')
