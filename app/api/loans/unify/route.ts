@@ -24,14 +24,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Préstamo no disponible' }, { status: 404 })
     }
     let { data: event } = await actor.admin.from('loan_unifications')
-      .select('id, new_loan_id, actor_user_id, amount, excluded_mora, created_at')
+      .select('id, new_loan_id, amount, excluded_mora, created_at')
       .eq('new_loan_id', loanId).maybeSingle()
     if (!event) {
       const { data: source } = await actor.admin.from('loan_unification_sources')
         .select('unification_id').eq('source_loan_id', loanId).maybeSingle()
       if (source) {
         const lookup = await actor.admin.from('loan_unifications')
-          .select('id, new_loan_id, actor_user_id, amount, excluded_mora, created_at')
+          .select('id, new_loan_id, amount, excluded_mora, created_at')
           .eq('id', source.unification_id).maybeSingle()
         event = lookup.data
       }
@@ -40,15 +40,14 @@ export async function GET(request: NextRequest) {
     const { data: sourceRows } = await actor.admin.from('loan_unification_sources')
       .select('source_loan_id, balance_without_mora, excluded_mora').eq('unification_id', event.id)
     const sourceIds = (sourceRows || []).map((row) => row.source_loan_id)
-    const [{ data: sourceLoans }, { data: newLoan }, { data: user }] = await Promise.all([
+    const [{ data: sourceLoans }, { data: newLoan }] = await Promise.all([
       actor.admin.from('loans').select('id, loan_number').in('id', sourceIds),
       actor.admin.from('loans').select('loan_number').eq('id', event.new_loan_id).single(),
-      actor.admin.from('users').select('full_name, email').eq('id', event.actor_user_id).single(),
     ])
     return NextResponse.json({ unification: {
       newLoanId: event.new_loan_id, newLoanNumber: newLoan?.loan_number,
       amount: Number(event.amount), excludedMora: Number(event.excluded_mora),
-      actorName: user?.full_name || user?.email || 'Usuario', createdAt: event.created_at,
+      createdAt: event.created_at,
       sources: (sourceRows || []).map((row) => ({ id: row.source_loan_id,
         loanNumber: sourceLoans?.find((loan) => loan.id === row.source_loan_id)?.loan_number || row.source_loan_id,
         balance: Number(row.balance_without_mora), excludedMora: Number(row.excluded_mora) })),

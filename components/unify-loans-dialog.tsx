@@ -17,6 +17,7 @@ const todayGT = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guat
 export function UnifyLoansDialog({ clients, onUnified }: { clients: ClientOption[]; onUnified: () => void }) {
   const [open, setOpen] = useState(false)
   const [clientId, setClientId] = useState('')
+  const [clientSearch, setClientSearch] = useState('')
   const [loans, setLoans] = useState<Candidate[]>([])
   const [selected, setSelected] = useState<string[]>([])
   const [quote, setQuote] = useState<Quote | null>(null)
@@ -67,6 +68,7 @@ export function UnifyLoansDialog({ clients, onUnified }: { clients: ClientOption
       toast.success(`Préstamo ${data.loanNumber} creado por ${money(data.amount)}`)
       setOpen(false)
       setClientId('')
+      setClientSearch('')
       setSelected([])
       setQuote(null)
       onUnified()
@@ -76,6 +78,8 @@ export function UnifyLoansDialog({ clients, onUnified }: { clients: ClientOption
 
   const installment = quote && Number(term) > 0
     ? quote.amount / Number(term) + quote.amount * (Number(rate || 0) / 100) / (frequency === 'quincenal' ? 2 : 1) + 20 : 0
+  const matchingClients = clients.filter((client) => client.fullName.toLowerCase().includes(clientSearch.trim().toLowerCase())).slice(0, 8)
+  const selectedClient = clients.find((client) => client.id === clientId)
 
   return <>
     <Button variant="outline" size="sm" className="gap-2" onClick={() => setOpen(true)}><GitMerge className="h-4 w-4" />Unificar préstamos</Button>
@@ -83,10 +87,22 @@ export function UnifyLoansDialog({ clients, onUnified }: { clients: ClientOption
       <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>Unificar préstamos</DialogTitle></DialogHeader>
         <p className="text-sm text-muted-foreground">Seleccione dos o más préstamos del mismo cliente. El nuevo monto suma solo el saldo pendiente de las cuotas, sin mora. Los préstamos originales quedarán como unificados y conservarán su historial.</p>
-        <div className="space-y-2"><Label htmlFor="unify-client">Cliente</Label>
-          <select id="unify-client" className="w-full h-10 rounded-md border bg-background px-3" value={clientId} onChange={(e) => setClientId(e.target.value)} disabled={loading}>
-            <option value="">Seleccione un cliente</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.fullName}</option>)}
-          </select></div>
+        {!clientId ? <div className="space-y-2">
+          <Label htmlFor="unify-client-search">Buscar cliente por nombre</Label>
+          <Input id="unify-client-search" placeholder="Escriba el nombre del cliente" value={clientSearch}
+            onChange={(e) => setClientSearch(e.target.value)} disabled={loading} autoComplete="off" />
+          {clientSearch.trim() && <div className="max-h-48 overflow-y-auto rounded-md border">
+            {matchingClients.length ? matchingClients.map((client) => <button key={client.id} type="button"
+              className="block w-full px-3 py-2 text-left text-sm hover:bg-muted" disabled={loading}
+              onClick={() => setClientId(client.id)}>{client.fullName}</button>)
+              : <p className="p-3 text-sm text-muted-foreground">No se encontraron clientes.</p>}
+          </div>}
+        </div> : <div className="flex items-center justify-between rounded-md border p-3">
+          <div><div className="text-xs text-muted-foreground">Cliente seleccionado</div><div className="font-medium">{selectedClient?.fullName}</div></div>
+          <Button type="button" variant="ghost" size="sm" disabled={loading} onClick={() => {
+            setClientId(''); setClientSearch(''); setSelected([]); setQuote(null); setTerm(''); setRate('')
+          }}>Cambiar cliente</Button>
+        </div>}
         {clientId && <div className="space-y-2"><Label>Préstamos activos o en mora</Label>
           {loans.length === 0 && !loading && <p className="text-sm text-muted-foreground">No hay préstamos con saldo elegibles.</p>}
           {loans.map((loan) => <label key={loan.id} className="flex items-center gap-3 rounded-md border p-3 cursor-pointer">

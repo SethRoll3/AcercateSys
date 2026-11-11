@@ -5,7 +5,7 @@ import Link from 'next/link'
 
 type Info = {
   newLoanId: string; newLoanNumber: string; amount: number; excludedMora: number
-  actorName: string; createdAt: string
+  createdAt: string
   sources: { id: string; loanNumber: string; balance: number; excludedMora: number }[]
 }
 const money = (n: number) => new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(n)
@@ -27,7 +27,7 @@ export function LoanUnificationInfo({ loanId }: { loanId: string }) {
     {!isNew && <p>Nuevo préstamo: <Link className="underline" href={`/dashboard/loans/${info.newLoanId}`}>{info.newLoanNumber}</Link></p>}
     <p>Monto del nuevo préstamo: <strong>{money(info.amount)}</strong></p>
     <p>Mora total excluida: <strong>{money(info.excludedMora)}</strong></p>
-    <p>Unificado por {info.actorName} el {new Date(info.createdAt).toLocaleString('es-GT')}</p>
+    <p>Fecha de unificación: {new Date(info.createdAt).toLocaleString('es-GT')}</p>
     <div>Préstamos de origen:
       <ul className="ml-5 list-disc">{info.sources.map((source) => <li key={source.id}>
         <Link className="underline" href={`/dashboard/loans/${source.id}`}>{source.loanNumber}</Link>
