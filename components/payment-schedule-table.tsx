@@ -206,7 +206,7 @@ export function PaymentScheduleTable({ schedule, onPaymentClick, onReviewClick, 
                         
                       </>
                     )}
-                    {(role === 'admin' || role === 'asesor') && item.status !== 'paid' && (
+                    {(role === 'admin' || role === 'asesor') && !['unified', 'paid', 'cancelled'].includes(loan?.status || '') && item.status !== 'paid' && (
                       <Button
                         variant="ghost"
                         size="sm"

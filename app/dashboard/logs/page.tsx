@@ -196,6 +196,9 @@ export default function LogsPage() {
 
   const formatDetailValue = (value: any, key?: string) => {
     if (value === null || value === undefined || value === "") return "—"
+    if (key === 'amount_without_mora' || key === 'excluded_mora') {
+      return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(Number(value))
+    }
     if (Array.isArray(value)) {
       if (key === "schedule_ids") return `${value.length} cuotas`
       const joined = value.map((v) => String(v)).join(", ")
@@ -225,6 +228,7 @@ export default function LogsPage() {
       payment_schedule: ["loan_number", "count", "schedule_id", "schedule_ids", "loan_id"],
       payments: ["receipt_number", "amount", "payment_id", "loan_id", "schedule_id"],
       payment: ["receipt_number", "amount", "payment_id", "loan_id", "schedule_id"],
+      loan_unifications: ["new_loan_number", "amount_without_mora", "excluded_mora", "actor_name"],
     }
 
     const labelMap: Record<string, string> = {
@@ -238,6 +242,10 @@ export default function LogsPage() {
       receipt_number: "Recibo",
       amount: "Monto",
       payment_id: "Pago",
+      new_loan_number: "Nuevo préstamo",
+      amount_without_mora: "Monto sin mora",
+      excluded_mora: "Mora excluida",
+      actor_name: "Unificado por",
     }
 
     const rawKeys = keysByEntity[entity] || Object.keys(details).filter((k) => k !== "message")

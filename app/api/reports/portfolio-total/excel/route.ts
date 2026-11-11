@@ -74,6 +74,7 @@ export async function GET(request: Request) {
     // Aggregations
     const activeLoansList = (loans || []).filter((l: any) => l.status === 'active')
     const activeLoanIds = new Set(activeLoansList.map((l: any) => l.id))
+    const unifiedLoanIds = new Set((loans || []).filter((l: any) => l.status === 'unified').map((l: any) => String(l.id)))
 
     // 1. Total Prestado: Suma SOLO el monto (principal) de los préstamos ACTIVOS
     const totalPrestado = activeLoansList.reduce((sum: number, l: any) => sum + Number(l.amount || 0), 0)
@@ -92,6 +93,7 @@ export async function GET(request: Request) {
 
     for (const s of (schedules || [])) {
       const loanId = String((s as any).loan_id)
+      if (unifiedLoanIds.has(loanId)) continue
       const isActive = activeLoanIds.has(loanId)
 
       // Schedule values

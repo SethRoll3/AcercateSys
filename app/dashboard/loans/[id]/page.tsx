@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react"
 import { useRole } from "@/contexts/role-context"
 import { useParams, useRouter } from "next/navigation"
 import { LoanInfoCard } from "@/components/loan-info-card"
+import { LoanUnificationInfo } from "@/components/loan-unification-info"
 import { PaymentScheduleTable } from "@/components/payment-schedule-table"
 import { PaymentHistoryTable } from "@/components/payment-history-table"
 import { LoadingSpinner } from "@/components/loading-spinner";
@@ -320,6 +321,7 @@ export default function LoanDetailPage() {
 
       <div className="space-y-6">
         <LoanInfoCard loan={loan} totalPaid={totalPaid} remainingBalance={remainingBalance} schedule={schedule} />
+        {(role === 'admin' || role === 'asesor') && <LoanUnificationInfo loanId={loan.id} />}
 
         <Tabs defaultValue="schedule" className="w-full">
           <TabsList className="grid w-full max-w-3xl grid-cols-4 bg-muted/50">

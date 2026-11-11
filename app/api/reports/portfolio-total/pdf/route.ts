@@ -47,12 +47,14 @@ export async function GET(request: Request) {
 
     const activeLoansList = loans.filter((l: any) => l.status === 'active')
     const activeLoanIds = new Set(activeLoansList.map((l: any) => l.id))
+    const unifiedLoanIds = new Set(loans.filter((l: any) => l.status === 'unified').map((l: any) => l.id))
     const totalPrestado = activeLoansList.reduce((sum: number, l: any) => sum + Number(l.amount || 0), 0)
 
     let totalCapitalRecuperado = 0, totalInteresesEsperados = 0, totalInteresesRecuperados = 0
     let cuotasTotales = 0, cuotasPagadas = 0, cuotasPendientes = 0, cuotasEnMora = 0
 
     for (const s of (schedules || [])) {
+      if (unifiedLoanIds.has((s as any).loan_id)) continue
       const isActive = activeLoanIds.has((s as any).loan_id)
       const principal = Number((s as any).principal || 0)
       const interest = Number((s as any).interest || 0)

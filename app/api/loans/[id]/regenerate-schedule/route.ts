@@ -31,6 +31,9 @@ export async function POST(
     if (loanError || !loan) {
       return NextResponse.json({ error: "Loan not found" }, { status: 404 })
     }
+    if (['unified', 'paid', 'cancelled'].includes(loan.status)) {
+      return NextResponse.json({ error: 'Este préstamo no permite regenerar cuotas' }, { status: 400 })
+    }
 
     // Usar cliente con service role directo para evitar problemas de RLS (sin cookies)
     const supabaseAdmin = createSupabaseClient(

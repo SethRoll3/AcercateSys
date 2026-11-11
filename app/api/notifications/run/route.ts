@@ -65,6 +65,7 @@ export async function POST(req: NextRequest) {
 
     const results: any[] = []
     for (const s of schedules || []) {
+      if (s.loan?.status === 'unified') continue
       const dueDate = parseYMDToUTC(String(s.due_date || s.dueDate))
       const stage = computeStage(today, dueDate, s.status)
       if (!stage) continue

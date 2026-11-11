@@ -48,6 +48,11 @@ export async function POST(request: Request) {
     if (scheduleError || !scheduleData) {
       return NextResponse.json({ error: "Payment schedule not found" }, { status: 404 })
     }
+    const { data: paymentLoan } = await supabase.from('loans')
+      .select('status').eq('id', scheduleData.loan_id).single()
+    if (!paymentLoan || paymentLoan.status !== 'active') {
+      return NextResponse.json({ error: 'El préstamo no está activo para recibir pagos' }, { status: 409 })
+    }
 
     // Calculate amounts with proper rounding
   const newPaymentAmount = Math.round(Number(amount) * 100) / 100

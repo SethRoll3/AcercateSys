@@ -35,12 +35,16 @@ export function LoansTable({ loans, userRole, onLoanUpdated, groupMap }: LoansTa
       paid: "secondary",
       pending: "outline",
       cancelled: "destructive",
+      unified: "secondary",
+      defaulted: "destructive",
     }
     const labels: Record<string, string> = {
       active: "Activo",
       paid: "Pagado",
       pending: "Pendiente",
       cancelled: "Cancelado",
+      unified: "Unificado",
+      defaulted: "En mora",
     }
     return <Badge variant={variants[status] || "default"}>{labels[status] || status}</Badge>
   }
@@ -118,7 +122,7 @@ export function LoansTable({ loans, userRole, onLoanUpdated, groupMap }: LoansTa
                     {groupMap && groupMap[loan.id] && (
                       <Badge variant="outline">Préstamo Grupo: {groupMap[loan.id].groupName}</Badge>
                     )}
-                    {loan.hasOverdue ? (
+                    {loan.status === 'unified' ? null : loan.hasOverdue ? (
                       <Badge variant="destructive">Retraso</Badge>
                     ) : (
                       <Badge variant="secondary">Al día</Badge>
@@ -144,7 +148,7 @@ export function LoansTable({ loans, userRole, onLoanUpdated, groupMap }: LoansTa
                       <Eye className="h-4 w-4" />
                       Ver
                     </Button>
-                    {isAdmin && onLoanUpdated && loan.status?.toLowerCase() !== "paid" && loan.status !== "cancelled" && (
+                    {isAdmin && onLoanUpdated && !["paid", "cancelled", "unified"].includes(loan.status?.toLowerCase()) && (
                       <EditLoanDialog loan={loan} onLoanUpdated={onLoanUpdated} />
                     )}
                     {isAdmin && loan.status === "pending" && onLoanUpdated && (
@@ -152,7 +156,7 @@ export function LoansTable({ loans, userRole, onLoanUpdated, groupMap }: LoansTa
                         <Button variant="outline" size="sm" className="gap-2">Activar</Button>
                       } />
                     )}
-                    {isAdmin && loan.status !== "paid" && loan.status !== "cancelled" && (
+                    {isAdmin && !["paid", "cancelled", "unified"].includes(loan.status) && (
                       <Button
                         variant="ghost"
                         size="sm"

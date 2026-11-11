@@ -48,8 +48,8 @@ export async function POST(
       return NextResponse.json({ error: "El préstamo ya está cancelado" }, { status: 400 })
     }
 
-    if (loan.status === "paid") {
-      return NextResponse.json({ error: "No se puede cancelar un préstamo pagado" }, { status: 400 })
+    if (loan.status === "paid" || loan.status === "unified") {
+      return NextResponse.json({ error: "No se puede cancelar un préstamo pagado o unificado" }, { status: 400 })
     }
 
     const previousStatus = loan.status

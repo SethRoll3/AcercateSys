@@ -54,6 +54,7 @@ export function LoanInfoCard({ loan, totalPaid, remainingBalance, schedule }: Lo
       paid: "secondary",
       defaulted: "destructive",
       pending: "outline",
+      unified: "secondary",
     }
 
     const labels: Record<string, string> = {
@@ -61,6 +62,7 @@ export function LoanInfoCard({ loan, totalPaid, remainingBalance, schedule }: Lo
       paid: "Pagado",
       defaulted: "Mora",
       pending: "Pendiente",
+      unified: "Unificado",
     }
 
     return <Badge variant={variants[status] || "default"}>{labels[status] || status}</Badge>
@@ -179,11 +181,11 @@ export function LoanInfoCard({ loan, totalPaid, remainingBalance, schedule }: Lo
           </div>
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground text-sm">Cuotas Restantes</span>
+              <span className="text-muted-foreground text-sm">{loan.status === 'unified' ? 'Cuotas trasladadas' : 'Cuotas Restantes'}</span>
               <span className="text-foreground font-medium">{remainingQuotas} de {totalQuotas}</span>
             </div>
-            <p className="text-muted-foreground text-xs">Restante por pagar:</p>
-            <p className="text-xl font-bold text-foreground">{formatCurrency(remainingBalance)}</p>
+            <p className="text-muted-foreground text-xs">{loan.status === 'unified' ? 'Saldo por pagar en este préstamo:' : 'Restante por pagar:'}</p>
+            <p className="text-xl font-bold text-foreground">{formatCurrency(loan.status === 'unified' ? 0 : remainingBalance)}</p>
           </div>
         </div>
         <div className="flex justify-center pt-4">

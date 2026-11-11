@@ -8,6 +8,7 @@ import { LoadingSpinner } from "@/components/loading-spinner"
 import { LoansTable } from "@/components/loans-table"
 import { GroupLoansTable } from "@/components/group-loans-table"
 import { CreateLoanDialog } from "@/components/create-loan-dialog"
+import { UnifyLoansDialog } from "@/components/unify-loans-dialog"
 
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -449,7 +450,7 @@ export default function DashboardPage() {
     })
   ) : loans;
 
-  const totalLoanAmount = displayLoans.reduce((sum: any, loan: any) => sum + loan.amount, 0)
+  const totalLoanAmount = displayLoans.reduce((sum: any, loan: any) => sum + (loan.status === 'unified' ? 0 : loan.amount), 0)
   const activeLoansList = displayLoans.filter((loan: any) => loan.status === "active")
   const activeLoans = activeLoansList.length
   const pendingLoans = displayLoans.filter((loan: any) => loan.status === 'pending').length
@@ -681,6 +682,9 @@ export default function DashboardPage() {
           )}
           {(userData.role === 'admin' || userData.role === 'asesor') && (
             <CreateLoanDialog clients={transformedClients} onLoanCreated={refreshAfterCreation} />
+          )}
+          {(userData.role === 'admin' || userData.role === 'asesor') && (
+            <UnifyLoansDialog clients={transformedClients} onUnified={refreshAfterCreation} />
           )}
         </div>
       </div>

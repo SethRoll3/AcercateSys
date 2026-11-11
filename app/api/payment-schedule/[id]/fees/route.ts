@@ -55,9 +55,14 @@ export async function PATCH(
     // Fetch existing principal/interest to recompute amount coherently
     const { data: currentRow } = await serviceSupabase
       .from("payment_schedule")
-      .select("principal, interest")
+      .select("principal, interest, loan_id")
       .eq("id", id)
       .single()
+    if (!currentRow) return NextResponse.json({ error: 'Cuota no encontrada' }, { status: 404 })
+    const { data: parentLoan } = await serviceSupabase.from('loans').select('status').eq('id', currentRow.loan_id).single()
+    if (!parentLoan || ['unified', 'paid', 'cancelled'].includes(parentLoan.status)) {
+      return NextResponse.json({ error: 'Este préstamo no permite editar cuotas' }, { status: 400 })
+    }
 
     const newAmount = Math.round(((Number(currentRow?.principal || 0) + Number(currentRow?.interest || 0) + parsedAdminFees)) * 100) / 100
 

@@ -356,7 +356,7 @@ export async function GET(request: NextRequest) {
       const progressPaid = Array.isArray((loan as any).schedule) ? (loan as any).schedule.filter((s: any) => s.status === 'paid').length : undefined
       const progressTotal = Array.isArray((loan as any).schedule) ? (loan as any).schedule.length : undefined
       if (progressPaid != null && progressTotal != null) {
-        return { ...transformed, progressPaid, progressTotal, hasOverdue: (loan as any).schedule.some((s: any) => s.status !== 'paid' && new Date(s.due_date) < new Date()) }
+        return { ...transformed, progressPaid, progressTotal, hasOverdue: ['active', 'defaulted'].includes(loan.status) && (loan as any).schedule.some((s: any) => s.status !== 'paid' && new Date(s.due_date) < new Date()) }
       }
       return transformed
     }
@@ -428,7 +428,12 @@ export async function GET(request: NextRequest) {
       const responseData = (data || []).map((loan: any) => {
         const t = transformLoan(loan)
         const agg = aggregates[String(loan.id)] || { total: 0, paid: 0, hasOverdue: false, moraTotal: 0, overdueDebt: 0, overdueCount: 0, overduePrincipal: 0, overdueInstallments: [] }
-        return { ...t, progressPaid: agg.paid, progressTotal: agg.total, hasOverdue: agg.hasOverdue, moraTotal: agg.moraTotal, overdueDebt: agg.overdueDebt, overdueCount: agg.overdueCount, overduePrincipal: agg.overduePrincipal, overdueInstallments: agg.overdueInstallments }
+        const currentDebt = ['active', 'defaulted'].includes(loan.status)
+        return { ...t, progressPaid: agg.paid, progressTotal: agg.total,
+          hasOverdue: currentDebt && agg.hasOverdue, moraTotal: currentDebt ? agg.moraTotal : 0,
+          overdueDebt: currentDebt ? agg.overdueDebt : 0, overdueCount: currentDebt ? agg.overdueCount : 0,
+          overduePrincipal: currentDebt ? agg.overduePrincipal : 0,
+          overdueInstallments: currentDebt ? agg.overdueInstallments : [] }
       })
       return NextResponse.json(responseData, { headers: { 'Cache-Control': 'no-store' } })
     }
@@ -462,11 +467,13 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { interestRate, status, frequency, startDate } = body
-    const updates: any = { ...body }
-    delete updates.frequency
-    delete updates.startDate
-    delete updates.interestRate
+    const { interestRate, frequency, startDate } = body
+    if ('status' in body || 'client_id' in body || 'loan_number' in body) {
+      return NextResponse.json({ error: 'Campos no permitidos' }, { status: 400 })
+    }
+    const updates: any = {}
+    if (body.amount != null) updates.amount = body.amount
+    if (body.term_months != null) updates.term_months = body.term_months
 
     // Recalcular monto por cuota
     const totalAmountNum = updates.amount != null ? parseFloat(updates.amount) : undefined
@@ -477,9 +484,13 @@ export async function PATCH(request: NextRequest) {
     // Obtener valores actuales si faltan
     const { data: currentLoan } = await supabase
       .from('loans')
-      .select('amount, term_months, interest_rate, start_date')
+      .select('amount, term_months, interest_rate, start_date, status')
       .eq('id', id)
       .single()
+
+    if (!currentLoan || ['unified', 'paid', 'cancelled'].includes(currentLoan.status)) {
+      return NextResponse.json({ error: 'Este préstamo no se puede editar' }, { status: 400 })
+    }
 
     const amt = totalAmountNum ?? Number(currentLoan?.amount || 0)
     const months = termNum ?? Number(currentLoan?.term_months || 0)
