@@ -58,6 +58,14 @@ export interface Client {
   in_group?: boolean
   emergency_phone?: string | null
   dpi?: string | null
+  birth_date?: string | null
+  nationality?: string | null
+  dpi_issue_date?: string | null
+  dpi_expiry_date?: string | null
+  dpi_front_path?: string | null
+  dpi_back_path?: string | null
+  dpi_scanned_at?: string | null
+  dpi_provider?: string | null
   actividad_economica?: string | null
   score_buro?: string | null
 }

@@ -113,7 +113,7 @@ export default function LoanHistoryPage() {
         const clientFullName = `${loan.client.firstName} ${loan.client.lastName}`.toLowerCase()
         const matchesSearch = !q ||
           clientFullName.includes(q) ||
-          (loan.client.dpi || "").toLowerCase().includes(q) ||
+          (loan.client.dpi || "").replace(/\s/g, "").includes(q.replace(/\s/g, "")) ||
           loan.loanNumber.toLowerCase().includes(q) ||
           (loan.client.email || "").toLowerCase().includes(q)
 

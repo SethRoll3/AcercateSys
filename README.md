@@ -93,13 +93,27 @@ Asegúrate de tener instalado lo siguiente:
     NEXT_PUBLIC_SUPABASE_URL=tu_url_supabase
     NEXT_PUBLIC_SUPABASE_ANON_KEY=tu_clave_anon_supabase
     SUPABASE_SERVICE_ROLE_KEY=tu_clave_rol_servicio_supabase
+    GROQ_API_KEY=tu_clave_de_groq
     ```
     Puedes encontrar estas claves en la configuración de tu proyecto Supabase. La `SUPABASE_SERVICE_ROLE_KEY` es crucial para operaciones que requieren eludir RLS, como la eliminación en cascada.
+
+    `GROQ_API_KEY` se usa únicamente en el servidor para leer los datos del DPI con IA (frente y reverso). Es opcional para el resto del sistema: si no está configurada, el formulario de cliente sigue funcionando y los datos se llenan a mano. También puedes definir `DPI_AI_PROVIDER=groq` y `DPI_AI_MODEL=qwen/qwen3.8-27b` para cambiarlo sin tocar código. Nunca pongas esta clave en una variable `NEXT_PUBLIC_*`.
 
 4.  **Configurar la Base de Datos Supabase**:
     -   Asegúrate de que tu base de datos PostgreSQL en Supabase tenga las tablas necesarias (clientes, grupos, prestamos, pagos, usuarios, etc.) y las relaciones configuradas.
     -   Implementa las políticas de Row Level Security (RLS) adecuadas para cada tabla para asegurar que los usuarios solo puedan acceder a los datos a los que tienen permiso.
     -   Configura los triggers o funciones de base de datos si son necesarios para la lógica de negocio (ej. eliminación en cascada).
+    -   Para habilitar el escaneo de DPI, ejecuta la migración
+        `supabase/migrations/20261120090000_add_dpi_documents_to_clients.sql`
+        en el SQL Editor de Supabase. Crea las columnas de identidad y el bucket
+        privado `dpi-images`. Sin esa migración, el resto del sistema funciona,
+        pero no se pueden guardar los datos ni las fotos del DPI.
+    -   Ejecuta también
+        `supabase/migrations/20261120120000_add_dpi_scan_cooldown.sql`
+        para activar el límite de un DPI por minuto. Crea
+        `system_settings.last_dpi_scan_at` y la función atómica
+        `claim_dpi_scan_slot`. Si no está aplicada, el escaneo devuelve un aviso
+        claro y las fotos se guardan, pero el límite global no se aplica.
 
 ### Ejecutar la Aplicación
 

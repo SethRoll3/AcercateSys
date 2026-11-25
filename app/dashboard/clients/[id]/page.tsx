@@ -11,9 +11,10 @@ import { LoadingSpinner } from '@/components/loading-spinner'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
-import { ArrowLeft, Pencil, Trash2, Mail, Phone, PhoneCall, MapPin, UserCheck, Users, Eye, UserCircle } from 'lucide-react'
+import { ArrowLeft, Pencil, Trash2, Mail, Phone, PhoneCall, MapPin, UserCheck, Users, Eye, UserCircle, CalendarDays, IdCard } from 'lucide-react'
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
 import { CreateClientUserDialog } from '@/components/create-client-user-dialog'
+import { formatYMDGT } from '@/lib/utils'
 
 interface Client {
   id: string
@@ -25,6 +26,14 @@ interface Client {
   emergency_phone: string | null
   gender?: string | null
   dpi?: string | null
+  birth_date?: string | null
+  nationality?: string | null
+  dpi_issue_date?: string | null
+  dpi_expiry_date?: string | null
+  dpi_front_path?: string | null
+  dpi_back_path?: string | null
+  dpi_scanned_at?: string | null
+  dpi_provider?: string | null
   actividad_economica?: string | null
   score_buro?: string | null
   advisor_id?: string
@@ -60,6 +69,10 @@ export default function ClientDetailPage() {
   const [linkedUserStatus, setLinkedUserStatus] = useState<string | null>(null)
   const [linkedUserId, setLinkedUserId] = useState<string | null>(null)
   const [refreshVersion, setRefreshVersion] = useState(0)
+  const [dpiFrontUrl, setDpiFrontUrl] = useState<string | null>(null)
+  const [dpiBackUrl, setDpiBackUrl] = useState<string | null>(null)
+  const [dpiConfigured, setDpiConfigured] = useState(true)
+  const [dpiLoading, setDpiLoading] = useState(false)
 
   useEffect(() => {
     const run = async () => {
@@ -69,7 +82,7 @@ export default function ClientDetailPage() {
 
         const { data: row, error } = await supabase
           .from('clients')
-          .select('id, first_name, last_name, email, address, phone, phone_country_code, emergency_phone, advisor_id, group_id, status, gender, dpi, actividad_economica, score_buro')
+          .select('*')
           .eq('id', id)
           .single()
 
@@ -125,6 +138,14 @@ export default function ClientDetailPage() {
           emergency_phone: row.emergency_phone,
           gender: row.gender ?? null,
           dpi: row.dpi ?? null,
+          birth_date: row.birth_date ?? null,
+          nationality: row.nationality ?? null,
+          dpi_issue_date: row.dpi_issue_date ?? null,
+          dpi_expiry_date: row.dpi_expiry_date ?? null,
+          dpi_front_path: row.dpi_front_path ?? null,
+          dpi_back_path: row.dpi_back_path ?? null,
+          dpi_scanned_at: row.dpi_scanned_at ?? null,
+          dpi_provider: row.dpi_provider ?? null,
           actividad_economica: row.actividad_economica ?? null,
           score_buro: row.score_buro ?? null,
           advisor_id: row.advisor_id,
@@ -157,6 +178,33 @@ export default function ClientDetailPage() {
       }
     }
     run()
+  }, [params.id, refreshVersion])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadDpiUrls = async () => {
+      setDpiLoading(true)
+      try {
+        const res = await fetch(`/api/clients/${params.id}/dpi`, { credentials: 'include' })
+        const data = await res.json().catch(() => null)
+        if (cancelled || !data) return
+        if (data.configured === false) {
+          setDpiConfigured(false)
+          return
+        }
+        setDpiConfigured(true)
+        setDpiFrontUrl(data.frontUrl || null)
+        setDpiBackUrl(data.backUrl || null)
+      } catch {
+        // Non-blocking: the rest of the client detail still renders.
+      } finally {
+        if (!cancelled) setDpiLoading(false)
+      }
+    }
+    loadDpiUrls()
+    return () => {
+      cancelled = true
+    }
   }, [params.id, refreshVersion])
 
   const confirmDelete = async () => {
@@ -248,6 +296,25 @@ export default function ClientDetailPage() {
               <div className="flex items-center gap-2 text-sm">
                 <span className="text-muted-foreground">DPI</span>
                 <span>{client.dpi || 'No especificado'}</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                <span className="text-muted-foreground">Nacimiento</span>
+                <span>{client.birth_date ? formatYMDGT(client.birth_date) : 'No especificado'}</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">Nacionalidad</span>
+                <span>{client.nationality || 'No especificada'}</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                <span className="text-muted-foreground">DPI emitido</span>
+                <span>{client.dpi_issue_date ? formatYMDGT(client.dpi_issue_date) : 'No especificado'}</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                <span className="text-muted-foreground">DPI vence</span>
+                <span>{client.dpi_expiry_date ? formatYMDGT(client.dpi_expiry_date) : 'No especificado'}</span>
               </div>
               <div className="flex items-center gap-2 text-sm">
                 <Mail className="h-4 w-4 text-muted-foreground" />
@@ -345,10 +412,69 @@ export default function ClientDetailPage() {
             )}
           </CardContent>
         </Card>
+
+        <Card className="transition-all duration-200 hover:shadow-md bg-card/50 backdrop-blur-sm md:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <IdCard className="h-5 w-5" />
+              Documentos DPI
+              {!dpiFrontUrl && !dpiBackUrl ? (
+                <Badge variant="outline" className="ml-1 text-[10px]">Pendiente</Badge>
+              ) : (
+                <Badge variant="secondary" className="ml-1 text-[10px]">Digitalizado</Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {!dpiConfigured ? (
+              <p className="text-sm text-amber-700 dark:text-amber-400">
+                La migración de DPI aún no está aplicada en la base de datos. Ejecuta
+                {' '}20261120090000_add_dpi_documents_to_clients.sql en Supabase.
+              </p>
+            ) : dpiLoading ? (
+              <p className="text-sm text-muted-foreground">Cargando imágenes del DPI...</p>
+            ) : dpiFrontUrl || dpiBackUrl ? (
+              <>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {dpiFrontUrl ? (
+                    <a href={dpiFrontUrl} target="_blank" rel="noopener noreferrer" className="group block overflow-hidden rounded-lg border bg-muted/20">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={dpiFrontUrl} alt="DPI frente" className="aspect-[1.586/1] w-full object-contain transition-opacity group-hover:opacity-85" />
+                      <div className="px-2 py-1 text-xs text-muted-foreground">Frente · clic para ampliar</div>
+                    </a>
+                  ) : null}
+                  {dpiBackUrl ? (
+                    <a href={dpiBackUrl} target="_blank" rel="noopener noreferrer" className="group block overflow-hidden rounded-lg border bg-muted/20">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={dpiBackUrl} alt="DPI reverso" className="aspect-[1.586/1] w-full object-contain transition-opacity group-hover:opacity-85" />
+                      <div className="px-2 py-1 text-xs text-muted-foreground">Reverso · clic para ampliar</div>
+                    </a>
+                  ) : null}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {client.dpi_scanned_at
+                    ? `Escaneado: ${new Date(client.dpi_scanned_at).toLocaleString('es-GT')}`
+                    : 'Imágenes guardadas'}
+                  {client.dpi_provider ? ` · Proveedor: ${client.dpi_provider}` : ''}
+                </p>
+              </>
+            ) : (
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-muted-foreground">Este cliente aún no tiene el DPI digitalizado.</p>
+                {(role === 'admin' || role === 'asesor') ? (
+                  <Button variant="outline" size="sm" className="gap-2" onClick={() => setIsEditOpen(true)}>
+                    <Pencil className="h-4 w-4" />
+                    Agregar DPI
+                  </Button>
+                ) : null}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-[700px] bg-card border-border max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Editar Cliente</DialogTitle>
           </DialogHeader>

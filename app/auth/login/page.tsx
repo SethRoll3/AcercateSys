@@ -122,7 +122,7 @@ export default function LoginPage() {
                 {/* Tagline */}
                 <blockquote className="space-y-2 pl-2 border-l-4 border-cyan-500">
                     <p className="text-xl font-medium text-foreground leading-snug">
-                    "Simplificamos la gestión financiera para que tú te enfoques en crecer."
+                    &ldquo;Simplificamos la gestión financiera para que tú te enfoques en crecer.&rdquo;
                     </p>
                     <footer className="text-sm text-muted-foreground font-semibold">
                         Sistema de Gestión de Préstamos

@@ -56,7 +56,7 @@ export default function ClientsPage() {
 
       {isEditModalOpen && selectedClient && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center">
-          <div className="bg-gray-800 p-8 rounded-lg w-1/2">
+          <div className="bg-gray-800 p-8 rounded-lg w-1/2 max-h-[85vh] overflow-y-auto">
             <h2 className="text-xl font-bold mb-4">Editar Cliente</h2>
             <EditClientForm client={selectedClient} onClose={() => setIsEditModalOpen(false)} />
             <button onClick={() => setIsEditModalOpen(false)} className="mt-4 px-4 py-2 text-white bg-red-500 rounded-md hover:bg-red-700">Cerrar</button>

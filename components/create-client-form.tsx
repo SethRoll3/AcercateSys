@@ -1,7 +1,7 @@
 'use client'
 
 import type React from 'react'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -25,6 +25,8 @@ import { PhoneInput } from '@/components/phone-input'
 import { toast } from 'sonner'
 import { useRole, usePermission } from '@/contexts/role-context'
 import { createClient } from '@/lib/supabase/client'
+import { DpiCapture, type DpiCaptureResult } from '@/components/dpi-capture'
+import { mapDpiToClientFields, isDpiExpired } from '@/lib/dpi/normalize'
 
 interface Advisor {
   id: string
@@ -55,9 +57,26 @@ export function CreateClientForm({ onClientAdded, isOpen, onClose }: CreateClien
     advisor_id: '',
     gender: '',
     dpi: '',
+    birth_date: '',
+    nationality: '',
+    dpi_issue_date: '',
+    dpi_expiry_date: '',
     actividad_economica: '',
     score_buro: '',
   })
+  const [dpiPaths, setDpiPaths] = useState<{ frontPath: string | null; backPath: string | null }>({
+    frontPath: null,
+    backPath: null,
+  })
+  const [dpiMeta, setDpiMeta] = useState<{
+    provider: string
+    extracted: DpiCaptureResult['data']
+    scannedAt: string
+    warnings: string[]
+  } | null>(null)
+  const [autoFilled, setAutoFilled] = useState<string[]>([])
+  const formDataRef = useRef(formData)
+  formDataRef.current = formData
   
   const { role, permissions } = useRole()
   const canAssignAdvisor = permissions?.canAssignAdvisors || role === 'asesor'
@@ -105,8 +124,67 @@ export function CreateClientForm({ onClientAdded, isOpen, onClose }: CreateClien
     }
   }, [isOpen, canAssignAdvisor, role]) // Depend on isOpen
 
+  const handleClose = () => {
+    setDpiPaths({ frontPath: null, backPath: null })
+    setDpiMeta(null)
+    setAutoFilled([])
+    onClose()
+  }
+
+  useEffect(() => {
+    if (!autoFilled.length) return
+    const timer = setTimeout(() => setAutoFilled([]), 2200)
+    return () => clearTimeout(timer)
+  }, [autoFilled])
+
+  const handleDpiExtracted = (result: DpiCaptureResult) => {
+    setDpiPaths({ frontPath: result.frontPath, backPath: result.backPath })
+    setDpiMeta({
+      provider: result.provider,
+      extracted: result.data,
+      scannedAt: result.scannedAt,
+      warnings: result.warnings,
+    })
+
+    if (!result.data) {
+      setAutoFilled([])
+      return
+    }
+
+    const mapped = mapDpiToClientFields(result.data)
+    const next = { ...formDataRef.current }
+    const filled: string[] = []
+
+    for (const [key, value] of Object.entries(mapped)) {
+      if (value === undefined || value === null || value === '') continue
+      const current = String((next as Record<string, unknown>)[key] ?? '').trim()
+      if (!current) {
+        ;(next as Record<string, unknown>)[key] = value
+        filled.push(key)
+      }
+    }
+
+    setFormData(next)
+    setAutoFilled(filled)
+
+    if (isDpiExpired(result.data.fecha_vencimiento)) {
+      toast.warning('El DPI detectado aparece vencido. Verifica la fecha antes de continuar.')
+    }
+
+    if (filled.length === 0) {
+      toast.info('Los campos de identidad ya tenían valor; no se reemplazó ninguno.')
+    } else {
+      toast.success(`Se autocompletaron ${filled.length} campo(s) vacío(s) desde el DPI.`)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (!dpiPaths.frontPath || !dpiPaths.backPath) {
+      toast.error('Debe subir y escanear el frente y el reverso del DPI')
+      return
+    }
     
     // Validar que se haya asignado un asesor (excepto para asesores que se auto-asignan)
     if (role === 'admin' && !formData.advisor_id) {
@@ -123,7 +201,12 @@ export function CreateClientForm({ onClientAdded, isOpen, onClose }: CreateClien
     try {
       // Preparar los datos para envío
       const submitData = {
-        ...formData
+        ...formData,
+        dpi_front_path: dpiPaths.frontPath,
+        dpi_back_path: dpiPaths.backPath,
+        dpi_provider: dpiMeta?.provider || null,
+        dpi_scanned_at: dpiMeta?.scannedAt || new Date().toISOString(),
+        dpi_extracted_data: dpiMeta?.extracted || null,
       }
 
       const response = await fetch('/api/clients', {
@@ -146,9 +229,16 @@ export function CreateClientForm({ onClientAdded, isOpen, onClose }: CreateClien
           advisor_id: '',
           gender: '',
           dpi: '',
+          birth_date: '',
+          nationality: '',
+          dpi_issue_date: '',
+          dpi_expiry_date: '',
           actividad_economica: '',
           score_buro: '',
         })
+        setDpiPaths({ frontPath: null, backPath: null })
+        setDpiMeta(null)
+        setAutoFilled([])
         onClientAdded()
         toast.success('Cliente creado con éxito')
       } else {
@@ -162,8 +252,10 @@ export function CreateClientForm({ onClientAdded, isOpen, onClose }: CreateClien
     }
   }
 
+  const dpiFieldClass = (key: string) => `bg-background/50 ${autoFilled.includes(key) ? 'dpi-field-filled' : ''}`
+
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}> {/* Use isOpen and onClose props */}
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) handleClose() }}> {/* Use isOpen and onClose props */}
       {/* <DialogTrigger asChild>
         <Button className="gap-2 bg-primary hover:bg-primary/90">
           <Plus className="h-4 w-4" />
@@ -178,6 +270,16 @@ export function CreateClientForm({ onClientAdded, isOpen, onClose }: CreateClien
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 mt-4">
+          <DpiCapture
+            required
+            disabled={isLoading}
+            onExtracted={handleDpiExtracted}
+            onClearScan={() => {
+              setDpiPaths({ frontPath: null, backPath: null })
+              setDpiMeta(null)
+              setAutoFilled([])
+            }}
+          />
           <div className="flex gap-4">
             <div className="space-y-2 w-1/2">
               <Label htmlFor="first_name" className="text-foreground">
@@ -191,7 +293,7 @@ export function CreateClientForm({ onClientAdded, isOpen, onClose }: CreateClien
                   setFormData({ ...formData, first_name: e.target.value })
                 }
                 required
-                className="bg-background/50"
+                className={dpiFieldClass('first_name')}
               />
             </div>
             <div className="space-y-2 w-1/2">
@@ -206,7 +308,7 @@ export function CreateClientForm({ onClientAdded, isOpen, onClose }: CreateClien
                   setFormData({ ...formData, last_name: e.target.value })
                 }
                 required
-                className="bg-background/50"
+                className={dpiFieldClass('last_name')}
               />
             </div>
           </div>
@@ -223,7 +325,7 @@ export function CreateClientForm({ onClientAdded, isOpen, onClose }: CreateClien
                   setFormData({ ...formData, dpi: e.target.value })
                 }
                 required
-                className="bg-background/50"
+                className={dpiFieldClass('dpi')}
               />
             </div>
             <div className="space-y-2 w-1/2">
@@ -238,6 +340,56 @@ export function CreateClientForm({ onClientAdded, isOpen, onClose }: CreateClien
                   setFormData({ ...formData, actividad_economica: e.target.value })
                 }
                 className="bg-background/50"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="birth_date" className="text-foreground">
+                Fecha de nacimiento
+              </Label>
+              <Input
+                id="birth_date"
+                type="date"
+                value={formData.birth_date}
+                onChange={(e) => setFormData({ ...formData, birth_date: e.target.value })}
+                className={dpiFieldClass('birth_date')}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="nationality" className="text-foreground">
+                Nacionalidad
+              </Label>
+              <Input
+                id="nationality"
+                placeholder="Guatemalteca"
+                value={formData.nationality}
+                onChange={(e) => setFormData({ ...formData, nationality: e.target.value })}
+                className={dpiFieldClass('nationality')}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="dpi_issue_date" className="text-foreground">
+                Fecha de emisión del DPI
+              </Label>
+              <Input
+                id="dpi_issue_date"
+                type="date"
+                value={formData.dpi_issue_date}
+                onChange={(e) => setFormData({ ...formData, dpi_issue_date: e.target.value })}
+                className={dpiFieldClass('dpi_issue_date')}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="dpi_expiry_date" className="text-foreground">
+                Fecha de vencimiento del DPI
+              </Label>
+              <Input
+                id="dpi_expiry_date"
+                type="date"
+                value={formData.dpi_expiry_date}
+                onChange={(e) => setFormData({ ...formData, dpi_expiry_date: e.target.value })}
+                className={dpiFieldClass('dpi_expiry_date')}
               />
             </div>
           </div>
@@ -263,7 +415,7 @@ export function CreateClientForm({ onClientAdded, isOpen, onClose }: CreateClien
               value={formData.gender}
               onValueChange={(value) => setFormData({ ...formData, gender: value })}
             >
-              <SelectTrigger className="bg-background/50">
+              <SelectTrigger className={dpiFieldClass('gender')}>
                 <SelectValue placeholder="Seleccione género *" />
               </SelectTrigger>
               <SelectContent>
@@ -300,7 +452,7 @@ export function CreateClientForm({ onClientAdded, isOpen, onClose }: CreateClien
                 setFormData({ ...formData, address: e.target.value })
               }
               required
-              className="bg-background/50"
+              className={dpiFieldClass('address')}
             />
           </div>
           <div className="flex gap-4">
@@ -366,11 +518,16 @@ export function CreateClientForm({ onClientAdded, isOpen, onClose }: CreateClien
               />
             )}
           </div>
-          <div className="flex justify-end gap-2 pt-4">
-            <Button type="button" variant="outline" onClick={onClose}> {/* Use onClose prop */}
+          <div className="flex flex-col-reverse gap-2 pt-4 sm:flex-row sm:items-center sm:justify-end">
+            {(!dpiPaths.frontPath || !dpiPaths.backPath) ? (
+              <p className="text-xs text-muted-foreground sm:mr-auto">
+                Escanea el frente y el reverso del DPI para habilitar el guardado.
+              </p>
+            ) : null}
+            <Button type="button" variant="outline" onClick={handleClose}> {/* Use onClose prop */}
               Cancelar
             </Button>
-            <Button type="submit" disabled={isLoading}>
+            <Button type="submit" disabled={isLoading || !dpiPaths.frontPath || !dpiPaths.backPath}>
               {isLoading ? "Creando..." : "Crear Cliente"}
             </Button>
           </div>

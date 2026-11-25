@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { cuiDigits, formatCui, normalizeDate } from '@/lib/dpi/normalize'
 
 export async function GET() {
   try {
@@ -15,7 +16,22 @@ export async function GET() {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json(clients);
+    // Never send DPI image paths or the raw extracted payload to the browser
+    // from the general client list. Signed URLs are exposed only by
+    // /api/clients/[id]/dpi after an explicit role check.
+    const sanitizedClients = (clients || []).map((client: any) => {
+      const {
+        dpi_front_path,
+        dpi_back_path,
+        dpi_extracted_data,
+        dpi_provider,
+        dpi_scanned_at,
+        ...safe
+      } = client
+      return safe
+    })
+
+    return NextResponse.json(sanitizedClients);
   } catch (err) {
     console.error("Internal server error fetching clients:", err);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -39,7 +55,29 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { first_name, last_name, email, phone, phone_country_code, emergency_phone, address, advisor_id, gender, dpi, actividad_economica, score_buro } = body;
+    const {
+      first_name,
+      last_name,
+      email,
+      phone,
+      phone_country_code,
+      emergency_phone,
+      address,
+      advisor_id,
+      gender,
+      dpi,
+      actividad_economica,
+      score_buro,
+      birth_date,
+      nationality,
+      dpi_issue_date,
+      dpi_expiry_date,
+      dpi_front_path,
+      dpi_back_path,
+      dpi_extracted_data,
+      dpi_provider,
+      dpi_scanned_at,
+    } = body;
 
     if (!first_name || !last_name || !email || !phone) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -48,30 +86,87 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing or invalid gender" }, { status: 400 });
     }
 
+    const dpiFormatted = dpi ? formatCui(dpi) : null
+    if (dpi && !dpiFormatted) {
+      return NextResponse.json({ error: "El DPI debe tener exactamente 13 dígitos" }, { status: 400 })
+    }
+    if (!dpiFormatted) {
+      return NextResponse.json({ error: "El número de DPI es obligatorio para crear el cliente" }, { status: 400 })
+    }
+    if (!dpi_front_path || !dpi_back_path) {
+      return NextResponse.json({ error: "Debe subir el frente y el reverso del DPI para crear el cliente" }, { status: 400 })
+    }
+
+    const normalizedBirthDate = birth_date ? normalizeDate(birth_date) : null
+    const normalizedIssueDate = dpi_issue_date ? normalizeDate(dpi_issue_date) : null
+    const normalizedExpiryDate = dpi_expiry_date ? normalizeDate(dpi_expiry_date) : null
+    if (birth_date && !normalizedBirthDate) {
+      return NextResponse.json({ error: "Fecha de nacimiento inválida" }, { status: 400 })
+    }
+    if (dpi_issue_date && !normalizedIssueDate) {
+      return NextResponse.json({ error: "Fecha de emisión del DPI inválida" }, { status: 400 })
+    }
+    if (dpi_expiry_date && !normalizedExpiryDate) {
+      return NextResponse.json({ error: "Fecha de vencimiento del DPI inválida" }, { status: 400 })
+    }
+
+    if (dpiFormatted) {
+      const digits = cuiDigits(dpiFormatted)
+      const [formattedMatch, digitsMatch] = await Promise.all([
+        admin.from("clients").select("id").eq("dpi", dpiFormatted).limit(1),
+        admin.from("clients").select("id").eq("dpi", digits).limit(1),
+      ])
+      if ((formattedMatch.data && formattedMatch.data.length > 0) || (digitsMatch.data && digitsMatch.data.length > 0)) {
+        return NextResponse.json({ error: "Ya existe un cliente con este DPI" }, { status: 409 })
+      }
+    }
+
+    const insertData: Record<string, any> = {
+      first_name,
+      last_name,
+      email,
+      phone,
+      phone_country_code,
+      emergency_phone,
+      address,
+      advisor_id,
+      gender,
+      dpi: dpiFormatted,
+      actividad_economica,
+      score_buro,
+    }
+
+    if (normalizedBirthDate) insertData.birth_date = normalizedBirthDate
+    if (nationality) insertData.nationality = String(nationality).trim()
+    if (normalizedIssueDate) insertData.dpi_issue_date = normalizedIssueDate
+    if (normalizedExpiryDate) insertData.dpi_expiry_date = normalizedExpiryDate
+    if (dpi_front_path) insertData.dpi_front_path = String(dpi_front_path)
+    if (dpi_back_path) insertData.dpi_back_path = String(dpi_back_path)
+    if (dpi_extracted_data && typeof dpi_extracted_data === "object") {
+      insertData.dpi_extracted_data = dpi_extracted_data
+    }
+    if (dpi_provider) insertData.dpi_provider = String(dpi_provider)
+    if (dpi_front_path || dpi_back_path) {
+      insertData.dpi_scanned_at = dpi_scanned_at || new Date().toISOString()
+    }
+
     const { data: newClient, error } = await admin
       .from("clients")
-      .insert([
-        {
-          first_name,
-          last_name,
-          email,
-          phone,
-          phone_country_code,
-          emergency_phone,
-          address,
-          advisor_id,
-          gender,
-          dpi,
-          actividad_economica,
-          score_buro,
-        },
-      ])
+      .insert([insertData])
       .select()
       .single();
 
     if (error) {
       console.error("Error creating client:", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      const missingDpiColumns = error.code === '42703' || /column .* does not exist/i.test(error.message || '')
+      return NextResponse.json(
+        {
+          error: missingDpiColumns
+            ? 'La migración de DPI aún no está aplicada. Ejecuta 20261120090000_add_dpi_documents_to_clients.sql en Supabase.'
+            : error.message,
+        },
+        { status: 500 },
+      );
     }
 
     // Log the creation
@@ -115,7 +210,7 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { data: me } = await supabase.from("users").select("role").eq("auth_id", user.id).single()
+    const { data: me } = await supabase.from("users").select("id, role").eq("auth_id", user.id).single()
 
     if (!me || (me.role !== "admin" && me.role !== "asesor")) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
@@ -139,8 +234,53 @@ export async function PUT(request: Request) {
       updates.gender = g
     }
 
-    // Get current client data for log comparison (optional, but good for details)
+    if (typeof updates.dpi !== 'undefined') {
+      const formatted = updates.dpi ? formatCui(updates.dpi) : null
+      if (updates.dpi && !formatted) {
+        return NextResponse.json({ error: "El DPI debe tener exactamente 13 dígitos" }, { status: 400 })
+      }
+      updates.dpi = formatted
+    }
+
+    for (const field of ['birth_date', 'dpi_issue_date', 'dpi_expiry_date'] as const) {
+      if (typeof updates[field] !== 'undefined') {
+        const normalized = updates[field] ? normalizeDate(updates[field]) : null
+        if (updates[field] && !normalized) {
+          return NextResponse.json({ error: `Fecha inválida en ${field}` }, { status: 400 })
+        }
+        updates[field] = normalized
+      }
+    }
+
+    if (typeof updates.dpi_extracted_data !== 'undefined' && (updates.dpi_extracted_data === null || typeof updates.dpi_extracted_data !== 'object')) {
+      updates.dpi_extracted_data = null
+    }
+
+    // Get current client data for log comparison and advisor scoping
     const { data: currentClient } = await admin.from("clients").select("*").eq("id", id).single()
+
+    if (!currentClient) {
+      return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 })
+    }
+
+    if (me.role === "asesor" && currentClient.advisor_id !== me.id) {
+      return NextResponse.json({ error: "No autorizado para este cliente" }, { status: 403 })
+    }
+
+    if (updates.dpi) {
+      const digits = cuiDigits(updates.dpi)
+      const [formattedMatch, digitsMatch] = await Promise.all([
+        admin.from("clients").select("id").eq("dpi", updates.dpi).neq("id", id).limit(1),
+        admin.from("clients").select("id").eq("dpi", digits).neq("id", id).limit(1),
+      ])
+      if ((formattedMatch.data && formattedMatch.data.length > 0) || (digitsMatch.data && digitsMatch.data.length > 0)) {
+        return NextResponse.json({ error: "Ya existe otro cliente con este DPI" }, { status: 409 })
+      }
+    }
+
+    if ((updates.dpi_front_path || updates.dpi_back_path) && !updates.dpi_scanned_at) {
+      updates.dpi_scanned_at = new Date().toISOString()
+    }
 
     const { data: updatedClient, error } = await admin
       .from("clients")
@@ -151,7 +291,15 @@ export async function PUT(request: Request) {
 
     if (error) {
       console.error("Error updating client:", error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      const missingDpiColumns = error.code === '42703' || /column .* does not exist/i.test(error.message || '')
+      return NextResponse.json(
+        {
+          error: missingDpiColumns
+            ? 'La migración de DPI aún no está aplicada. Ejecuta 20261120090000_add_dpi_documents_to_clients.sql en Supabase.'
+            : error.message,
+        },
+        { status: 500 },
+      )
     }
 
     // Log the update
